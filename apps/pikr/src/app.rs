@@ -60,8 +60,15 @@ pub fn run(cli: Cli) -> Result<()> {
             exclusive_zone: 0,
             ..Default::default()
         };
+        // Height = input row + viewport (ROW_HEIGHT * VISIBLE_ROWS) +
+        // status + ex_bar gutter + outer padding/border. Keep this in
+        // step with crate::ui::view::{ROW_HEIGHT, VISIBLE_ROWS} so the
+        // window doesn't trim a half-row at the bottom.
+        let viewport_h = crate::ui::view::ROW_HEIGHT * crate::ui::view::VISIBLE_ROWS as f64;
+        // 22 px input + 22 px status + 22 px ex gutter + ~16 px border/padding slack.
+        let chrome_h = 22.0 + 22.0 + 22.0 + 16.0;
         let window_config = WindowConfig::default()
-            .size(floem::kurbo::Size::new(640.0, 420.0))
+            .size(floem::kurbo::Size::new(640.0, viewport_h + chrome_h))
             .with_transparent(true)
             .with_layer_shell_config(layer_cfg);
         floem::Application::new_wayland()

@@ -118,9 +118,23 @@ fn entry_row(
         } else {
             bg
         };
-        s.width_full().padding(4.0).background(row_bg)
+        // Fixed row height: keeps the scroll viewport's row math exact
+        // so we can size it to an integer multiple and never show a
+        // half-clipped row at the top/bottom edge.
+        s.width_full()
+            .height(ROW_HEIGHT)
+            .padding_horiz(8.0)
+            .background(row_bg)
     })
 }
+
+/// Pixel height per result row, in logical pixels. Used both by the row
+/// itself and by the scroll viewport so the viewport stays an exact
+/// multiple of row height.
+pub(crate) const ROW_HEIGHT: f64 = 22.0;
+/// Number of result rows the viewport shows. Window height is sized
+/// from this plus the prompt + status chrome.
+pub(crate) const VISIBLE_ROWS: usize = 12;
 
 // ─── Ex command bar ──────────────────────────────────────────────────────────
 
@@ -304,25 +318,25 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     )
     .style(|s| s.width_full().flex_direction(FlexDirection::Column));
 
-    // `min_height(0)` is mandatory: the default flex `min_height: auto`
-    // grows the scroll view to fit its content, which pushes status/ex
-    // off the bottom of the picker. With min_height clamped to 0, the
-    // scroll respects its flex_grow allocation and scrolls overflow
-    // instead.
+    // Viewport height is locked to an integer number of rows. Combined
+    // with the fixed ROW_HEIGHT on each entry_row this guarantees the
+    // scroll always shows whole rows — no half-clipped row at the
+    // top/bottom edge as the user pages through.
     //
     // `ensure_visible` follows the cursor: every selection change emits
-    // a Rect at the estimated row position and floem scrolls the
-    // viewport just enough to keep it on-screen. Row height is the
-    // theme font_size + padding (entry_row uses padding(4)); good
-    // enough for monospaced rows of the same height. If row content
-    // ever becomes variable-height we'll need real ViewId tracking.
-    let row_height = (font_size + 8.0) as f64;
+    // a Rect at the row's exact position and floem scrolls the viewport
+    // just enough to keep it on-screen.
+    let viewport_height = ROW_HEIGHT * VISIBLE_ROWS as f64;
     let scrollable = scroll(result_list)
         .ensure_visible(move || {
             let sel = selected_sig.get() as f64;
-            Rect::from_origin_size((0.0, sel * row_height), KurboSize::new(1.0, row_height))
+            Rect::from_origin_size((0.0, sel * ROW_HEIGHT), KurboSize::new(1.0, ROW_HEIGHT))
         })
-        .style(move |s| s.width_full().flex_grow(1.0).min_height(0.0).background(bg));
+        .style(move |s| {
+            s.width_full()
+                .height(viewport_height)
+                .background(bg)
+        });
 
     // ── Status bar ─────────────────────────────────────────────────────────
     let ff_s = font_family.clone();
