@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="10" fill="#0b0d10"/>
+  <rect x="2" y="2" width="60" height="60" rx="9" fill="none" stroke="#2a3240" stroke-width="1.5"/>
+  <!-- prompt chevron -->
+  <path d="M12 22 L18 28 L12 34" fill="none" stroke="#ff79c6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- query underline / cursor block -->
+  <rect x="22" y="26" width="6" height="6" fill="#ff79c6"/>
+  <!-- result rows -->
+  <rect x="12" y="40" width="40" height="3" rx="1" fill="#ff79c6"/>
+  <rect x="12" y="46" width="28" height="3" rx="1" fill="#7a3a60"/>
+  <rect x="12" y="52" width="32" height="3" rx="1" fill="#7a3a60"/>
+</svg>
