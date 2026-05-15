@@ -28,5 +28,24 @@ and this project adheres to
     positions for highlight spans.
   - `app.rs` dispatches to the chosen mode and prints a headless preview to
     stderr; stdout reserved for the dmenu accept path. UI lands in Epic 3.
+- **Epic 3 — floem UI + vim keymap**: interactive picker shipped as a floating
+  window (layer-shell is Epic 4).
+  - `PickerState` rebuilt around `RwSignal` (`query`, `selected`, `vim_mode`,
+    `count`, `ex_buf`); `Matcher` cached on `AppState` to avoid the ~135 KB
+    per-keystroke allocation nucleo warns about.
+  - View tree: prompt + query input row, scrollable result list with
+    nucleo-position highlighting and accent-blended selection row, ex command
+    bar, mode/selection status bar.
+  - Keymap: Normal / Insert split. `j` / `k` / `gg` / `G` / `<C-d>` / `<C-u>`
+    motions with count-prefix support (`5j` jumps five rows). `i` enters Insert;
+    `<Esc>` returns to Normal (or cancels from Normal). `/` swaps to Insert. `:`
+    opens the ex command bar.
+  - Ex commands: `:drun` / `:run` / `:dmenu` switch modes at runtime and reload
+    entries; `:q` quits via `floem::quit_app`.
+  - Accept (`<CR>`) runs `modes::execute(&payload)` then exits — `Stdout` prints
+    to stdout, `Exec` spawns detached.
+  - Smoke test rewritten to handle both headless (no display → process exits)
+    and display-present (event loop entered → spawn + sleep + kill) modes.
+  - 7 new keymap unit tests (20 total).
 
 [Unreleased]: https://github.com/kryptic-sh/pikr/compare/HEAD...HEAD
