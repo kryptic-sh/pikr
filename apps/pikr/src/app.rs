@@ -22,7 +22,11 @@ pub fn run(cli: Cli) -> Result<()> {
         Mode::Run => Box::new(modes::run::Run),
     };
 
-    let entries = mode.collect()?;
+    let entries: Vec<Arc<modes::Entry>> = mode
+        .collect()?
+        .into_iter()
+        .map(Arc::new)
+        .collect();
     tracing::debug!(count = entries.len(), "entries collected");
 
     let picker = PickerState::new();

@@ -8,6 +8,7 @@ use floem::{
     IntoView,
     event::{Event, EventListener, EventPropagation},
     keyboard::{Key, NamedKey},
+    kurbo::{Rect, Size as KurboSize},
     peniko::Color,
     reactive::{RwSignal, SignalGet, SignalUpdate},
     style::FlexDirection,
@@ -77,24 +78,21 @@ fn h_stack_from_iter(items: Vec<Box<dyn floem::View>>) -> impl IntoView {
 // ─── Entry-row view ──────────────────────────────────────────────────────────
 
 fn entry_row(
-    entry: Entry,
+    entry: Arc<Entry>,
     positions: Vec<u32>,
-    is_selected: bool,
+    mi: usize,
+    selected_sig: RwSignal<usize>,
     fg: Color,
     accent: Color,
     bg: Color,
 ) -> impl IntoView {
-    let row_bg = if is_selected {
-        // Blend bg toward accent (30% accent, 70% bg).
-        Color::rgba8(
-            ((accent.r as u16 * 30 + bg.r as u16 * 70) / 100) as u8,
-            ((accent.g as u16 * 30 + bg.g as u16 * 70) / 100) as u8,
-            ((accent.b as u16 * 30 + bg.b as u16 * 70) / 100) as u8,
-            255,
-        )
-    } else {
-        bg
-    };
+    // Selection-blended background, ~30% accent over bg.
+    let selected_bg = Color::rgba8(
+        ((accent.r as u16 * 30 + bg.r as u16 * 70) / 100) as u8,
+        ((accent.g as u16 * 30 + bg.g as u16 * 70) / 100) as u8,
+        ((accent.b as u16 * 30 + bg.b as u16 * 70) / 100) as u8,
+        255,
+    );
 
     let label_view = highlighted_label(entry.label.clone(), positions, fg, accent);
 
@@ -109,8 +107,19 @@ fn entry_row(
         None => floem::views::empty().into_any(),
     };
 
-    h_stack((label_view.into_any(), desc_view))
-        .style(move |s| s.width_full().padding(4.0).background(row_bg))
+    h_stack((label_view.into_any(), desc_view)).style(move |s| {
+        // Subscribe to selected_sig HERE so highlight tracks selection
+        // changes without rebuilding the row. dyn_stack keys items by
+        // `mi`; if we baked is_selected in at construction, the existing
+        // row wouldn't repaint when selection moves between it and a
+        // neighbour.
+        let row_bg = if selected_sig.get() == mi {
+            selected_bg
+        } else {
+            bg
+        };
+        s.width_full().padding(4.0).background(row_bg)
+    })
 }
 
 // ─── Ex command bar ──────────────────────────────────────────────────────────
@@ -138,8 +147,11 @@ fn ex_bar(ex_buf: RwSignal<Option<String>>, fg: Color, bg: Color) -> impl IntoVi
 /// whenever the query or mode changes.
 pub struct AppState {
     pub picker: PickerState,
-    /// Full entry list for the active mode.
-    pub entries: Vec<Entry>,
+    /// Full entry list for the active mode. Wrapped in Arc so the
+    /// dyn_stack items closure can hand each visible row a cheap
+    /// refcount-clone instead of a deep clone of the underlying
+    /// String/Vec data on every signal-triggered rerun.
+    pub entries: Vec<Arc<Entry>>,
     /// Ranked matches against `picker.query`. Refreshed on query/mode change.
     pub matches: Vec<Match>,
     /// Pending `g` for `gg` motion.
@@ -174,7 +186,7 @@ impl AppState {
             CliMode::Drun => Box::new(crate::modes::drun::Drun),
             CliMode::Run => Box::new(crate::modes::run::Run),
         };
-        self.entries = m.collect().unwrap_or_default();
+        self.entries = m.collect().unwrap_or_default().into_iter().map(Arc::new).collect();
         self.picker.query.set(String::new());
         self.picker.selected.set(0);
         self.rerank();
@@ -267,30 +279,50 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     let ff_list = font_family.clone();
     let result_list = dyn_stack(
         move || {
-            let _r = rev.get(); // subscribe to rev signal
+            // Re-build the row list only when entries/matches change. The
+            // `rev` signal is bumped on query / mode-switch / rerank.
+            // Selection highlight is reactive INSIDE each row via
+            // selected_sig, not via rebuilding the list — see entry_row.
+            let _r = rev.get();
             let s = state_list.lock().unwrap();
-            let sel = selected_sig.get();
-            // Collect (index_in_matches, entry_clone, positions, is_selected).
             s.matches
                 .iter()
                 .enumerate()
                 .map(|(mi, m)| {
-                    let entry = s.entries[m.index].clone();
-                    (mi, entry, m.positions.clone(), mi == sel)
+                    // Arc::clone — cheap refcount bump, not a String/Vec clone.
+                    let entry = Arc::clone(&s.entries[m.index]);
+                    (mi, entry, m.positions.clone())
                 })
                 .collect::<Vec<_>>()
         },
-        |(mi, _, _, _)| *mi,
-        move |(_, entry, positions, is_selected)| {
+        |(mi, _, _)| *mi,
+        move |(mi, entry, positions)| {
             let ff = ff_list.clone();
-            entry_row(entry, positions, is_selected, fg, accent, bg)
+            entry_row(entry, positions, mi, selected_sig, fg, accent, bg)
                 .style(move |s| s.font_family(ff.clone()).font_size(font_size))
         },
     )
     .style(|s| s.width_full().flex_direction(FlexDirection::Column));
 
-    let scrollable =
-        scroll(result_list).style(move |s| s.width_full().flex_grow(1.0).background(bg));
+    // `min_height(0)` is mandatory: the default flex `min_height: auto`
+    // grows the scroll view to fit its content, which pushes status/ex
+    // off the bottom of the picker. With min_height clamped to 0, the
+    // scroll respects its flex_grow allocation and scrolls overflow
+    // instead.
+    //
+    // `ensure_visible` follows the cursor: every selection change emits
+    // a Rect at the estimated row position and floem scrolls the
+    // viewport just enough to keep it on-screen. Row height is the
+    // theme font_size + padding (entry_row uses padding(4)); good
+    // enough for monospaced rows of the same height. If row content
+    // ever becomes variable-height we'll need real ViewId tracking.
+    let row_height = (font_size + 8.0) as f64;
+    let scrollable = scroll(result_list)
+        .ensure_visible(move || {
+            let sel = selected_sig.get() as f64;
+            Rect::from_origin_size((0.0, sel * row_height), KurboSize::new(1.0, row_height))
+        })
+        .style(move |s| s.width_full().flex_grow(1.0).min_height(0.0).background(bg));
 
     // ── Status bar ─────────────────────────────────────────────────────────
     let ff_s = font_family.clone();
