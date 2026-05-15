@@ -188,14 +188,20 @@ impl AppState {
 /// `state` is wrapped in `Arc<Mutex<>>` so the key-event handler closure
 /// can mutate it while floem views read reactive signals independently.
 pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
-    // Pull signals out of the shared state — they're `Copy`.
-    let (query_sig, selected_sig, vim_mode_sig, ex_buf_sig) = {
+    // Pull signals out of the shared state — they're `Copy`. The key
+    // handler MUST update signals while NOT holding the AppState mutex,
+    // because floem fires reactive subscribers (e.g. the dyn_stack items
+    // closure) synchronously inside `set()` and those subscribers re-lock
+    // the same mutex. Capturing the signals once up front lets the
+    // handler drop the guard before any `set()` call.
+    let (query_sig, selected_sig, vim_mode_sig, ex_buf_sig, count_sig) = {
         let s = state.lock().unwrap();
         (
             s.picker.query,
             s.picker.selected,
             s.picker.vim_mode,
             s.picker.ex_buf,
+            s.picker.count,
         )
     };
 
@@ -314,6 +320,18 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         v_stack((input_row, scrollable, ex.into_any(), status))
             .style(|s| s.width_full().height_full()),
     )
+    .style(move |s| {
+        // Layer surfaces don't get compositor borders. Draw our own so
+        // pikr looks like a window on both wlr-layer-shell and xdg
+        // toplevels (where it's also fine — most tiling WMs strip
+        // borders off floating popups anyway).
+        s.width_full()
+            .height_full()
+            .background(bg)
+            .border(1.5)
+            .border_color(accent)
+            .border_radius(8.0)
+    })
     .keyboard_navigable()
     .on_event(EventListener::KeyDown, move |ev| {
         let Event::KeyDown(ke) = ev else {
@@ -322,20 +340,40 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
 
         let ctrl = ke.modifiers.control();
         let key = &ke.key.logical_key;
+        tracing::debug!(?key, ctrl, "key down");
 
-        let mut s = state_key.lock().unwrap();
-        let vim_mode = s.picker.vim_mode.get();
+        // Snapshot everything we need from AppState BEFORE any signal.set().
+        // Holding `state_key`'s guard across a `.set()` deadlocks because
+        // floem fires reactive subscribers synchronously and the
+        // result-list dyn_stack closure re-locks the same mutex.
+        enum NavAction {
+            None,
+            Rerank,
+            SwitchMode(CliMode),
+        }
+        let (vim_mode, ex_open, total, g_was_pending, action_opt) = {
+            let s = state_key.lock().unwrap();
+            let vim_mode = vim_mode_sig.get();
+            let ex_open = ex_buf_sig.get();
+            let total = s.matches.len();
+            let g_pending = s.g_pending;
+            let action = if ex_open.is_some() {
+                None
+            } else {
+                key_to_action(&s.picker, key, ctrl)
+            };
+            (vim_mode, ex_open, total, g_pending, action)
+        };
 
         // ── Ex mode ───────────────────────────────────────────────────────
-        if let Some(mut buf) = s.picker.ex_buf.get() {
+        if let Some(mut buf) = ex_open {
             match key {
                 Key::Named(NamedKey::Escape) => {
-                    s.picker.ex_buf.set(None);
+                    ex_buf_sig.set(None);
                 }
                 Key::Named(NamedKey::Enter) => {
                     let cmd = buf.trim().to_string();
-                    s.picker.ex_buf.set(None);
-                    // Dispatch ex command.
+                    ex_buf_sig.set(None);
                     let mode_switch = match cmd.as_str() {
                         "drun" => Some(CliMode::Drun),
                         "run" => Some(CliMode::Run),
@@ -347,18 +385,17 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                         _ => None,
                     };
                     if let Some(m) = mode_switch {
-                        drop(s);
                         state_key.lock().unwrap().switch_mode(m);
                         rev.update(|r| *r += 1);
                     }
                 }
                 Key::Named(NamedKey::Backspace) => {
                     buf.pop();
-                    s.picker.ex_buf.set(Some(buf));
+                    ex_buf_sig.set(Some(buf));
                 }
                 Key::Character(ch) => {
                     buf.push_str(ch);
-                    s.picker.ex_buf.set(Some(buf));
+                    ex_buf_sig.set(Some(buf));
                 }
                 _ => {}
             }
@@ -367,77 +404,77 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
 
         // ── `g` pending for `gg` ─────────────────────────────────────────
         if vim_mode == VimMode::Normal
-            && s.g_pending
+            && g_was_pending
             && matches!(key, Key::Character(c) if c.as_str() == "g")
         {
-            s.g_pending = false;
-            s.picker.count.set(None);
-            s.picker.selected.set(0);
+            state_key.lock().unwrap().g_pending = false;
+            count_sig.set(None);
+            selected_sig.set(0);
             rev.update(|r| *r += 1);
             return EventPropagation::Stop;
         }
         // First `g` in normal mode.
         if vim_mode == VimMode::Normal && matches!(key, Key::Character(c) if c.as_str() == "g") {
-            s.g_pending = true;
+            state_key.lock().unwrap().g_pending = true;
             return EventPropagation::Stop;
         }
         // Any key other than `g` clears the pending flag.
-        if s.g_pending && !matches!(key, Key::Character(c) if c.as_str() == "g") {
-            s.g_pending = false;
+        if g_was_pending && !matches!(key, Key::Character(c) if c.as_str() == "g") {
+            state_key.lock().unwrap().g_pending = false;
         }
 
         // ── Normal action dispatch ────────────────────────────────────────
-        let action = key_to_action(&s.picker, key, ctrl);
-        let Some(action) = action else {
+        let Some(action) = action_opt else {
             return EventPropagation::Continue;
         };
 
-        let total = s.matches.len();
+        let mut after = NavAction::None;
         match action {
             Action::MoveDown(n) => {
-                let cur = s.picker.selected.get();
+                let cur = selected_sig.get();
                 let next = (cur + n).min(total.saturating_sub(1));
-                s.picker.selected.set(next);
+                selected_sig.set(next);
             }
             Action::MoveUp(n) => {
-                let cur = s.picker.selected.get();
-                s.picker.selected.set(cur.saturating_sub(n));
+                let cur = selected_sig.get();
+                selected_sig.set(cur.saturating_sub(n));
             }
             Action::PageDown => {
-                let cur = s.picker.selected.get();
+                let cur = selected_sig.get();
                 let next = (cur + 10).min(total.saturating_sub(1));
-                s.picker.selected.set(next);
+                selected_sig.set(next);
             }
             Action::PageUp => {
-                let cur = s.picker.selected.get();
-                s.picker.selected.set(cur.saturating_sub(10));
+                let cur = selected_sig.get();
+                selected_sig.set(cur.saturating_sub(10));
             }
             Action::Top => {
-                s.picker.selected.set(0);
+                selected_sig.set(0);
             }
             Action::Bottom => {
                 if total > 0 {
-                    s.picker.selected.set(total - 1);
+                    selected_sig.set(total - 1);
                 }
             }
             Action::EnterInsert => {
-                s.picker.vim_mode.set(VimMode::Insert);
+                vim_mode_sig.set(VimMode::Insert);
             }
             Action::EnterNormal => {
-                s.picker.vim_mode.set(VimMode::Normal);
+                vim_mode_sig.set(VimMode::Normal);
             }
             Action::StartSearch => {
-                // `/` enters insert so the query bar becomes active.
-                s.picker.vim_mode.set(VimMode::Insert);
+                vim_mode_sig.set(VimMode::Insert);
             }
             Action::StartEx => {
-                s.picker.ex_buf.set(Some(String::new()));
+                ex_buf_sig.set(Some(String::new()));
             }
             Action::Accept => {
-                let sel = s.picker.selected.get();
-                if let Some(m) = s.matches.get(sel) {
-                    let payload = s.entries[m.index].payload.clone();
-                    drop(s); // release lock before execute
+                let sel = selected_sig.get();
+                let payload = {
+                    let s = state_key.lock().unwrap();
+                    s.matches.get(sel).map(|m| s.entries[m.index].payload.clone())
+                };
+                if let Some(payload) = payload {
                     if let Err(e) = modes::execute(&payload) {
                         eprintln!("pikr: execute error: {e}");
                     }
@@ -448,19 +485,29 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 std::process::exit(0);
             }
             Action::InsertChar(c) => {
-                let mut q = s.picker.query.get();
+                let mut q = query_sig.get();
                 q.push(c);
-                s.picker.query.set(q.clone());
-                s.rerank();
-                rev.update(|r| *r += 1);
+                query_sig.set(q);
+                after = NavAction::Rerank;
             }
             Action::Backspace => {
-                let mut q = s.picker.query.get();
+                let mut q = query_sig.get();
                 q.pop();
-                s.picker.query.set(q.clone());
-                s.rerank();
-                rev.update(|r| *r += 1);
+                query_sig.set(q);
+                after = NavAction::Rerank;
             }
+        }
+
+        // Mutations that need the AppState lock — perform them AFTER all
+        // signal sets so subscribers don't re-enter while we hold it.
+        match after {
+            NavAction::Rerank => {
+                state_key.lock().unwrap().rerank();
+            }
+            NavAction::SwitchMode(m) => {
+                state_key.lock().unwrap().switch_mode(m);
+            }
+            NavAction::None => {}
         }
 
         // Bump rev for any navigation change (selection, mode).

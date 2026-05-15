@@ -47,11 +47,22 @@ pub fn run(cli: Cli) -> Result<()> {
 
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     {
-        let layer_cfg = floem::window::LayerShellConfig {
+        use floem::window::{Anchor, LayerShellConfig, WindowConfig};
+        let layer_cfg = LayerShellConfig {
             namespace: "pikr".into(),
+            // No edge anchors → compositor centers the surface on the output.
+            anchor: Anchor::empty(),
+            // Centered overlays should not reserve a strut.
+            exclusive_zone: 0,
             ..Default::default()
         };
-        floem::launch_layer(layer_cfg, view);
+        let window_config = WindowConfig::default()
+            .size(floem::kurbo::Size::new(640.0, 420.0))
+            .with_transparent(true)
+            .with_layer_shell_config(layer_cfg);
+        floem::Application::new_wayland()
+            .window(move |_| view(), Some(window_config))
+            .run();
     }
     #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
     floem::launch(view);
