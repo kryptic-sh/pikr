@@ -52,15 +52,39 @@ impl Matcher {
 
         let mut out: Vec<Match> = Vec::with_capacity(labels.len());
         for (i, label) in labels.iter().enumerate() {
+            // Skip labels nucleo's prefilter mishandles. nucleo 0.5 has
+            // an assertion in `fuzzy_optimal::optimal_match` that fires
+            // on certain haystacks the prefilter should have rejected
+            // (empty strings, and a few control-char-only edge cases).
+            // Until we move to 0.6+ which fixes this, we filter upstream.
+            if label.is_empty() {
+                continue;
+            }
             let mut hay_buf = Vec::new();
             let haystack = Utf32Str::new(label, &mut hay_buf);
-            let mut positions = Vec::new();
-            if let Some(score) = self.inner.fuzzy_indices(haystack, needle, &mut positions) {
-                out.push(Match {
+            // catch_unwind is the safety net for whatever the upstream
+            // assertion-failure pattern is in this nucleo release. A
+            // panicking row just drops out of the result set; the
+            // picker stays alive.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut positions = Vec::new();
+                let score = self.inner.fuzzy_indices(haystack, needle, &mut positions);
+                (score, positions)
+            }));
+            match result {
+                Ok((Some(score), positions)) => out.push(Match {
                     index: i,
                     score,
                     positions,
-                });
+                }),
+                Ok((None, _)) => {}
+                Err(_) => {
+                    tracing::warn!(
+                        index = i,
+                        label = %label,
+                        "nucleo fuzzy_indices panicked; skipping row"
+                    );
+                }
             }
         }
 
