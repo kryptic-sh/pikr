@@ -43,6 +43,17 @@ pub fn run(cli: Cli) -> Result<()> {
         matcher,
     }));
 
-    floem::launch(move || picker_view(Arc::clone(&app_state)));
+    let view = move || picker_view(Arc::clone(&app_state));
+
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    {
+        let layer_cfg = floem::window::LayerShellConfig {
+            namespace: "pikr".into(),
+            ..Default::default()
+        };
+        floem::launch_layer(layer_cfg, view);
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+    floem::launch(view);
     Ok(())
 }

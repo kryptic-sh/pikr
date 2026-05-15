@@ -32,3 +32,12 @@ xdg = "2"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+# Epic 4 — Wayland layer-shell support is implemented across forks of
+# lapce/winit (the upstream of `floem-winit`) and lapce/floem. The forks
+# track floem-winit 0.29.5 and floem 0.2.0 byte-for-byte as published,
+# plus the new `LayerShellConfig` / `launch_layer` surface. Drop these
+# patches once layer-shell lands upstream.
+[patch.crates-io]
+floem       = { git = "https://github.com/mxaddict/floem.git", branch = "layer-shell" }
+floem-winit = { git = "https://github.com/mxaddict/winit.git", branch = "layer-shell" }
