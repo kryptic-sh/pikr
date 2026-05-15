@@ -22,6 +22,7 @@ floem = "0.2"
 freedesktop-desktop-entry = "0.7"
 nucleo = "0.5"
 serde = { version = "1", features = ["derive"] }
+shlex = "1"
 toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

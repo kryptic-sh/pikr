@@ -2343,6 +2343,7 @@ dependencies = [
  "freedesktop-desktop-entry",
  "nucleo",
  "serde",
+ "shlex",
  "toml",
  "tracing",
  "tracing-subscriber",
