@@ -11,6 +11,12 @@ targets = [
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+    # paste — pulled in transitively via floem / vello. No longer
+    # maintained but the API surface is closed and the crate has no known
+    # CVE. Tracked upstream; revisit when floem drops the dep.
+    "RUSTSEC-2024-0436",
+]
 
 [licenses]
 version = 2
