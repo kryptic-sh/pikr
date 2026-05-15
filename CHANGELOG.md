@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-16
+
 ### Added
 
 - Initial scaffold: bin crate, CLI parsing, config loader, mode trait, picker
@@ -47,5 +49,10 @@ and this project adheres to
   - Smoke test rewritten to handle both headless (no display → process exits)
     and display-present (event loop entered → spawn + sleep + kill) modes.
   - 7 new keymap unit tests (20 total).
+- Packaging templates: `pkg/aur/PKGBUILD-bin.in` (+ `LICENSE`, `.gitignore`),
+  `pkg/alpine/APKBUILD.in`, `pkg/homebrew/pikr.rb.in`. Placeholders match the
+  sed substitutions in `.github/workflows/ci.yml` so the first `v*` tag
+  exercises the full aur-bin / alpine / brew-tap release pipeline.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/HEAD...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.1.0
