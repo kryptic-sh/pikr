@@ -1,0 +1,34 @@
+[package]
+name = "pikr"
+description = "Vim-modal picker / launcher. Rofi replacement with hjkl keys."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+repository = "https://github.com/kryptic-sh/pikr"
+homepage = "https://github.com/kryptic-sh/pikr"
+authors = ["mxaddict <mxaddict@kryptic.sh>"]
+readme = "README.md"
+keywords = ["launcher", "picker", "rofi", "wayland", "vim"]
+categories = ["command-line-utilities", "gui"]
+
+[[bin]]
+name = "pikr"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+floem = "0.2"
+freedesktop-desktop-entry = "0.7"
+nucleo = "0.5"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+xdg = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
