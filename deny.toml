@@ -51,6 +51,8 @@ allow-git = [
     # lapce/floem and rust-windowing/winit until the patches land upstream.
     "https://github.com/mxaddict/floem.git",
     "https://github.com/mxaddict/winit.git",
-    # Transitive: floem pins vger-rs to a lapce fork via git rev.
-    "https://github.com/lapce/vger-rs",
+    # Transitive: the floem fork now pins vger-rs to mxaddict/vger-rs (the
+    # `alpha-blend-fix` branch — separate alpha blend factor so SDF / text-AA
+    # edges don't leak the framebuffer through on transparent Wayland surfaces).
+    "https://github.com/mxaddict/vger-rs",
 ]

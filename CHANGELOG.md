@@ -8,6 +8,15 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-16
+
+### Fixed
+
+- `deny.toml` `allow-git` list updated to `https://github.com/mxaddict/vger-rs`
+  (the floem fork now pins this branch for the alpha-blend fix). v0.2.1 still
+  listed the old `lapce/vger-rs` URL and failed cargo-deny's
+  `source-not-allowed` check, which gated the release pipeline.
+
 ## [0.2.1] - 2026-05-16
 
 ### Added
@@ -131,6 +140,7 @@ and this project adheres to
 - floem fork repointed to mxaddict/vger-rs alpha-blend branch.
 - `cargo clippy` and `cargo fmt` clean.
 
+[0.2.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.2.2
 [0.2.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.2.1
 
 ### Added
@@ -191,7 +201,7 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.2.2...HEAD
 [0.2.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.2.0
 
 ## [0.1.0] - 2026-05-16
