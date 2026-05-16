@@ -66,6 +66,25 @@ pub struct Cli {
     /// for no backdrop. Requires `grim` on Linux/Wayland.
     #[arg(long = "blur", value_parser = parse_blur)]
     pub blur: Option<f32>,
+
+    /// Preset: smoked-glass look — equivalent to `--blur 10 --opacity 0.8`.
+    /// Explicit `--blur` / `--opacity` flags override the preset values.
+    #[arg(long = "smoked")]
+    pub smoked: bool,
+}
+
+impl Cli {
+    /// Resolve the effective `blur` value after applying presets.
+    /// Explicit `--blur` wins over `--smoked`.
+    pub fn effective_blur(&self) -> Option<f32> {
+        self.blur.or(if self.smoked { Some(10.0) } else { None })
+    }
+
+    /// Resolve the effective `opacity` value after applying presets.
+    /// Explicit `--opacity` wins over `--smoked`.
+    pub fn effective_opacity(&self) -> Option<f32> {
+        self.opacity.or(if self.smoked { Some(0.8) } else { None })
+    }
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
