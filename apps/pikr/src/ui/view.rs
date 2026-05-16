@@ -101,14 +101,12 @@ fn entry_row(
     accent: Color,
     bg: Color,
 ) -> impl IntoView {
-    // Raycast-style: solid accent fill on selection, dark fg flipped in so
-    // text stays legible against the light accent.
-    let selected_bg = accent;
-    let selected_text = bg;
-    // Description on a selected row uses a less-faded text so the
-    // sub-text stays readable when surrounded by full-contrast accent fill.
+    // Outline-style selection: text colour doesn't change between states
+    // (only the row border lights up in accent). `bg` is used as the row's
+    // fill — the caller passes `inner_bg` so the row is opaque when the
+    // panel is opaque, transparent when the panel is translucent.
+    let row_fill = bg;
     let desc_color = fg.multiply_alpha(0.55);
-    let desc_selected = bg.multiply_alpha(0.75);
 
     let label_view = highlighted_label(
         entry.label.clone(),
@@ -117,19 +115,18 @@ fn entry_row(
         selected_sig,
         fg,
         accent,
-        selected_text,
-        selected_text,
+        fg,
+        accent,
     );
 
     let desc_view: Box<dyn floem::View> = match &entry.description {
         Some(d) => {
-            let d = d.clone();
+            // Wrap the description in parens + italic style for the
+            // "Buffr (Web Browser)" look. floem's italic style isn't
+            // exposed in 0.2; the parens carry most of the visual weight.
+            let d = format!("({d})");
             label(move || d.clone())
-                .style(move |s| {
-                    let selected = selected_sig.get() == mi;
-                    s.color(if selected { desc_selected } else { desc_color })
-                        .margin_left(DESC_GAP)
-                })
+                .style(move |s| s.color(desc_color).margin_left(DESC_GAP))
                 .into_any()
         }
         None => floem::views::empty().into_any(),
@@ -144,19 +141,21 @@ fn entry_row(
     h_stack((label_view.into_any(), desc_view))
         .style(move |s| {
             let selected = selected_sig.get() == mi;
-            // Unselected rows fill TRANSPARENT so the outer panel's bg
-            // (possibly smoked) shows through — stacking own opaque-ish
-            // fills cancels the smoked effect.
-            let row_bg = if selected {
-                selected_bg
-            } else {
-                Color::TRANSPARENT
-            };
+            // Outline-style selection: thin accent border, transparent fill.
+            // The non-selected rows show no border so the list reads as a
+            // clean stack of labels with the focused row gently outlined.
+            // Use the row fill as the border colour when unselected so that
+            // floem never composites a transparent 1-px strip over the
+            // dyn_stack's opaque background (PreMultiplied alpha erases).
+            let border_color = if selected { accent } else { row_fill };
             s.width_full()
                 .height(ROW_HEIGHT)
+                .margin(10.0)
                 .padding_horiz(HORIZ_PAD)
                 .items_center()
-                .background(row_bg)
+                .background(row_fill)
+                .border(1.0)
+                .border_color(border_color)
                 .border_radius(6.0)
                 .cursor(floem::style::CursorStyle::Pointer)
         })
@@ -188,7 +187,7 @@ pub(crate) const DESC_GAP: f64 = 14.0;
 
 // ─── Ex command bar ──────────────────────────────────────────────────────────
 
-fn ex_bar(ex_buf: RwSignal<Option<String>>, fg: Color) -> impl IntoView {
+fn ex_bar(ex_buf: RwSignal<Option<String>>, fg: Color, bg: Color) -> impl IntoView {
     label(move || match ex_buf.get() {
         Some(s) => format!(":{s}"),
         None => String::new(),
@@ -198,6 +197,7 @@ fn ex_bar(ex_buf: RwSignal<Option<String>>, fg: Color) -> impl IntoView {
             .height(22.0)
             .padding_horiz(HORIZ_PAD)
             .color(fg)
+            .background(bg)
     })
 }
 
@@ -327,7 +327,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // the compositor can show what's behind (alpha < 1.0). Every inner view
     // fills with `Color::TRANSPARENT` (see `inner_bg` below) to avoid
     // stacking fills that would cancel the transparency effect.
-    let (bg, panel_bg, fg, accent, font_family, font_size, blur, panel_height) = {
+    let (bg, panel_bg, fg, accent, font_family, font_size, blur, opacity, panel_height) = {
         let s = state.lock().unwrap();
         let t = &s.theme;
         let bg = parse_color(&t.bg);
@@ -349,10 +349,21 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             t.font.clone(),
             t.font_size,
             s.blur,
+            opacity,
             panel_h,
         )
     };
-    let inner_bg = Color::TRANSPARENT;
+    // When the panel is opaque (no blur, no opacity override), inner views
+    // fill with the same opaque bg so the wgpu surface — which has
+    // PreMultiplied alpha — doesn't punch transparent holes through where
+    // children paint over the parent's opaque background. When the panel
+    // *is* translucent, inner_bg stays transparent so stacked fills don't
+    // cancel the translucency.
+    let inner_bg = if opacity >= 1.0 && blur.is_none() {
+        panel_bg
+    } else {
+        Color::TRANSPARENT
+    };
     let prompt_str = {
         let s = state.lock().unwrap();
         s.prompt.clone()
@@ -433,17 +444,19 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             .margin_left(8.0)
     });
 
-    // Subtle divider between input and list — Raycast uses a 1px line at
-    // ~25% accent rather than a solid accent stripe.
-    let divider = accent.multiply_alpha(0.25);
+    // Input is its own bordered card — thin accent outline at 35% alpha,
+    // rounded corners matching the row selection style.
+    let input_border = accent.multiply_alpha(0.35);
     let input_row = h_stack((prompt_label, query_label)).style(move |s| {
         s.width_full()
             .height(INPUT_ROW_HEIGHT)
+            .margin(10.0)
             .padding_horiz(HORIZ_PAD)
             .items_center()
             .background(inner_bg)
-            .border_bottom(1.0)
-            .border_color(divider)
+            .border(1.0)
+            .border_color(input_border)
+            .border_radius(6.0)
     });
 
     // ── Result list ────────────────────────────────────────────────────────
@@ -474,11 +487,18 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         |(mi, idx, _, _)| ((*mi as u64) << 32) | (*idx as u64),
         move |(mi, _idx, entry, positions)| {
             let ff = ff_list.clone();
-            entry_row(entry, positions, mi, selected_sig, fg, accent, bg)
+            entry_row(entry, positions, mi, selected_sig, fg, accent, inner_bg)
                 .style(move |s| s.font_family(ff.clone()).font_size(font_size))
         },
     )
-    .style(|s| s.width_full().flex_direction(FlexDirection::Column));
+    .style(move |s| {
+        // Fill row-margin gaps so the panel reads as a single opaque
+        // surface — without this, the PreMultiplied alpha framebuffer
+        // shows through the inter-row spacing.
+        s.width_full()
+            .flex_direction(FlexDirection::Column)
+            .background(inner_bg)
+    });
 
     // Viewport height is locked to an integer number of rows. Combined
     // with the fixed ROW_HEIGHT on each entry_row this guarantees the
@@ -497,28 +517,16 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         .style(move |s| s.width_full().height(viewport_height).background(inner_bg));
 
     // ── Status bar ─────────────────────────────────────────────────────────
-    let ff_s = font_family.clone();
-    let status = label(move || {
-        let mode = match vim_mode_sig.get() {
-            VimMode::Normal => "NORMAL",
-            VimMode::Insert => "INSERT",
-        };
-        let sel = selected_sig.get();
-        format!(" {mode}  {sel} ")
-    })
-    .style(move |s| {
-        s.width_full()
-            .height(STATUS_HEIGHT)
-            .padding_horiz(HORIZ_PAD)
-            .items_center()
-            .color(bg)
-            .background(accent)
-            .font_family(ff_s.clone())
-            .font_size(font_size)
-    });
+    // Hidden by default (height 0). The mode + selection text are still
+    // computed so the bar can be flipped back on with a height bump.
+    let _ = font_family.clone();
+    let _ = vim_mode_sig;
+    let _ = selected_sig;
+    let status = floem::views::empty().style(|s| s.height(0.0).width_full());
+    let _ = (bg, accent, font_size); // intentionally unused for the hidden status
 
     // ── Ex bar ─────────────────────────────────────────────────────────────
-    let ex = ex_bar(ex_buf_sig, fg);
+    let ex = ex_bar(ex_buf_sig, fg, inner_bg);
 
     // ── Glass overlays (smoked mode) ──────────────────────────────────────
     // When smoked, capture the desktop at startup, blur it heavily, and
@@ -564,9 +572,9 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             // top. Stack order = paint order in floem.
             glass_overlays,
             v_stack((input_row, scrollable, ex.into_any(), status))
-                .style(|s| s.width_full().height_full()),
+                .style(move |s| s.width_full().height_full().background(inner_bg)),
         ))
-        .style(|s| s.width_full().height_full()),
+        .style(move |s| s.width_full().height_full().background(inner_bg)),
     )
     .style(move |s| {
         // Layer surfaces don't get compositor borders. Draw our own so
