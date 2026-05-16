@@ -2,18 +2,71 @@
 
 use std::sync::{Arc, Mutex};
 
-use floem::reactive::SignalUpdate;
+use floem::reactive::{SignalGet, SignalUpdate};
 
 use crate::cli::{Cli, Mode};
 use crate::config::Config;
 use crate::modes;
 use crate::picker::state::PickerState;
-use crate::ui::view::{AppState, picker_view};
+use crate::ui::view::{AppState, message_view, picker_view};
 use anyhow::Result;
 
 pub fn run(cli: Cli) -> Result<()> {
     let cfg = Config::load(cli.config.as_deref())?;
     tracing::debug!(?cfg, "config loaded");
+
+    // ── Message modal path ─────────────────────────────────────────────────
+    // When --message is given we skip all picker logic and render a simple
+    // non-interactive overlay. Esc dismisses via std::process::exit(0).
+    if let Some(msg) = cli.message.clone() {
+        let theme = cfg.theme.clone();
+        let windowed = cli.no_layer_shell;
+        let width = cli.width.unwrap_or(720);
+        let view = move || message_view(msg.clone(), theme.clone(), windowed);
+
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        {
+            use floem::window::WindowConfig;
+
+            let size = floem::kurbo::Size::new(width as f64, 120.0);
+            let use_layer_shell =
+                !cli.no_layer_shell && std::env::var_os("WAYLAND_DISPLAY").is_some();
+            if use_layer_shell {
+                use floem::window::{Anchor, LayerShellConfig};
+                let layer_cfg = LayerShellConfig {
+                    namespace: "pikr".into(),
+                    anchor: Anchor::empty(),
+                    exclusive_zone: 0,
+                    ..Default::default()
+                };
+                let window_config = WindowConfig::default()
+                    .size(size)
+                    .with_transparent(true)
+                    .with_layer_shell_config(layer_cfg);
+                floem::Application::new_wayland()
+                    .window(move |_| view(), Some(window_config))
+                    .run();
+            } else {
+                let likely_x11 = std::env::var_os("WAYLAND_DISPLAY").is_none();
+                let mut window_config = WindowConfig::default().size(size).with_transparent(false);
+                if likely_x11 {
+                    use floem::window::{X11Config, X11WindowType};
+                    window_config = window_config.with_x11_config(X11Config {
+                        window_types: vec![X11WindowType::Dock],
+                        override_redirect: false,
+                    });
+                }
+                floem::Application::new()
+                    .window(move |_| view(), Some(window_config))
+                    .run();
+            }
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        floem::launch(view);
+        return Ok(());
+    }
+
+    // ── Normal picker path ─────────────────────────────────────────────────
 
     let chosen_mode = if cli.dmenu { Mode::Dmenu } else { cli.show };
     tracing::info!(?chosen_mode, "pikr starting");
@@ -33,6 +86,14 @@ pub fn run(cli: Cli) -> Result<()> {
 
     let picker = PickerState::new();
     picker.vim_mode.set(cli.mode);
+
+    // --filter / --prefill / --query / --input-text: pre-fill the query and
+    // position the cursor at the end before the first rerank.
+    if let Some(ref text) = cli.filter {
+        picker.query.set(text.clone());
+        picker.query_cursor.set(text.chars().count());
+    }
+
     let mut matcher = crate::picker::matcher::Matcher::new();
     // (label, description) — matcher ranks each field separately so a label
     // hit can outweigh a description hit even at equal nucleo score.
@@ -40,7 +101,10 @@ pub fn run(cli: Cli) -> Result<()> {
         .iter()
         .map(|e| (e.label.as_str(), e.description.as_deref()))
         .collect();
-    let mut matches = matcher.rank(&pairs, "");
+    // Use the prefill query (if any) for the initial rank so the list reflects
+    // the filter text on first paint instead of being an empty-query rank.
+    let initial_query = picker.query.get_untracked();
+    let mut matches = matcher.rank(&pairs, &initial_query);
     matches.truncate(cfg.max_results);
 
     let usage = crate::picker::frecency::Usage::load();
@@ -56,6 +120,7 @@ pub fn run(cli: Cli) -> Result<()> {
         theme: cfg.theme,
         matcher,
         windowed: cli.no_layer_shell,
+        password: cli.password,
         usage,
         history,
     }));
@@ -78,11 +143,13 @@ pub fn run(cli: Cli) -> Result<()> {
         use crate::ui::view::{
             INPUT_ROW_HEIGHT, ROW_PITCH, STATUS_BAR_TOTAL, STATUS_HEIGHT, VISIBLE_ROWS,
         };
-        let viewport_h = ROW_PITCH * VISIBLE_ROWS as f64;
+        let visible_rows = cli.lines.unwrap_or(VISIBLE_ROWS) as f64;
+        let viewport_h = ROW_PITCH * visible_rows;
         // chrome = input row + input margin_bottom + ex gutter + status bar
         // (height + vert padding + top margin) + panel padding (both sides).
         let chrome_h = INPUT_ROW_HEIGHT + 8.0 + STATUS_HEIGHT + STATUS_BAR_TOTAL + 20.0;
-        let size = floem::kurbo::Size::new(720.0, viewport_h + chrome_h);
+        let win_width = cli.width.unwrap_or(720) as f64;
+        let size = floem::kurbo::Size::new(win_width, viewport_h + chrome_h);
 
         let use_layer_shell = !cli.no_layer_shell && std::env::var_os("WAYLAND_DISPLAY").is_some();
 

@@ -300,6 +300,69 @@ fn with_cursor(text: &str, cursor: usize, mode: VimMode, blink_on: bool) -> Stri
     out
 }
 
+/// Replace every character in `text` with ● (U+25CF) when `enabled` is true.
+/// The returned `String` has the same codepoint count as `text` so cursor
+/// positioning in `with_cursor` remains correct.
+pub(crate) fn mask_password(enabled: bool, text: &str) -> String {
+    if enabled {
+        "\u{25CF}".repeat(text.chars().count())
+    } else {
+        text.to_owned()
+    }
+}
+
+// ─── Message modal view ───────────────────────────────────────────────────────
+
+/// Non-interactive message overlay (rofi `--message` parity, issue #15).
+///
+/// Renders `text` inside the same panel chrome as `picker_view` — same bg,
+/// border, radius, and padding. No input row, no result list, no status bar.
+/// Pressing Escape dismisses via `std::process::exit(0)`.
+pub fn message_view(text: String, theme: crate::config::Theme, windowed: bool) -> impl IntoView {
+    let bg = parse_color(&theme.bg);
+    let fg = parse_color(&theme.fg);
+    let accent = parse_color(&theme.accent);
+    let font_family = theme.font.clone();
+    let font_size = theme.font_size;
+
+    let msg_label = label(move || text.clone()).style(move |s| {
+        s.color(fg)
+            .font_family(font_family.clone())
+            .font_size(font_size)
+    });
+
+    container(
+        container(container(msg_label).style(move |s| {
+            s.width_full()
+                .height_full()
+                .padding(PANEL_PAD)
+                .items_center()
+                .justify_center()
+        }))
+        .style(move |s| {
+            let s = s.width_full().height_full().background(bg);
+            if windowed {
+                s
+            } else {
+                s.border(BORDER_W)
+                    .border_color(accent)
+                    .border_radius(PANEL_RADIUS)
+            }
+        }),
+    )
+    .style(move |s| s.width_full().height_full().background(bg))
+    .keyboard_navigable()
+    .on_event(EventListener::KeyDown, move |ev| {
+        let Event::KeyDown(ke) = ev else {
+            return EventPropagation::Continue;
+        };
+        if matches!(ke.key.logical_key, Key::Named(NamedKey::Escape)) {
+            std::process::exit(0);
+        }
+        EventPropagation::Stop
+    })
+}
+
 // ─── Ex command bar ──────────────────────────────────────────────────────────
 
 fn ex_bar(
@@ -467,6 +530,10 @@ pub struct AppState {
     /// OS already paints a window border / shadow / corner rounding, so we
     /// drop our own panel border to avoid double-bordering.
     pub windowed: bool,
+    /// When true, the query bar renders each character as ● (U+25CF) instead
+    /// of the actual glyph. The underlying `query` signal still holds the
+    /// real text — masking is display-only.
+    pub password: bool,
     /// Per-mode frecency (count × half-life decay). Loaded from disk at
     /// startup; bumped on Accept and persisted then.
     pub usage: crate::picker::frecency::Usage,
@@ -587,6 +654,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     };
     let prompt_str = state.lock().unwrap().prompt.clone();
     let windowed = state.lock().unwrap().windowed;
+    let password = state.lock().unwrap().password;
 
     let rev: RwSignal<u64> = RwSignal::new(0);
 
@@ -645,8 +713,10 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         blink_on.set(true);
     });
     let query_label = label(move || {
+        let q = query_sig.get();
+        let displayed = mask_password(password, &q);
         with_cursor(
-            &query_sig.get(),
+            &displayed,
             query_cursor_sig.get(),
             vim_mode_sig.get(),
             blink_on.get(),
@@ -1194,7 +1264,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::{char_idx_to_byte, row_key, word_boundary_back};
+    use super::{char_idx_to_byte, mask_password, row_key, word_boundary_back};
 
     /// Regression for the empty-query → first-char highlight stuck bug.
     /// Empty match `positions=[]` MUST hash differently from `positions=[0]`,
@@ -1298,5 +1368,34 @@ mod tests {
         // " | " → walks back past all whitespace to 0.
         let s = "   ";
         assert_eq!(word_boundary_back(s, 3), 0);
+    }
+
+    // ── mask_password tests ───────────────────────────────────────────────
+
+    #[test]
+    fn mask_password_disabled_returns_original() {
+        assert_eq!(mask_password(false, "hello"), "hello");
+        assert_eq!(mask_password(false, ""), "");
+    }
+
+    #[test]
+    fn mask_password_enabled_replaces_with_bullets() {
+        assert_eq!(mask_password(true, "abc"), "●●●");
+        assert_eq!(mask_password(true, ""), "");
+    }
+
+    #[test]
+    fn mask_password_preserves_char_count_for_multibyte() {
+        // Each multibyte char must produce exactly one ● so cursor index
+        // arithmetic in with_cursor stays correct.
+        let s = "héllo"; // 5 codepoints, 6 bytes
+        let masked = mask_password(true, s);
+        assert_eq!(masked.chars().count(), s.chars().count());
+        assert_eq!(masked, "●●●●●");
+    }
+
+    #[test]
+    fn mask_password_single_char() {
+        assert_eq!(mask_password(true, "x"), "●");
     }
 }
