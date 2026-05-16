@@ -7,6 +7,7 @@
 use anyhow::{Context, Result};
 use std::process::{Command, Stdio};
 
+pub mod calc;
 pub mod clipboard;
 pub mod dmenu;
 pub mod drun;

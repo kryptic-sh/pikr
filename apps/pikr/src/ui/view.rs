@@ -191,6 +191,29 @@ impl AppState {
     /// Re-rank entries against the current query.
     pub fn rerank(&mut self) {
         let query = self.picker.query.get();
+        // Calc mode is reactive: the query IS the expression. We synthesize
+        // a single entry per evaluation instead of fuzzy-ranking a static list.
+        if matches!(self.cli_mode, CliMode::Calc) {
+            if let Some(result) = crate::modes::calc::eval(&query) {
+                let label = format!("{} = {}", query.trim(), result);
+                let entry = Entry {
+                    label,
+                    description: None,
+                    payload: crate::modes::Payload::Stdout(result),
+                };
+                self.entries = vec![Arc::new(entry)];
+                self.matches = vec![Match {
+                    index: 0,
+                    score: 0,
+                    positions: Vec::new(),
+                }];
+            } else {
+                self.entries = Vec::new();
+                self.matches = Vec::new();
+            }
+            self.picker.clamp_selected(self.matches.len());
+            return;
+        }
         let labels: Vec<&str> = self.entries.iter().map(|e| e.label.as_str()).collect();
         self.matches = self.matcher.rank(&labels, &query);
         self.matches.truncate(self.max_results);
@@ -201,6 +224,7 @@ impl AppState {
     pub fn switch_mode(&mut self, mode: CliMode) {
         self.cli_mode = mode;
         let mut m: Box<dyn crate::modes::Mode> = match mode {
+            CliMode::Calc => Box::new(crate::modes::calc::Calc),
             CliMode::Clipboard => Box::new(crate::modes::clipboard::Clipboard),
             CliMode::Dmenu => Box::new(crate::modes::dmenu::Dmenu),
             CliMode::Drun => Box::new(crate::modes::drun::Drun),
@@ -474,6 +498,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                     let cmd = buf.trim().to_string();
                     ex_buf_sig.set(None);
                     let mode_switch = match cmd.as_str() {
+                        "calc" => Some(CliMode::Calc),
                         "clipboard" => Some(CliMode::Clipboard),
                         "dmenu" => Some(CliMode::Dmenu),
                         "drun" => Some(CliMode::Drun),

@@ -17,6 +17,7 @@ pub fn run(cli: Cli) -> Result<()> {
     tracing::info!(?chosen_mode, "pikr starting");
 
     let mut mode: Box<dyn modes::Mode> = match chosen_mode {
+        Mode::Calc => Box::new(modes::calc::Calc),
         Mode::Clipboard => Box::new(modes::clipboard::Clipboard),
         Mode::Dmenu => Box::new(modes::dmenu::Dmenu),
         Mode::Drun => Box::new(modes::drun::Drun),

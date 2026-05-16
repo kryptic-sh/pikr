@@ -20,6 +20,7 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 crossbeam-channel = "0.5"
 emojis = "0.6"
+evalexpr = "11"
 floem = "0.2"
 freedesktop-desktop-entry = "0.7"
 nucleo = "0.5"
