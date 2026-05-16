@@ -21,18 +21,19 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
-/// Capture the desktop, apply heavy Gaussian blur, return PNG bytes sized
-/// to the panel. Returns `None` if capture is unsupported or fails — the
-/// caller falls back to a flat-color panel.
-pub fn capture_blurred(target_w: u32, target_h: u32) -> Option<Vec<u8>> {
+/// Capture the desktop, apply Gaussian blur at the given sigma, return PNG
+/// bytes sized to the panel. Returns `None` if capture is unsupported or
+/// fails — the caller falls back to a flat-color panel. `sigma` is applied
+/// at the downsampled scale; effective full-res blur ≈ sigma × downscale.
+pub fn capture_blurred(target_w: u32, target_h: u32, sigma: f32) -> Option<Vec<u8>> {
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    return linux::capture(target_w, target_h);
+    return linux::capture(target_w, target_h, sigma);
 
     #[cfg(target_os = "macos")]
-    return macos::capture(target_w, target_h);
+    return macos::capture(target_w, target_h, sigma);
 
     #[cfg(target_os = "windows")]
-    return windows::capture(target_w, target_h);
+    return windows::capture(target_w, target_h, sigma);
 
     #[cfg(not(any(
         target_os = "linux",
@@ -41,7 +42,7 @@ pub fn capture_blurred(target_w: u32, target_h: u32) -> Option<Vec<u8>> {
         target_os = "windows",
     )))]
     {
-        let _ = (target_w, target_h);
+        let _ = (target_w, target_h, sigma);
         None
     }
 }

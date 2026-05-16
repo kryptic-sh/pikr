@@ -14,6 +14,17 @@ fn parse_opacity(s: &str) -> Result<f32, String> {
     }
 }
 
+fn parse_blur(s: &str) -> Result<f32, String> {
+    let v: f32 = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid float"))?;
+    if (0.0..=50.0).contains(&v) {
+        Ok(v)
+    } else {
+        Err(format!("{v} is out of range 0.0..=50.0"))
+    }
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "pikr",
@@ -45,16 +56,16 @@ pub struct Cli {
     pub no_layer_shell: bool,
 
     /// Panel background alpha, 0.0 (fully transparent) to 1.0 (opaque).
-    /// Compositor must support alpha compositing for values < 1.0.
-    /// Overrides `opacity` from config when set.
+    /// When unset, defaults to 1.0 (opaque) or 0.35 (tint over a blurred
+    /// backdrop when `--blur` is also set).
     #[arg(long = "opacity", value_parser = parse_opacity)]
     pub opacity: Option<f32>,
 
-    /// Fake-glass overlay — draws procedural noise grain and a top-glow sheen
-    /// on the panel surface. Independent of `--opacity`; combine both for a
-    /// translucent frosted-glass look. Overrides `smoked` from config when set.
-    #[arg(long = "smoked")]
-    pub smoked: bool,
+    /// Blur strength (Gaussian sigma) for the backdrop glass effect. Range
+    /// 0.0..=50.0. Setting any value enables backdrop capture + blur. Omit
+    /// for no backdrop. Requires `grim` on Linux/Wayland.
+    #[arg(long = "blur", value_parser = parse_blur)]
+    pub blur: Option<f32>,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]

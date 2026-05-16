@@ -227,12 +227,12 @@ pub struct AppState {
     pub max_results: usize,
     /// Theme.
     pub theme: Theme,
-    /// Panel background alpha (0.0 transparent → 1.0 opaque). Values < 1.0
-    /// composite with the desktop; compositor must support alpha blending.
-    pub opacity: f32,
-    /// Fake-glass overlay — procedural noise grain + top-glow sheen painted
-    /// over the panel surface. Independent of `opacity`.
-    pub smoked: bool,
+    /// Panel background alpha. `None` = mode default (1.0 opaque, or 0.35
+    /// tint when `blur` is enabled). `Some(v)` overrides.
+    pub opacity: Option<f32>,
+    /// Backdrop blur sigma. `Some(v)` enables capture + blur of the desktop
+    /// behind the panel; `None` disables the effect.
+    pub blur: Option<f32>,
     /// Cached fuzzy matcher (nucleo allocates ~135KB per instance).
     pub matcher: Matcher,
 }
@@ -327,11 +327,16 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // the compositor can show what's behind (alpha < 1.0). Every inner view
     // fills with `Color::TRANSPARENT` (see `inner_bg` below) to avoid
     // stacking fills that would cancel the transparency effect.
-    let (bg, panel_bg, fg, accent, font_family, font_size, smoked, panel_height) = {
+    let (bg, panel_bg, fg, accent, font_family, font_size, blur, panel_height) = {
         let s = state.lock().unwrap();
         let t = &s.theme;
         let bg = parse_color(&t.bg);
-        let panel_bg = bg.multiply_alpha(s.opacity);
+        // Mode-aware opacity default: 0.35 tint when blur is on (so the
+        // backdrop shows through), 1.0 opaque otherwise. Explicit
+        // `--opacity` always wins.
+        let default_opacity = if s.blur.is_some() { 0.35 } else { 1.0 };
+        let opacity = s.opacity.unwrap_or(default_opacity);
+        let panel_bg = bg.multiply_alpha(opacity);
         let panel_h = crate::ui::view::INPUT_ROW_HEIGHT
             + ROW_HEIGHT * VISIBLE_ROWS as f64
             + STATUS_HEIGHT * 2.0
@@ -343,7 +348,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             parse_color(&t.accent),
             t.font.clone(),
             t.font_size,
-            s.smoked,
+            s.blur,
             panel_h,
         )
     };
@@ -531,9 +536,9 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // `border_radius` below so the backdrop image clips to the same rounded
     // rect instead of leaking pixels into the corner cutouts.
     let panel_radius = 8.0_f64;
-    let glass_overlays: Box<dyn floem::View> = if smoked {
+    let glass_overlays: Box<dyn floem::View> = if let Some(sigma) = blur {
         let backdrop: Box<dyn floem::View> =
-            match crate::backdrop::capture_blurred(panel_w, panel_h_u32) {
+            match crate::backdrop::capture_blurred(panel_w, panel_h_u32, sigma) {
                 Some(bytes) => backdrop_overlay(bytes, panel_radius)
                     .style(|s| s.absolute().width_full().height_full())
                     .into_any(),
@@ -547,13 +552,9 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         floem::views::empty().into_any()
     };
 
-    // When smoked, the panel bg is reduced to a faint tint so the backdrop
-    // shows through. Otherwise it follows `--opacity`.
-    let surface_bg = if smoked {
-        bg.multiply_alpha(0.35)
-    } else {
-        panel_bg
-    };
+    // panel_bg already bakes the mode-aware default opacity, so we use it
+    // directly — no separate surface_bg path needed.
+    let surface_bg = panel_bg;
 
     // ── Outer container with keyboard handler ──────────────────────────────
     let state_key = Arc::clone(&state);

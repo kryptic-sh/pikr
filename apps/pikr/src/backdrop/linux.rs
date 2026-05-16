@@ -15,7 +15,7 @@ use image::{DynamicImage, ImageFormat, imageops::FilterType};
 ///
 /// Returns `None` on any failure — grim missing, non-zero exit, decode error,
 /// encode error. The caller must handle `None` gracefully.
-pub fn capture(target_w: u32, target_h: u32) -> Option<Vec<u8>> {
+pub fn capture(target_w: u32, target_h: u32, sigma: f32) -> Option<Vec<u8>> {
     // ── 1. Shell out to grim ─────────────────────────────────────────────────
     let out = Command::new("grim")
         .args(["-t", "png", "-"])
@@ -31,12 +31,19 @@ pub fn capture(target_w: u32, target_h: u32) -> Option<Vec<u8>> {
     let img = image::load_from_memory(&out.stdout).ok()?.into_rgba8();
     let (screen_w, screen_h) = (img.width(), img.height());
 
-    // ── 3. Downsample → blur → upsample (much cheaper than full-res blur) ───
-    let small_w = (screen_w / 8).max(1);
-    let small_h = (screen_h / 8).max(1);
+    // ── 3. Downsample → blur → upsample (much cheaper than full-res blur).
+    //      Effective full-res sigma ≈ SIGMA × DOWNSCALE, so dialling either
+    //      knob deepens the blur. Heavy downsample + moderate sigma is
+    //      cheapest for the same visual strength.
+    const DOWNSCALE: u32 = 16;
+    let small_w = (screen_w / DOWNSCALE).max(1);
+    let small_h = (screen_h / DOWNSCALE).max(1);
 
     let small = image::imageops::resize(&img, small_w, small_h, FilterType::Triangle);
-    let blurred = image::imageops::blur(&small, 5.0);
+    let blurred = image::imageops::blur(&small, sigma);
+    // Second pass at full small-image scale for a creamier kernel — `blur()`
+    // is a separable Gaussian, so two passes ≈ √2 × the effective sigma.
+    let blurred = image::imageops::blur(&blurred, sigma);
     let sharp = image::imageops::resize(&blurred, screen_w, screen_h, FilterType::CatmullRom);
 
     // ── 4. Crop the centre slice sized to the picker panel ───────────────────

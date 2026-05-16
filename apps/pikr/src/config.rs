@@ -9,14 +9,15 @@ use std::path::Path;
 pub struct Config {
     pub max_results: usize,
     pub case_sensitive: bool,
-    /// Panel background alpha. 1.0 = fully opaque (default). Values < 1.0
-    /// require an alpha-compositing compositor (Hyprland / KWin / Sway on
-    /// Wayland; picom etc on X11).
-    pub opacity: f32,
-    /// Fake-glass overlay — procedural noise grain + top-glow sheen painted
-    /// over the panel surface. Independent of `opacity`; combine both for a
-    /// frosted-glass look. Off by default.
-    pub smoked: bool,
+    /// Panel background alpha. `None` (default) means "use the mode's
+    /// default": 1.0 when `blur` is off, 0.35 when on (so the blurred
+    /// backdrop shows through). Set explicitly to override either default.
+    /// Compositor must support alpha compositing for values < 1.0.
+    pub opacity: Option<f32>,
+    /// Backdrop blur strength (Gaussian sigma). `Some(v)` enables capture +
+    /// blur of the desktop behind the panel. `None` (default) disables the
+    /// effect. Requires `grim` on Linux/Wayland.
+    pub blur: Option<f32>,
     pub theme: Theme,
 }
 
@@ -35,8 +36,8 @@ impl Default for Config {
         Self {
             max_results: 256,
             case_sensitive: false,
-            opacity: 1.0,
-            smoked: false,
+            opacity: None,
+            blur: None,
             theme: Theme::default(),
         }
     }
