@@ -15,7 +15,7 @@ use image::{DynamicImage, ImageFormat, imageops::FilterType};
 ///
 /// Returns `None` on any failure — grim missing, non-zero exit, decode error,
 /// encode error. The caller must handle `None` gracefully.
-pub fn capture(target_w: u32, target_h: u32, sigma: f32) -> Option<Vec<u8>> {
+pub fn capture(target_w: u32, target_h: u32, sigma: f32, grayscale: bool) -> Option<Vec<u8>> {
     // ── 1. Shell out to grim ─────────────────────────────────────────────────
     let out = Command::new("grim")
         .args(["-t", "png", "-"])
@@ -43,7 +43,22 @@ pub fn capture(target_w: u32, target_h: u32, sigma: f32) -> Option<Vec<u8>> {
     let blurred = image::imageops::blur(&small, sigma);
     // Second pass at full small-image scale for a creamier kernel — `blur()`
     // is a separable Gaussian, so two passes ≈ √2 × the effective sigma.
-    let blurred = image::imageops::blur(&blurred, sigma);
+    let mut blurred = image::imageops::blur(&blurred, sigma);
+
+    // ── 3b. Optional greyscale (per-pixel Rec. 709 luma, alpha preserved) ────
+    // Applied at the downsampled scale so the cost is negligible — 1/256th the
+    // pixels of full-res. The subsequent upsample carries the desaturation.
+    if grayscale {
+        for px in blurred.pixels_mut() {
+            let [r, g, b, a] = px.0;
+            // Rec. 709 luma — perceptually-weighted RGB → grey.
+            let y = (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            px.0 = [y, y, y, a];
+        }
+    }
+
     let sharp = image::imageops::resize(&blurred, screen_w, screen_h, FilterType::CatmullRom);
 
     // ── 4. Crop the centre slice sized to the picker panel ───────────────────

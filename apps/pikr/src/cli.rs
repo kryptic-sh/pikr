@@ -67,15 +67,15 @@ pub struct Cli {
     #[arg(long = "blur", value_parser = parse_blur)]
     pub blur: Option<f32>,
 
-    /// Preset: smoked-glass look — equivalent to `--blur 1.337 --opacity 1`.
-    /// Explicit `--blur` / `--opacity` flags override the preset values.
+    /// Preset: smoked-glass look — equivalent to `--blur 2 --opacity 1`.
+    /// Also forces a greyscale backdrop. Explicit `--blur` / `--opacity`
+    /// flags override the preset values; the greyscale effect stays.
     #[arg(long = "smoked")]
     pub smoked: bool,
 }
 
-/// Preset blur sigma when `--smoked` is passed. 1.337 is intentionally
-/// subtle — enough to read the backdrop through, not enough to obliterate it.
-const SMOKED_BLUR: f32 = 1.337;
+/// Preset blur sigma when `--smoked` is passed.
+const SMOKED_BLUR: f32 = 2.0;
 
 /// Preset opacity when `--smoked` is passed. Fully opaque panel over the
 /// blurred backdrop.
