@@ -67,23 +67,36 @@ pub struct Cli {
     #[arg(long = "blur", value_parser = parse_blur)]
     pub blur: Option<f32>,
 
-    /// Preset: smoked-glass look — equivalent to `--blur 10 --opacity 0.8`.
+    /// Preset: smoked-glass look — equivalent to `--blur 1.337 --opacity 1`.
     /// Explicit `--blur` / `--opacity` flags override the preset values.
     #[arg(long = "smoked")]
     pub smoked: bool,
 }
 
+/// Preset blur sigma when `--smoked` is passed. 1.337 is intentionally
+/// subtle — enough to read the backdrop through, not enough to obliterate it.
+const SMOKED_BLUR: f32 = 1.337;
+
+/// Preset opacity when `--smoked` is passed. Fully opaque panel over the
+/// blurred backdrop.
+const SMOKED_OPACITY: f32 = 1.0;
+
 impl Cli {
     /// Resolve the effective `blur` value after applying presets.
     /// Explicit `--blur` wins over `--smoked`.
     pub fn effective_blur(&self) -> Option<f32> {
-        self.blur.or(if self.smoked { Some(10.0) } else { None })
+        self.blur
+            .or(if self.smoked { Some(SMOKED_BLUR) } else { None })
     }
 
     /// Resolve the effective `opacity` value after applying presets.
     /// Explicit `--opacity` wins over `--smoked`.
     pub fn effective_opacity(&self) -> Option<f32> {
-        self.opacity.or(if self.smoked { Some(0.8) } else { None })
+        self.opacity.or(if self.smoked {
+            Some(SMOKED_OPACITY)
+        } else {
+            None
+        })
     }
 }
 
@@ -112,14 +125,14 @@ mod smoked_tests {
     #[test]
     fn smoked_alone_uses_both_preset_values() {
         let c = parse(&["--smoked"]);
-        assert_eq!(c.effective_blur(), Some(10.0));
-        assert_eq!(c.effective_opacity(), Some(0.8));
+        assert_eq!(c.effective_blur(), Some(SMOKED_BLUR));
+        assert_eq!(c.effective_opacity(), Some(SMOKED_OPACITY));
     }
 
     #[test]
     fn smoked_with_explicit_opacity_keeps_preset_blur() {
         let c = parse(&["--smoked", "--opacity=0.3"]);
-        assert_eq!(c.effective_blur(), Some(10.0));
+        assert_eq!(c.effective_blur(), Some(SMOKED_BLUR));
         assert_eq!(c.effective_opacity(), Some(0.3));
     }
 
@@ -127,7 +140,7 @@ mod smoked_tests {
     fn smoked_with_explicit_blur_keeps_preset_opacity() {
         let c = parse(&["--smoked", "--blur=20"]);
         assert_eq!(c.effective_blur(), Some(20.0));
-        assert_eq!(c.effective_opacity(), Some(0.8));
+        assert_eq!(c.effective_opacity(), Some(SMOKED_OPACITY));
     }
 
     #[test]
