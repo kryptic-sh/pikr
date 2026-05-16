@@ -97,3 +97,50 @@ pub enum Mode {
     Clipboard,
     Calc,
 }
+
+#[cfg(test)]
+mod smoked_tests {
+    use super::*;
+    use clap::Parser;
+
+    fn parse(args: &[&str]) -> Cli {
+        let mut v = vec!["pikr"];
+        v.extend_from_slice(args);
+        Cli::parse_from(v)
+    }
+
+    #[test]
+    fn smoked_alone_uses_both_preset_values() {
+        let c = parse(&["--smoked"]);
+        assert_eq!(c.effective_blur(), Some(10.0));
+        assert_eq!(c.effective_opacity(), Some(0.8));
+    }
+
+    #[test]
+    fn smoked_with_explicit_opacity_keeps_preset_blur() {
+        let c = parse(&["--smoked", "--opacity=0.3"]);
+        assert_eq!(c.effective_blur(), Some(10.0));
+        assert_eq!(c.effective_opacity(), Some(0.3));
+    }
+
+    #[test]
+    fn smoked_with_explicit_blur_keeps_preset_opacity() {
+        let c = parse(&["--smoked", "--blur=20"]);
+        assert_eq!(c.effective_blur(), Some(20.0));
+        assert_eq!(c.effective_opacity(), Some(0.8));
+    }
+
+    #[test]
+    fn smoked_with_both_explicit_is_a_noop() {
+        let c = parse(&["--smoked", "--blur=20", "--opacity=0.3"]);
+        assert_eq!(c.effective_blur(), Some(20.0));
+        assert_eq!(c.effective_opacity(), Some(0.3));
+    }
+
+    #[test]
+    fn no_smoked_no_preset() {
+        let c = parse(&[]);
+        assert_eq!(c.effective_blur(), None);
+        assert_eq!(c.effective_opacity(), None);
+    }
+}
