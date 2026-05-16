@@ -9,6 +9,12 @@ use std::path::Path;
 pub struct Config {
     pub max_results: usize,
     pub case_sensitive: bool,
+    /// Opt-in smoked-glass panel — the view bg is painted with reduced alpha
+    /// so what's behind shows through. Off by default so pikr looks like
+    /// Raycast / Alfred (solid panel). Compositor support varies; on Wayland
+    /// this needs an alpha-compositing compositor (Hyprland / KWin / Sway /
+    /// wlroots — works), on X11 a compositing WM (picom etc).
+    pub smoked: bool,
     pub theme: Theme,
 }
 
@@ -27,6 +33,7 @@ impl Default for Config {
         Self {
             max_results: 256,
             case_sensitive: false,
+            smoked: false,
             theme: Theme::default(),
         }
     }

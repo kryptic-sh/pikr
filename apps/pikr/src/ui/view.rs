@@ -39,13 +39,19 @@ fn parse_color(hex: &str) -> Color {
 // ─── Match-highlight helpers ─────────────────────────────────────────────────
 
 /// Build a horizontal stack of spans with matched chars highlighted in accent.
+/// Colors flip when `selected_sig.get() == mi` so text stays readable on the
+/// solid-accent selection background.
+#[allow(clippy::too_many_arguments)]
 fn highlighted_label(
     label_str: String,
     positions: Vec<u32>,
+    mi: usize,
+    selected_sig: RwSignal<usize>,
     fg: Color,
     accent: Color,
+    selected_text: Color,
+    selected_hl: Color,
 ) -> impl IntoView {
-    // Walk codepoints, split into (normal, highlighted) runs.
     let mut spans: Vec<(String, bool)> = Vec::new();
     let pos_set: std::collections::HashSet<u32> = positions.into_iter().collect();
     for (i, c) in label_str.chars().enumerate() {
@@ -58,14 +64,20 @@ fn highlighted_label(
         }
         spans.push((c.to_string(), hl));
     }
-    let fg_clone = fg;
-    let accent_clone = accent;
     let items: Vec<Box<dyn floem::View>> = spans
         .into_iter()
         .map(move |(text, hl)| {
-            let color = if hl { accent_clone } else { fg_clone };
             label(move || text.clone())
-                .style(move |s| s.color(color))
+                .style(move |s| {
+                    let selected = selected_sig.get() == mi;
+                    let color = match (selected, hl) {
+                        (true, true) => selected_hl,
+                        (true, false) => selected_text,
+                        (false, true) => accent,
+                        (false, false) => fg,
+                    };
+                    s.color(color)
+                })
                 .into_any()
         })
         .collect();
@@ -87,63 +99,94 @@ fn entry_row(
     accent: Color,
     bg: Color,
 ) -> impl IntoView {
-    // Selection-blended background: 55% accent over bg — visible enough
-    // to spot at a glance against a busy dark theme.
-    let selected_bg = Color::rgba8(
-        ((accent.r as u16 * 55 + bg.r as u16 * 45) / 100) as u8,
-        ((accent.g as u16 * 55 + bg.g as u16 * 45) / 100) as u8,
-        ((accent.b as u16 * 55 + bg.b as u16 * 45) / 100) as u8,
-        255,
-    );
+    // Raycast-style: solid accent fill on selection, dark fg flipped in so
+    // text stays legible against the light accent.
+    let selected_bg = accent;
+    let selected_text = bg;
+    // Description on a selected row uses a less-faded text so the
+    // sub-text stays readable when surrounded by full-contrast accent fill.
+    let desc_color = fg.multiply_alpha(0.55);
+    let desc_selected = bg.multiply_alpha(0.75);
 
-    let label_view = highlighted_label(entry.label.clone(), positions, fg, accent);
+    let label_view = highlighted_label(
+        entry.label.clone(),
+        positions,
+        mi,
+        selected_sig,
+        fg,
+        accent,
+        selected_text,
+        selected_text,
+    );
 
     let desc_view: Box<dyn floem::View> = match &entry.description {
         Some(d) => {
             let d = d.clone();
-            let dim = fg.multiply_alpha(0.6);
             label(move || d.clone())
-                .style(move |s| s.color(dim).margin_left(8.0))
+                .style(move |s| {
+                    let selected = selected_sig.get() == mi;
+                    s.color(if selected { desc_selected } else { desc_color })
+                        .margin_left(DESC_GAP)
+                })
                 .into_any()
         }
         None => floem::views::empty().into_any(),
     };
 
-    h_stack((label_view.into_any(), desc_view)).style(move |s| {
-        // Subscribe to selected_sig HERE so highlight tracks selection
-        // without rebuilding the row (dyn_stack keys items by `mi`, so
-        // a per-row bg baked in at construction would be stuck).
-        let row_bg = if selected_sig.get() == mi {
-            selected_bg
-        } else {
-            bg
-        };
-        // Fixed row height so the viewport math stays exact. items_center
-        // vertically aligns the (label, description) pair inside the row
-        // instead of stacking them to the top.
-        s.width_full()
-            .height(ROW_HEIGHT)
-            .padding_horiz(10.0)
-            .items_center()
-            .background(row_bg)
-    })
+    // Single-click accepts the entry — pikr exits immediately. Captures the
+    // payload at row construction so the handler doesn't need an AppState
+    // reference. Selection mirrors the click target first so the highlight
+    // briefly tracks the click before exit (cosmetic if the exit is instant).
+    let click_payload = entry.payload.clone();
+
+    h_stack((label_view.into_any(), desc_view))
+        .style(move |s| {
+            let selected = selected_sig.get() == mi;
+            // Unselected rows fill TRANSPARENT so the outer panel's bg
+            // (possibly smoked) shows through — stacking own opaque-ish
+            // fills cancels the smoked effect.
+            let row_bg = if selected {
+                selected_bg
+            } else {
+                Color::TRANSPARENT
+            };
+            s.width_full()
+                .height(ROW_HEIGHT)
+                .padding_horiz(HORIZ_PAD)
+                .items_center()
+                .background(row_bg)
+                .border_radius(6.0)
+                .cursor(floem::style::CursorStyle::Pointer)
+        })
+        .on_click_stop(move |_| {
+            selected_sig.set(mi);
+            if let Err(e) = crate::modes::execute(&click_payload) {
+                eprintln!("pikr: execute error: {e}");
+            }
+            std::process::exit(0);
+        })
 }
 
 /// Pixel height per result row, in logical pixels. Used both by the row
 /// itself and by the scroll viewport so the viewport stays an exact
-/// multiple of row height.
-pub(crate) const ROW_HEIGHT: f64 = 26.0;
+/// multiple of row height. Sized to give Raycast-like breathing room.
+pub(crate) const ROW_HEIGHT: f64 = 40.0;
 /// Number of result rows the viewport shows. Window height is sized
 /// from this plus the prompt + status chrome.
-pub(crate) const VISIBLE_ROWS: usize = 10;
-/// Prompt+query row height, matches ROW_HEIGHT for visual consistency.
-pub(crate) const INPUT_ROW_HEIGHT: f64 = 30.0;
+pub(crate) const VISIBLE_ROWS: usize = 8;
+/// Prompt+query row height — slightly taller than result rows so the
+/// input gets visual prominence (Raycast pattern).
+pub(crate) const INPUT_ROW_HEIGHT: f64 = 56.0;
 /// Status bar height.
-pub(crate) const STATUS_HEIGHT: f64 = 24.0;
+pub(crate) const STATUS_HEIGHT: f64 = 28.0;
+/// Horizontal padding shared by input row, result rows, status bar.
+pub(crate) const HORIZ_PAD: f64 = 18.0;
+/// Spacing between a row's label and its description.
+pub(crate) const DESC_GAP: f64 = 14.0;
 
 // ─── Ex command bar ──────────────────────────────────────────────────────────
 
-fn ex_bar(ex_buf: RwSignal<Option<String>>, fg: Color, bg: Color) -> impl IntoView {
+fn ex_bar(ex_buf: RwSignal<Option<String>>, fg: Color) -> impl IntoView {
     label(move || match ex_buf.get() {
         Some(s) => format!(":{s}"),
         None => String::new(),
@@ -151,9 +194,8 @@ fn ex_bar(ex_buf: RwSignal<Option<String>>, fg: Color, bg: Color) -> impl IntoVi
     .style(move |s| {
         s.width_full()
             .height(22.0)
-            .padding_left(4.0)
+            .padding_horiz(HORIZ_PAD)
             .color(fg)
-            .background(bg)
     })
 }
 
@@ -183,6 +225,11 @@ pub struct AppState {
     pub max_results: usize,
     /// Theme.
     pub theme: Theme,
+    /// Smoked-glass effect — view bg painted with reduced alpha so the
+    /// compositor blurs / shows what's behind. Window framebuffer alpha is
+    /// independent (always transparent so the compositor's window-corner
+    /// rounding clips cleanly).
+    pub smoked: bool,
     /// Cached fuzzy matcher (nucleo allocates ~135KB per instance).
     pub matcher: Matcher,
 }
@@ -269,17 +316,32 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     };
 
     // Derive theme colors upfront (read-only, no signal needed).
-    let (bg, fg, accent, font_family, font_size) = {
+    //
+    // `bg` is always the opaque theme color — used wherever bg is treated as
+    // a *color value* (selected-row text, status-bar fg, etc).
+    //
+    // `panel_bg` is what fills the outer container surface. When `smoked`
+    // is on, this is `bg` with alpha=0.85 so the compositor can blur / show
+    // through behind. To make that visible, every inner view fills with
+    // `Color::TRANSPARENT` (see `inner_bg` below) and inherits panel_bg —
+    // stacking opaque-ish fills cancels the smoked effect (1 − 0.15ⁿ → 1).
+    let (bg, panel_bg, fg, accent, font_family, font_size) = {
         let s = state.lock().unwrap();
         let t = &s.theme;
+        let bg = parse_color(&t.bg);
+        // 0.6 alpha is aggressive enough that the backdrop visibly shows
+        // through text-busy regions, not just the empty scrollbar track.
+        let panel_bg = if s.smoked { bg.multiply_alpha(0.6) } else { bg };
         (
-            parse_color(&t.bg),
+            bg,
+            panel_bg,
             parse_color(&t.fg),
             parse_color(&t.accent),
             t.font.clone(),
             t.font_size,
         )
     };
+    let inner_bg = Color::TRANSPARENT;
     let prompt_str = {
         let s = state.lock().unwrap();
         s.prompt.clone()
@@ -291,6 +353,9 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     let rev: RwSignal<u64> = RwSignal::new(0);
 
     // ── Input row ─────────────────────────────────────────────────────────
+    // Input row text is ~1.4× larger than result rows — Raycast pattern
+    // for visual hierarchy between query and list.
+    let input_font_size = font_size * 1.4;
     let prompt_label = {
         let p = prompt_str.clone();
         let ff = font_family.clone();
@@ -301,7 +366,11 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 format!("{}: ", p)
             }
         })
-        .style(move |s| s.color(accent).font_family(ff.clone()).font_size(font_size))
+        .style(move |s| {
+            s.color(accent)
+                .font_family(ff.clone())
+                .font_size(input_font_size)
+        })
     };
 
     let ff_q = font_family.clone();
@@ -348,19 +417,22 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     .style(move |s| {
         s.color(fg)
             .font_family(ff_q.clone())
-            .font_size(font_size)
+            .font_size(input_font_size)
             .flex_grow(1.0)
-            .margin_left(6.0)
+            .margin_left(8.0)
     });
 
+    // Subtle divider between input and list — Raycast uses a 1px line at
+    // ~25% accent rather than a solid accent stripe.
+    let divider = accent.multiply_alpha(0.25);
     let input_row = h_stack((prompt_label, query_label)).style(move |s| {
         s.width_full()
             .height(INPUT_ROW_HEIGHT)
-            .padding_horiz(10.0)
+            .padding_horiz(HORIZ_PAD)
             .items_center()
-            .background(bg)
+            .background(inner_bg)
             .border_bottom(1.0)
-            .border_color(accent)
+            .border_color(divider)
     });
 
     // ── Result list ────────────────────────────────────────────────────────
@@ -411,7 +483,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             let sel = selected_sig.get() as f64;
             Rect::from_origin_size((0.0, sel * ROW_HEIGHT), KurboSize::new(1.0, ROW_HEIGHT))
         })
-        .style(move |s| s.width_full().height(viewport_height).background(bg));
+        .style(move |s| s.width_full().height(viewport_height).background(inner_bg));
 
     // ── Status bar ─────────────────────────────────────────────────────────
     let ff_s = font_family.clone();
@@ -426,7 +498,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     .style(move |s| {
         s.width_full()
             .height(STATUS_HEIGHT)
-            .padding_horiz(10.0)
+            .padding_horiz(HORIZ_PAD)
             .items_center()
             .color(bg)
             .background(accent)
@@ -435,7 +507,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     });
 
     // ── Ex bar ─────────────────────────────────────────────────────────────
-    let ex = ex_bar(ex_buf_sig, fg, bg);
+    let ex = ex_bar(ex_buf_sig, fg);
 
     // ── Outer container with keyboard handler ──────────────────────────────
     let state_key = Arc::clone(&state);
@@ -450,7 +522,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         // borders off floating popups anyway).
         s.width_full()
             .height_full()
-            .background(bg)
+            .background(panel_bg)
             .border(1.5)
             .border_color(accent)
             .border_radius(8.0)
@@ -643,5 +715,5 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         rev.update(|r| *r += 1);
         EventPropagation::Stop
     })
-    .style(move |s| s.width_full().height_full().background(bg))
+    .style(move |s| s.width_full().height_full().background(panel_bg))
 }

@@ -32,6 +32,12 @@ pub struct Cli {
     /// without wlr-layer-shell (Mutter/GNOME) or for X11.
     #[arg(long = "no-layer-shell")]
     pub no_layer_shell: bool,
+
+    /// Smoked-glass background — paints the panel with reduced alpha so the
+    /// compositor blurs / shows what's behind. Overrides `smoked` from
+    /// config when set. Compositor must support alpha compositing.
+    #[arg(long = "smoked")]
+    pub smoked: bool,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]

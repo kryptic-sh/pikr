@@ -44,6 +44,7 @@ pub fn run(cli: Cli) -> Result<()> {
         prompt: cli.prompt.unwrap_or_default(),
         max_results: cfg.max_results,
         theme: cfg.theme,
+        smoked: cli.smoked || cfg.smoked,
         matcher,
     }));
 
@@ -61,9 +62,15 @@ pub fn run(cli: Cli) -> Result<()> {
         let viewport_h = ROW_HEIGHT * VISIBLE_ROWS as f64;
         // Ex gutter same height as status when shown, 0 otherwise; reserve it.
         let chrome_h = INPUT_ROW_HEIGHT + STATUS_HEIGHT + STATUS_HEIGHT + 6.0;
-        let size = floem::kurbo::Size::new(640.0, viewport_h + chrome_h);
+        let size = floem::kurbo::Size::new(720.0, viewport_h + chrome_h);
 
         let use_layer_shell = !cli.no_layer_shell && std::env::var_os("WAYLAND_DISPLAY").is_some();
+
+        // The window framebuffer is ALWAYS transparent so the compositor's
+        // window-corner rounding (Hyprland / KWin / etc.) can clip cleanly
+        // without leaking the opaque framebuffer fill into the rounded
+        // cutout. The `transparent` config / CLI flag instead controls the
+        // alpha of the VIEW's background fill — see view.rs.
 
         if use_layer_shell {
             tracing::info!("using wlr-layer-shell path");
