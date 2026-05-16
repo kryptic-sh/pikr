@@ -46,3 +46,11 @@ allow-wildcard-paths = true
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+    # Epic 4 — Wayland layer-shell + X11 dock attrs live on forks of
+    # lapce/floem and rust-windowing/winit until the patches land upstream.
+    "https://github.com/mxaddict/floem.git",
+    "https://github.com/mxaddict/winit.git",
+    # Transitive: floem pins vger-rs to a lapce fork via git rev.
+    "https://github.com/lapce/vger-rs",
+]
