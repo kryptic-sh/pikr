@@ -150,7 +150,11 @@ fn entry_row(
             let border_color = if selected { accent } else { row_fill };
             s.width_full()
                 .height(ROW_HEIGHT)
-                .margin(10.0)
+                // Only vertical margin — horizontal "10px gap" comes from
+                // the dyn_stack's `padding_horiz(10)` instead, so the row
+                // never sits in an unpainted margin region at the right
+                // edge (PreMultiplied alpha would show desktop there).
+                .margin_vert(5.0)
                 .padding_horiz(HORIZ_PAD)
                 .items_center()
                 .background(row_fill)
@@ -172,9 +176,19 @@ fn entry_row(
 /// itself and by the scroll viewport so the viewport stays an exact
 /// multiple of row height. Sized to give Raycast-like breathing room.
 pub(crate) const ROW_HEIGHT: f64 = 40.0;
+/// Vertical spacing added by `margin_vert(5)` on each row — 5px top and
+/// bottom collapse to 10px total between adjacent rows.
+pub(crate) const ROW_GAP: f64 = 10.0;
+/// Effective layout height of one row including its top+bottom margin.
+/// Used by viewport sizing AND scroll-follow math so the cursor rect
+/// stays aligned with the row's actual y-position.
+pub(crate) const ROW_PITCH: f64 = ROW_HEIGHT + ROW_GAP;
 /// Number of result rows the viewport shows. Window height is sized
 /// from this plus the prompt + status chrome.
 pub(crate) const VISIBLE_ROWS: usize = 8;
+/// Rows of buffer kept visible above/below the selected row before the
+/// viewport scrolls (vim-style `scrolloff`).
+pub(crate) const SCROLLOFF: f64 = 1.0;
 /// Prompt+query row height — slightly taller than result rows so the
 /// input gets visual prominence (Raycast pattern).
 pub(crate) const INPUT_ROW_HEIGHT: f64 = 56.0;
@@ -445,12 +459,14 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     });
 
     // Input is its own bordered card — thin accent outline at 35% alpha,
-    // rounded corners matching the row selection style.
+    // rounded corners matching the row selection style. Horizontal inset
+    // comes from the v_stack's `padding(10)`; only the bottom margin
+    // creates the gap before the result list.
     let input_border = accent.multiply_alpha(0.35);
     let input_row = h_stack((prompt_label, query_label)).style(move |s| {
         s.width_full()
             .height(INPUT_ROW_HEIGHT)
-            .margin(10.0)
+            .margin_bottom(10.0)
             .padding_horiz(HORIZ_PAD)
             .items_center()
             .background(inner_bg)
@@ -492,9 +508,6 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         },
     )
     .style(move |s| {
-        // Fill row-margin gaps so the panel reads as a single opaque
-        // surface — without this, the PreMultiplied alpha framebuffer
-        // shows through the inter-row spacing.
         s.width_full()
             .flex_direction(FlexDirection::Column)
             .background(inner_bg)
@@ -508,11 +521,20 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // `ensure_visible` follows the cursor: every selection change emits
     // a Rect at the row's exact position and floem scrolls the viewport
     // just enough to keep it on-screen.
-    let viewport_height = ROW_HEIGHT * VISIBLE_ROWS as f64;
+    let viewport_height = ROW_PITCH * VISIBLE_ROWS as f64;
     let scrollable = scroll(result_list)
         .ensure_visible(move || {
+            // Vim-style scrolloff: the visibility rect spans the selected
+            // row plus `SCROLLOFF` rows above and below it. floem scrolls
+            // the moment any of that 3-row band would leave the viewport,
+            // so the cursor never sits at the very edge before the list
+            // moves.
             let sel = selected_sig.get() as f64;
-            Rect::from_origin_size((0.0, sel * ROW_HEIGHT), KurboSize::new(1.0, ROW_HEIGHT))
+            let start_row = (sel - SCROLLOFF).max(0.0);
+            let end_row = sel + 1.0 + SCROLLOFF;
+            let top = start_row * ROW_PITCH;
+            let height = (end_row - start_row) * ROW_PITCH;
+            Rect::from_origin_size((0.0, top), KurboSize::new(1.0, height))
         })
         .style(move |s| s.width_full().height(viewport_height).background(inner_bg));
 
@@ -571,8 +593,15 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             // glass FIRST so it paints below, content AFTER so it paints on
             // top. Stack order = paint order in floem.
             glass_overlays,
-            v_stack((input_row, scrollable, ex.into_any(), status))
-                .style(move |s| s.width_full().height_full().background(inner_bg)),
+            v_stack((input_row, scrollable, ex.into_any(), status)).style(move |s| {
+                // 10px outer inset for all children. Paints inner_bg in
+                // its full bounds (including the padding region) so no
+                // unpainted strip can leak the framebuffer.
+                s.width_full()
+                    .height_full()
+                    .padding(10.0)
+                    .background(inner_bg)
+            }),
         ))
         .style(move |s| s.width_full().height_full().background(inner_bg)),
     )
@@ -776,5 +805,9 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         rev.update(|r| *r += 1);
         EventPropagation::Stop
     })
-    .style(|s| s.width_full().height_full())
+    // The outermost picker view paints `surface_bg` so the wgpu
+    // PreMultiplied-alpha framebuffer never shows through any inner gap
+    // (row margins, padding, between-section spacing, …). When opacity is
+    // < 1.0 or blur is enabled this surface_bg is already alpha-reduced.
+    .style(move |s| s.width_full().height_full().background(surface_bg))
 }

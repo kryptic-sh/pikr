@@ -62,8 +62,8 @@ pub fn run(cli: Cli) -> Result<()> {
         // status + ex_bar gutter + outer border slack. Keep in step with
         // ui::view::{ROW_HEIGHT, VISIBLE_ROWS, INPUT_ROW_HEIGHT,
         // STATUS_HEIGHT} so the window doesn't trim a half-row.
-        use crate::ui::view::{INPUT_ROW_HEIGHT, ROW_HEIGHT, STATUS_HEIGHT, VISIBLE_ROWS};
-        let viewport_h = ROW_HEIGHT * VISIBLE_ROWS as f64;
+        use crate::ui::view::{INPUT_ROW_HEIGHT, ROW_PITCH, STATUS_HEIGHT, VISIBLE_ROWS};
+        let viewport_h = ROW_PITCH * VISIBLE_ROWS as f64;
         // Ex gutter same height as status when shown, 0 otherwise; reserve it.
         let chrome_h = INPUT_ROW_HEIGHT + STATUS_HEIGHT + STATUS_HEIGHT + 6.0;
         let size = floem::kurbo::Size::new(720.0, viewport_h + chrome_h);
