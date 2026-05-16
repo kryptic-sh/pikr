@@ -1006,7 +1006,7 @@ dependencies = [
 [[package]]
 name = "floem-winit"
 version = "0.29.5"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell#cb74adc15dc526894e0a88786e7c9006c112d5eb"
+source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell#87afff935cbb30bac2d594a9f205f491672eff8d"
 dependencies = [
  "ahash",
  "android-activity",
