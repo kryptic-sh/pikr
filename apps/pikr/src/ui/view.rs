@@ -151,48 +151,30 @@ fn entry_row(
     // briefly tracks the click before exit (cosmetic if the exit is instant).
     let click_payload = entry.payload.clone();
 
-    // Outline-style selection: nest the row h_stack inside a container whose
-    // background colour acts as the "border" ring. This avoids floem's
-    // center-aligned stroke, whose outer half falls outside the rounded-rect
-    // bg fill on a PreMultiplied-alpha surface → opaque corner leak.
-    //
-    // Outer container:  accent fill when selected, row_fill when not.
-    // Inner h_stack:    always row_fill, margin(1) to expose the outer ring.
-    //
-    // The whole outer container carries margin_vert(5) so the pitch stays
-    // ROW_HEIGHT + ROW_GAP = 50px.
-    let inner_row = h_stack((label_view.into_any(), desc_view)).style(move |s| {
-        let selected = selected_sig.get() == mi;
-        // When selected: margin(1) exposes the outer accent ring.
-        // When not:      margin(0) — outer has same colour, no ring.
-        let m = if selected { 1.0_f64 } else { 0.0_f64 };
-        s.width_full()
-            // Total h_stack height = ROW_HEIGHT − 2*margin so the
-            // outer container ends up exactly ROW_HEIGHT tall.
-            .height(ROW_HEIGHT - 2.0 * m)
-            .padding_horiz(HORIZ_PAD)
-            .items_center()
-            .background(row_fill)
-            .border_radius(if selected { 5.0 } else { 6.0 })
-            .margin(m)
-    });
-    container(inner_row.on_click_stop(move |_| {
-        selected_sig.set(mi);
-        if let Err(e) = crate::modes::execute(&click_payload) {
-            eprintln!("pikr: execute error: {e}");
-        }
-        std::process::exit(0);
-    }))
-    .style(move |s| {
-        let selected = selected_sig.get() == mi;
-        let ring_color = if selected { accent } else { row_fill };
-        s.width_full()
-            .height(ROW_HEIGHT)
-            .margin_vert(5.0)
-            .background(ring_color)
-            .border_radius(6.0)
-            .cursor(floem::style::CursorStyle::Pointer)
-    })
+    // Single-layer row. Selection = solid accent fill (Raycast-style); no
+    // floem `.border()` — center-aligned stroke leaks via PreMultiplied
+    // alpha. Vertical spacing comes from `padding_vert(5)` so the 10px
+    // gap between rows sits INSIDE this row's bbox and is filled by the
+    // row's own bg paint, never by an unpainted parent margin.
+    h_stack((label_view.into_any(), desc_view))
+        .style(move |s| {
+            let selected = selected_sig.get() == mi;
+            let row_bg = if selected { accent } else { row_fill };
+            s.width_full()
+                .height(ROW_HEIGHT + 10.0)
+                .padding_vert(5.0)
+                .padding_horiz(HORIZ_PAD)
+                .items_center()
+                .background(row_bg)
+                .cursor(floem::style::CursorStyle::Pointer)
+        })
+        .on_click_stop(move |_| {
+            selected_sig.set(mi);
+            if let Err(e) = crate::modes::execute(&click_payload) {
+                eprintln!("pikr: execute error: {e}");
+            }
+            std::process::exit(0);
+        })
 }
 
 /// Pixel height per result row, in logical pixels. Used both by the row
