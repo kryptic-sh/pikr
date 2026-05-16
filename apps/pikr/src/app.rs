@@ -80,8 +80,21 @@ pub fn run(cli: Cli) -> Result<()> {
                 .window(move |_| view(), Some(window_config))
                 .run();
         } else {
-            tracing::info!("using plain window path (no-layer-shell or no WAYLAND_DISPLAY)");
-            let window_config = WindowConfig::default().size(size).with_transparent(true);
+            // When falling back from wlr-layer-shell, distinguish two cases:
+            //   * WAYLAND_DISPLAY unset → assume X11 → tag window as a Dock so
+            //     the WM keeps it on top and out of the taskbar.
+            //   * WAYLAND_DISPLAY set but --no-layer-shell → Mutter/GNOME
+            //     style Wayland session → plain xdg_toplevel, no X11 attrs.
+            let likely_x11 = std::env::var_os("WAYLAND_DISPLAY").is_none();
+            tracing::info!(likely_x11, "using plain window path");
+            let mut window_config = WindowConfig::default().size(size).with_transparent(true);
+            if likely_x11 {
+                use floem::window::{X11Config, X11WindowType};
+                window_config = window_config.with_x11_config(X11Config {
+                    window_types: vec![X11WindowType::Dock],
+                    override_redirect: false,
+                });
+            }
             floem::Application::new()
                 .window(move |_| view(), Some(window_config))
                 .run();

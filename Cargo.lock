@@ -942,7 +942,7 @@ checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 [[package]]
 name = "floem"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#f180fa3a92567d4e90a194b715e3b81ce7a3c0d5"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#6fda59530e56876594dca0953ba77968375f6d3e"
 dependencies = [
  "bitflags 2.11.1",
  "clipboard-win 3.1.1",
@@ -981,7 +981,7 @@ dependencies = [
 [[package]]
 name = "floem-editor-core"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#f180fa3a92567d4e90a194b715e3b81ce7a3c0d5"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#6fda59530e56876594dca0953ba77968375f6d3e"
 dependencies = [
  "bitflags 2.11.1",
  "itertools",
@@ -1054,7 +1054,7 @@ dependencies = [
 [[package]]
 name = "floem_reactive"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#f180fa3a92567d4e90a194b715e3b81ce7a3c0d5"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#6fda59530e56876594dca0953ba77968375f6d3e"
 dependencies = [
  "smallvec",
 ]
@@ -1062,7 +1062,7 @@ dependencies = [
 [[package]]
 name = "floem_renderer"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#f180fa3a92567d4e90a194b715e3b81ce7a3c0d5"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#6fda59530e56876594dca0953ba77968375f6d3e"
 dependencies = [
  "cosmic-text",
  "crossbeam",
@@ -1080,7 +1080,7 @@ dependencies = [
 [[package]]
 name = "floem_tiny_skia_renderer"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#f180fa3a92567d4e90a194b715e3b81ce7a3c0d5"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#6fda59530e56876594dca0953ba77968375f6d3e"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1097,7 +1097,7 @@ dependencies = [
 [[package]]
 name = "floem_vger_renderer"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#f180fa3a92567d4e90a194b715e3b81ce7a3c0d5"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#6fda59530e56876594dca0953ba77968375f6d3e"
 dependencies = [
  "anyhow",
  "floem-vger",
