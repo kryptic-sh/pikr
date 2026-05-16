@@ -21,13 +21,13 @@ pub fn run(cli: Cli) -> Result<()> {
     if let Some(msg) = cli.message.clone() {
         let theme = cfg.theme.clone();
         let windowed = cli.no_layer_shell;
-        let width = cli.width.unwrap_or(720);
         let view = move || message_view(msg.clone(), theme.clone(), windowed);
 
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         {
             use floem::window::WindowConfig;
 
+            let width = cli.width.unwrap_or(720);
             let size = floem::kurbo::Size::new(width as f64, 120.0);
             let use_layer_shell =
                 !cli.no_layer_shell && std::env::var_os("WAYLAND_DISPLAY").is_some();

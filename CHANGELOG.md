@@ -8,6 +8,17 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-16
+
+### Fixed
+
+- Build broke on macOS in v0.3.0 because `let width = cli.width.unwrap_or(720)`
+  in the message-modal path was declared outside the
+  `#[cfg(any(target_os = "linux", target_os = "freebsd"))]` block that uses it,
+  so on `apple-darwin` the compiler flagged it as `unused-variables` (which is
+  `-D warnings` in CI). Moved the declaration inside the cfg block. macOS
+  builds + the gated AUR / Alpine / Homebrew publishing jobs now run.
+
 ## [0.3.0] - 2026-05-16
 
 ### Added
@@ -248,7 +259,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.1
 [0.3.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.0
 [0.2.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.2.0
 
