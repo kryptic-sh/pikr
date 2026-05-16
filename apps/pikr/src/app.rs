@@ -35,9 +35,6 @@ pub fn run(cli: Cli) -> Result<()> {
     let mut matches = matcher.rank(&labels, "");
     matches.truncate(cfg.max_results);
 
-    // Resolve --smoked preset BEFORE moving cli.prompt below (methods take &self).
-    let opacity = cli.effective_opacity().or(cfg.opacity);
-    let blur = cli.effective_blur().or(cfg.blur);
     let app_state = Arc::new(Mutex::new(AppState {
         picker,
         entries,
@@ -47,8 +44,6 @@ pub fn run(cli: Cli) -> Result<()> {
         prompt: cli.prompt.unwrap_or_default(),
         max_results: cfg.max_results,
         theme: cfg.theme,
-        opacity,
-        blur,
         matcher,
     }));
 

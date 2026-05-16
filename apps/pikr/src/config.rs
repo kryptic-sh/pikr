@@ -9,15 +9,6 @@ use std::path::Path;
 pub struct Config {
     pub max_results: usize,
     pub case_sensitive: bool,
-    /// Panel background alpha. `None` (default) means "use the mode's
-    /// default": 1.0 when `blur` is off, 0.35 when on (so the blurred
-    /// backdrop shows through). Set explicitly to override either default.
-    /// Compositor must support alpha compositing for values < 1.0.
-    pub opacity: Option<f32>,
-    /// Backdrop blur strength (Gaussian sigma). `Some(v)` enables capture +
-    /// blur of the desktop behind the panel. `None` (default) disables the
-    /// effect. Requires `grim` on Linux/Wayland.
-    pub blur: Option<f32>,
     pub theme: Theme,
 }
 
@@ -27,6 +18,8 @@ pub struct Theme {
     pub bg: String,
     pub fg: String,
     pub accent: String,
+    pub muted: String,
+    pub selected_bg: String,
     pub font: String,
     pub font_size: f32,
 }
@@ -36,8 +29,6 @@ impl Default for Config {
         Self {
             max_results: 256,
             case_sensitive: false,
-            opacity: None,
-            blur: None,
             theme: Theme::default(),
         }
     }
@@ -45,10 +36,13 @@ impl Default for Config {
 
 impl Default for Theme {
     fn default() -> Self {
+        // Tokyonight-night palette to match the user's rofi reference.
         Self {
-            bg: "#1e1e2e".into(),
-            fg: "#cdd6f4".into(),
-            accent: "#89b4fa".into(),
+            bg: "#292E42".into(),
+            fg: "#C0CAF5".into(),
+            accent: "#21D1D3".into(),
+            muted: "#979FC2".into(),
+            selected_bg: "#3E4153".into(),
             font: "Hack Nerd Font Mono".into(),
             font_size: 14.0,
         }
