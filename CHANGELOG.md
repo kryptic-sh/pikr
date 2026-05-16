@@ -8,6 +8,53 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-16
+
+### Added
+
+- **Frecency scoring**: tracks accept count + last-used timestamp per payload,
+  per CLI mode, in `$XDG_STATE_HOME/pikr/usage.toml`. Adds a
+  `count · 0.5^(Δt / 14d) · 80` score bonus (saturating u16) to nucleo ranks so
+  apps the user actually launches surface first — including on the initial
+  empty-query rank. Both keyboard and mouse accept paths bump usage; visual-mode
+  multi-launch fsyncs once. New `picker::frecency::Usage` module.
+- **Per-mode query history**: most-recent-first list capped at 100 per mode,
+  persisted to `$XDG_STATE_HOME/pikr/history.toml`. New `Ctrl-P` / `Ctrl-N`
+  recall (`Action::HistoryPrev` / `HistoryNext`, fzf convention) — Up/Down keeps
+  navigating the result list. The live query is stashed in `history_draft` on
+  the first hop back so `Ctrl-N` past index 0 restores it. Any subsequent edit
+  (Insert/Backspace/Delete/Ctrl-W/Ctrl-U) clears the recall cursor. Push happens
+  on Accept with non-empty query (dedupes to front, trims whitespace, ignores
+  empty/blank). New `picker::history::History` module.
+- **`-P` / `--password`** (#13): masks the query bar with `●` (U+25CF) per
+  character. Real chars still drive the matcher and the payload on accept — only
+  the rendered glyph is replaced. New pure `mask_password` helper preserves
+  codepoint count so cursor positioning in `with_cursor` stays correct. New
+  `AppState.password: bool`.
+- **`--filter <text>`** with aliases `--query` / `--prefill` / `--input-text`
+  (#14): pre-fill the query string on launch and place the caret at the end
+  before the first rerank. The initial `matcher.rank` now uses the prefill query
+  (instead of `""`) so the list reflects the seed on first paint.
+- **`-e` / `--message <text>`** (#15): non-interactive message overlay.
+  `app::run` short-circuits before any picker / mode setup and renders a new
+  `message_view` that re-uses the panel chrome (bg, border, radius, padding)
+  with a single centered label — no input row, no list, no status bar. Escape
+  dismisses via `std::process::exit(0)`. When `--message` is set, `--show` /
+  `--dmenu` / `--filter` are ignored.
+- **`--width <px>` and `-l` / `--lines <n>`** (#16): override the default window
+  width (was hard-coded 720) and visible-row count (was `VISIBLE_ROWS = 8`).
+  Pixels-only for v1; the `'40%'` syntax in the rofi spec is explicitly out of
+  scope.
+
+### Tests
+
+- 88 → 110 (+22): 8 frecency, 8 history, 2 keymap (Ctrl-P/Ctrl-N), 20 CLI
+  parsing, 4 `mask_password`.
+
+### Closes
+
+- #13 password masking, #14 prefill, #15 message modal, #16 sizing.
+
 ## [0.2.2] - 2026-05-16
 
 ### Fixed
@@ -201,7 +248,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.0
 [0.2.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.2.0
 
 ## [0.1.0] - 2026-05-16
