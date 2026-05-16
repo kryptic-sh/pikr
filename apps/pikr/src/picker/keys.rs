@@ -35,6 +35,8 @@ pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool) -> Option<Actio
             Key::Named(NamedKey::Escape) => Some(Action::EnterNormal),
             Key::Named(NamedKey::Enter) => Some(Action::Accept),
             Key::Named(NamedKey::Backspace) => Some(Action::Backspace),
+            // Space arrives as NamedKey::Space, not Key::Character(" ").
+            Key::Named(NamedKey::Space) => Some(Action::InsertChar(' ')),
             // Arrow-key navigation works in Insert too so the user can
             // type a query and immediately steer with the arrows without
             // bouncing back to Normal mode.
@@ -209,6 +211,14 @@ mod tests {
         assert_eq!(home, Some(Action::Top));
         let end = key_to_action(&s, &Key::Named(NamedKey::End), false);
         assert_eq!(end, Some(Action::Bottom));
+    }
+
+    #[test]
+    fn insert_space_inserts_space() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let a = key_to_action(&s, &Key::Named(NamedKey::Space), false);
+        assert_eq!(a, Some(Action::InsertChar(' ')));
     }
 
     #[test]

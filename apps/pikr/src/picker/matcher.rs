@@ -123,6 +123,17 @@ mod tests {
     }
 
     #[test]
+    fn rofi_does_not_match_fonts_or_tf2() {
+        let mut m = Matcher::new();
+        let out = m.rank(&["Fonts", "Team Fortress 2"], "rofi");
+        assert!(
+            out.is_empty(),
+            "expected no matches, got: {:?}",
+            out.iter().map(|x| x.index).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn match_positions_populated() {
         let mut m = Matcher::new();
         let out = m.rank(&["Firefox"], "fox");
