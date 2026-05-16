@@ -19,6 +19,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+crossbeam-channel.workspace = true
 floem.workspace = true
 freedesktop-desktop-entry.workspace = true
 nucleo.workspace = true

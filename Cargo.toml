@@ -18,6 +18,7 @@ authors = ["mxaddict <mxaddict@kryptic.sh>"]
 [workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+crossbeam-channel = "0.5"
 floem = "0.2"
 freedesktop-desktop-entry = "0.7"
 nucleo = "0.5"

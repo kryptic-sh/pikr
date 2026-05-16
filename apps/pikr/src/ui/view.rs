@@ -7,10 +7,11 @@ use std::sync::{Arc, Mutex};
 use floem::{
     IntoView,
     event::{Event, EventListener, EventPropagation},
+    ext_event::create_signal_from_channel,
     keyboard::{Key, NamedKey},
     kurbo::{Rect, Size as KurboSize},
     peniko::Color,
-    reactive::{RwSignal, SignalGet, SignalUpdate},
+    reactive::{RwSignal, SignalGet, SignalUpdate, create_effect},
     style::FlexDirection,
     views::{Decorators, container, dyn_stack, h_stack, label, scroll, stack_from_iter, v_stack},
 };
@@ -280,14 +281,42 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // Cursor glyph follows vim mode: thin bar in Insert (caret between
     // chars), block in Normal (vim-style block cursor). Both are appended
     // to the query end since pikr does not track an in-string cursor
-    // position.
+    // position. `blink_on` toggles every ~530ms via a background thread;
+    // when off we render a space to keep the line width stable in the
+    // monospace font.
+    let blink_on: RwSignal<bool> = RwSignal::new(true);
+    {
+        let (tx, rx) = crossbeam_channel::unbounded::<()>();
+        let tick_sig = create_signal_from_channel(rx);
+        create_effect(move |_| {
+            // Track every tick from the channel; flip the visibility bit.
+            let _ = tick_sig.get();
+            blink_on.update(|b| *b = !*b);
+        });
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(530));
+                if tx.send(()).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    // Reset cursor to visible on every keystroke so the caret never
+    // hides mid-type; the blink timer carries on toggling after.
+    create_effect(move |_| {
+        let _ = query_sig.get();
+        blink_on.set(true);
+    });
     let query_label = label(move || {
         let q = query_sig.get();
+        let visible = blink_on.get();
         let cursor = match vim_mode_sig.get() {
             VimMode::Insert => '\u{258F}', // ▏ LEFT ONE EIGHTH BLOCK
             VimMode::Normal => '\u{2588}', // █ FULL BLOCK
         };
-        format!("{}{}", q, cursor)
+        let glyph = if visible { cursor } else { ' ' };
+        format!("{}{}", q, glyph)
     })
     .style(move |s| {
         s.color(fg)
@@ -324,12 +353,16 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 .map(|(mi, m)| {
                     // Arc::clone — cheap refcount bump, not a String/Vec clone.
                     let entry = Arc::clone(&s.entries[m.index]);
-                    (mi, entry, m.positions.clone())
+                    (mi, m.index, entry, m.positions.clone())
                 })
                 .collect::<Vec<_>>()
         },
-        |(mi, _, _)| *mi,
-        move |(mi, entry, positions)| {
+        // Key by (slot, entry-index). Slot alone is wrong: after the match
+        // list shrinks, the kept slots still reference the old entry baked
+        // in at the previous render. Including m.index forces a rebuild
+        // whenever the slot now points at a different entry.
+        |(mi, idx, _, _)| ((*mi as u64) << 32) | (*idx as u64),
+        move |(mi, _idx, entry, positions)| {
             let ff = ff_list.clone();
             entry_row(entry, positions, mi, selected_sig, fg, accent, bg)
                 .style(move |s| s.font_family(ff.clone()).font_size(font_size))
