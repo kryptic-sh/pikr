@@ -38,6 +38,19 @@ fn parse_color(hex: &str) -> Color {
     Color::rgb8(r, g, b)
 }
 
+/// Linearly blend `over` onto `under` at `t` (0..=1) and return an opaque
+/// result. Used for borders / dividers that visually want partial-alpha
+/// appearance — `multiply_alpha` on a border would leave the pixel
+/// translucent, and on the PreMultiplied-alpha wgpu surface that means
+/// the framebuffer (and thus the desktop) shows through.
+fn blend(over: Color, under: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let r = (over.r as f32 * t + under.r as f32 * (1.0 - t)) as u8;
+    let g = (over.g as f32 * t + under.g as f32 * (1.0 - t)) as u8;
+    let b = (over.b as f32 * t + under.b as f32 * (1.0 - t)) as u8;
+    Color::rgb8(r, g, b)
+}
+
 // ─── Match-highlight helpers ─────────────────────────────────────────────────
 
 /// Build a horizontal stack of spans with matched chars highlighted in accent.
@@ -462,7 +475,10 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // rounded corners matching the row selection style. Horizontal inset
     // comes from the v_stack's `padding(10)`; only the bottom margin
     // creates the gap before the result list.
-    let input_border = accent.multiply_alpha(0.35);
+    // Pre-blend accent against bg so the border is opaque but reads like
+    // a faded accent — `multiply_alpha` would leave partial-alpha pixels
+    // and the framebuffer would show through.
+    let input_border = blend(accent, bg, 0.35);
     let input_row = h_stack((prompt_label, query_label)).style(move |s| {
         s.width_full()
             .height(INPUT_ROW_HEIGHT)
