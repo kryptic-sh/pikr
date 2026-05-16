@@ -38,7 +38,7 @@ impl Default for Theme {
             bg: "#1e1e2e".into(),
             fg: "#cdd6f4".into(),
             accent: "#89b4fa".into(),
-            font: "monospace".into(),
+            font: "Hack Nerd Font Mono".into(),
             font_size: 14.0,
         }
     }
