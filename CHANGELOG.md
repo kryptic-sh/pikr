@@ -8,7 +8,130 @@ and this project adheres to
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-05-16
+## [0.2.1] - 2026-05-16
+
+### Added
+
+- **Visual mode** for range selection — `v` / `V` / `<C-v>` from Normal anchors
+  at the current row; `j`/`k`/`gg`/`G` extend the range. `<CR>` executes every
+  selected entry (multi-launch); `<Esc>` (or pressing `v` again) returns to
+  Normal. Selected rows render with a distinct accent-tinted bg; the cursor row
+  keeps the deeper `selected_bg` + accent ring so j/k destination stays visible.
+  New `Action::EnterVisual`, `PickerState::visual_anchor` signal, and 5 keymap
+  regression tests.
+- **In-query caret editing** (Insert mode). The query bar is now a real text
+  input: `←` / `→` / `Home` / `End` / `Ctrl-A` / `Ctrl-E` / `Ctrl-B` / `Ctrl-F`
+  move the caret; `Ctrl-W` deletes the word back; `Ctrl-U` clears to start;
+  `Delete` / `Ctrl-D` deletes forward. Insert / Backspace mutate at the caret.
+  `PickerState::query_cursor` carries the codepoint index; `with_cursor` renders
+  the vim caret glyph at that position.
+- **`--mode` flag** (`normal` / `insert` / `visual`) to override the default
+  startup mode. `VimMode` derives `clap::ValueEnum` so new variants are
+  auto-exposed; default is now `insert` so users can type immediately.
+- **`--windowed`** alias for `--no-layer-shell` (clearer name for the X11 /
+  Mutter / GNOME fallback path).
+- **Status bar** at the bottom: vim mode pill (INSERT/NORMAL/VISUAL with
+  per-mode bg), current CLI mode name, `selected/total` counter on the right.
+  Sticky in flex layout — never pushed off-screen.
+- **No-results message** rendered inside the scroll viewport when the match list
+  is empty. Shows `No results for "…"` mid-query, `No entries.` when the mode
+  produced nothing at all.
+- **Virtual scrolling** for the result list. Switched from `dyn_stack` to
+  `virtual_stack` so only viewport rows are built — emoji mode (~1800 entries)
+  now paints instantly.
+- **Description-based matching**: `Matcher::rank` now takes
+  `&[(label, Option<description>)]` and matches both fields per entry. Label and
+  description score equally (raw nucleo, summed when both hit); matched
+  characters in the description are highlighted in `accent` the same way as the
+  title.
+- **Hover bg on rows** — mouse hover shows `blend(accent, selected_bg, 0.18)`;
+  the accent ring stays reserved for keyboard / programmatic selection so hover
+  and selection are visually distinct.
+- **Tests**: 70 total. New coverage:
+  - `row_key` distinguishes empty/grow/same-len/desc positions (5 tests)
+  - Caret helpers `char_idx_to_byte`, `word_boundary_back` (5 tests)
+  - Matcher description hits + label-vs-desc equal scoring (3 tests)
+  - Keymap caret bindings + visual transitions (11 tests)
+  - Signal-set-under-mutex deadlock regression (`batch` discipline) (1 test)
+  - `clamp_selected` no-op-when-unchanged semantics (3 tests)
+  - Nucleo matcher poison/rebuild path (2 tests)
+
+### Changed
+
+- **Hand-rolled query bar** — dropped floem's `text_input` widget which ate
+  `Esc` to clear its own focus (3 presses to quit from Insert). Now Insert →
+  `Esc` → Normal (1 press), Normal → `Esc` → quit (1 press), so quitting from
+  Insert is the expected 2 presses.
+- **Cursor glyph follows vim mode**: thin caret `▏` in Insert, block `█` in
+  Normal / Visual. Blinks every 530 ms; resets to visible on every keystroke or
+  ex-buf mutation.
+- **Ex bar**: always rendered (`display: None` removed) so toggling `:` no
+  longer reflows the panel and bumps the status bar. Backspace on an empty `:`
+  dismisses ex mode (readline / vim convention). Background matches the status
+  bar; thin gap to the status bar below.
+- **Window chrome in `--windowed` mode**: drops the rounded panel border (the OS
+  already paints one) and forces an opaque framebuffer so vger SDF / text AA
+  doesn't leak the desktop through every glyph edge.
+- **Matcher refactor**: `Match` carries `positions` (label) and `desc_positions`
+  separately; UI highlights each field with its own span list. Empty-query
+  fast-path still returns every entry in order.
+
+### Fixed
+
+- **No-results UI hang** (signal/mutex deadlock). `AppState::rerank` held
+  `Mutex<AppState>` while calling `clamp_selected(0)` which called
+  `selected.set(0)`. floem fires signal subscribers synchronously inside `set`;
+  subscribers (status bar count, virtual_stack data fn, empty-state label) all
+  re-locked the same mutex → permanent deadlock on every no-match query. Wrapped
+  the rerank critical section in `reactive::batch(…)` so subscriber dispatch is
+  queued until the mutex guard is dropped. Added an explicit regression test
+  that would hang the test thread if `batch` is ever removed.
+- **Emoji-mode hang on every keystroke**. The matcher was installing and
+  restoring the global panic hook on every nucleo `fuzzy_indices` call
+  (`take_hook` / `set_hook` lock a global mutex); doing it ~1800× per keystroke
+  starved the UI thread. Hook is now installed once per `rank()` pass.
+- **Emoji search by name**: emoji `label` was the glyph alone, so typing `smile`
+  matched nothing. Label is now `"<glyph> <name>"` (payload still the bare
+  glyph) so the name is searchable.
+- **Nucleo prefilter-assert recovery**: a panic inside `fuzzy_indices` used to
+  leave the matcher's slab in a half-mutated state and the next call hung. The
+  matcher is now marked `poisoned`, the rest of the rank pass is skipped, and
+  the inner `NucleoMatcher` is lazily rebuilt on the _next_ call (drop runs on a
+  quiescent instance, not mid-allocation).
+- **Empty-list scroll feedback loop**: `ensure_visible` returned a non-zero rect
+  for a phantom row when `matches.is_empty()`, so scroll re-adjusted every
+  frame. Returns `Rect::ZERO` when empty.
+- **Result list height**: `min_height(0)` on the scroll so the flex container
+  can shrink it past its intrinsic content height — otherwise a long match list
+  pushed the ex/status bars off-panel.
+- **Match-highlight cache invalidation**: dyn_stack key was `(mi << 32) | idx`,
+  so typing `au` → `auda` against "Audacity" reused the cached row view and the
+  old `positions=[0,1]` rendering survived. Key now mixes the full positions vec
+  (and description positions) via FNV-1a with a proper non-zero offset basis — a
+  0-start collided across `[]` and `[0]` and left highlights stuck after
+  clearing the query.
+- **Text-input width quirk** (early-iter fix, now obsolete after the hand-rolled
+  query bar): floem's inner `text_node` falls back to Auto width (~20 chars)
+  when the outer node uses `flex_grow` only — need `width_pct(100.0)` +
+  `height_full()` to fill.
+- **Background-blur path** layered the backdrop under content, clipped at the
+  panel corners, and adopted `--smoked` semantics in `--blur=<sigma>`
+  - `--opacity` overrides. Removed the greyscale option; blur-only pipeline
+    ships.
+- **Wayland framebuffer leak** at SDF / text edges. Patched the floem fork to
+  pick `CompositeAlphaMode::Opaque` when `with_transparent(false)` (instead of
+  always `PreMultiplied`); the `--windowed` path now uses it. Patched the
+  vger-rs fork to use `One + OneMinusSrcAlpha` for the alpha blend factor (was
+  `SrcAlpha`, which squared the alpha at antialiased edges); the layer-shell
+  path now composites cleanly against the desktop. floem fork commit
+  `mxaddict/floem@b2a4d00f`; vger fork at `mxaddict/vger-rs@2534cd22`.
+
+### Internal
+
+- floem fork repointed to mxaddict/vger-rs alpha-blend branch.
+- `cargo clippy` and `cargo fmt` clean.
+
+[0.2.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.2.1
 
 ### Added
 
@@ -68,7 +191,7 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.2.1...HEAD
 [0.2.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.2.0
 
 ## [0.1.0] - 2026-05-16

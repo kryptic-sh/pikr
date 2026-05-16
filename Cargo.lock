@@ -957,7 +957,7 @@ checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 [[package]]
 name = "floem"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b70f8099d2b67625af007e6c5a6006aadf1717ac"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b2a4d00f8834024a3275fe834286ff5ed6349f14"
 dependencies = [
  "bitflags 2.11.1",
  "clipboard-win 3.1.1",
@@ -996,7 +996,7 @@ dependencies = [
 [[package]]
 name = "floem-editor-core"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b70f8099d2b67625af007e6c5a6006aadf1717ac"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b2a4d00f8834024a3275fe834286ff5ed6349f14"
 dependencies = [
  "bitflags 2.11.1",
  "itertools",
@@ -1009,7 +1009,7 @@ dependencies = [
 [[package]]
 name = "floem-vger"
 version = "0.3.0"
-source = "git+https://github.com/lapce/vger-rs?rev=cfdec48f8093837f06be6fecfd75b0e5a0c5a3cf#cfdec48f8093837f06be6fecfd75b0e5a0c5a3cf"
+source = "git+https://github.com/mxaddict/vger-rs?rev=2534cd2285c57af4109fe8cda81e23d98de21b12#2534cd2285c57af4109fe8cda81e23d98de21b12"
 dependencies = [
  "cosmic-text",
  "euclid",
@@ -1069,7 +1069,7 @@ dependencies = [
 [[package]]
 name = "floem_reactive"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b70f8099d2b67625af007e6c5a6006aadf1717ac"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b2a4d00f8834024a3275fe834286ff5ed6349f14"
 dependencies = [
  "smallvec",
 ]
@@ -1077,7 +1077,7 @@ dependencies = [
 [[package]]
 name = "floem_renderer"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b70f8099d2b67625af007e6c5a6006aadf1717ac"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b2a4d00f8834024a3275fe834286ff5ed6349f14"
 dependencies = [
  "cosmic-text",
  "crossbeam",
@@ -1095,7 +1095,7 @@ dependencies = [
 [[package]]
 name = "floem_tiny_skia_renderer"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b70f8099d2b67625af007e6c5a6006aadf1717ac"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b2a4d00f8834024a3275fe834286ff5ed6349f14"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1112,7 +1112,7 @@ dependencies = [
 [[package]]
 name = "floem_vger_renderer"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b70f8099d2b67625af007e6c5a6006aadf1717ac"
+source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell#b2a4d00f8834024a3275fe834286ff5ed6349f14"
 dependencies = [
  "anyhow",
  "floem-vger",
@@ -2360,7 +2360,7 @@ checksum = "5be167a7af36ee22fe3115051bc51f6e6c7054c9348e28deb4f49bd6f705a315"
 
 [[package]]
 name = "pikr"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2369,6 +2369,7 @@ dependencies = [
  "evalexpr",
  "floem",
  "freedesktop-desktop-entry",
+ "im",
  "image",
  "nucleo",
  "serde",

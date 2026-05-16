@@ -7,7 +7,7 @@ members = [
 default-members = ["apps/pikr"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT"
@@ -20,6 +20,8 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 crossbeam-channel = "0.5"
 emojis = "0.6"
+# Persistent Vector for floem's virtual_stack VirtualVector impl. O(1) clone.
+im = "15"
 evalexpr = "11"
 floem = "0.2"
 freedesktop-desktop-entry = "0.7"

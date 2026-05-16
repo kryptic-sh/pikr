@@ -24,6 +24,7 @@ emojis.workspace = true
 evalexpr.workspace = true
 floem.workspace = true
 freedesktop-desktop-entry.workspace = true
+im.workspace = true
 image.workspace = true
 nucleo.workspace = true
 serde.workspace = true

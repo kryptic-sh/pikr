@@ -15,12 +15,24 @@ pub enum Action {
     Bottom,
     EnterInsert,
     EnterNormal,
+    EnterVisual,
     StartSearch,
     StartEx,
     Accept,
     Cancel,
     InsertChar(char),
     Backspace,
+    // Query-bar caret editing (Insert mode).
+    CursorLeft,
+    CursorRight,
+    CursorHome,
+    CursorEnd,
+    /// Delete the char to the right of the caret (Delete key).
+    DeleteForward,
+    /// Delete the word to the left of the caret (Ctrl-W, readline).
+    DeleteWordBack,
+    /// Delete from the caret to the start of the query (Ctrl-U, readline).
+    DeleteToLineStart,
 }
 
 /// Translate a floem key event into an `Action` given the current vim mode.
@@ -31,124 +43,159 @@ pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool) -> Option<Actio
     let vim_mode = state.vim_mode.get();
 
     match vim_mode {
+        // Visual mode shares the Normal motion vocabulary (j/k/G/gg/arrows/
+        // pgup/pgdn/Home/End) — `v` extends the range instead of starting a
+        // new one. Escape collapses back to Normal.
+        VimMode::Visual => match key {
+            Key::Named(NamedKey::Escape) => {
+                state.count.set(None);
+                Some(Action::EnterNormal)
+            }
+            // `v` / `V` / `<C-v>` in Visual collapses back to Normal (vim
+            // semantics: same trigger toggles the mode off).
+            Key::Character(s) if s.as_str() == "v" || s.as_str() == "V" => {
+                Some(Action::EnterNormal)
+            }
+            Key::Character(s) if s.as_str() == "v" && ctrl => Some(Action::EnterNormal),
+            _ => normal_or_visual_key(state, key, ctrl),
+        },
+
         VimMode::Insert => match key {
             Key::Named(NamedKey::Escape) => Some(Action::EnterNormal),
             Key::Named(NamedKey::Enter) => Some(Action::Accept),
             Key::Named(NamedKey::Backspace) => Some(Action::Backspace),
+            Key::Named(NamedKey::Delete) => Some(Action::DeleteForward),
             // Space arrives as NamedKey::Space, not Key::Character(" ").
             Key::Named(NamedKey::Space) => Some(Action::InsertChar(' ')),
-            // Arrow-key navigation works in Insert too so the user can
-            // type a query and immediately steer with the arrows without
-            // bouncing back to Normal mode.
+            // Caret navigation inside the query text.
+            Key::Named(NamedKey::ArrowLeft) => Some(Action::CursorLeft),
+            Key::Named(NamedKey::ArrowRight) => Some(Action::CursorRight),
+            // Home / End in Insert: caret to start / end of query. The list
+            // top / bottom motions live on Normal-mode keymap.
+            Key::Named(NamedKey::Home) => Some(Action::CursorHome),
+            Key::Named(NamedKey::End) => Some(Action::CursorEnd),
+            // Arrow-up / down still steer the result list so the user can
+            // type and pick without bouncing to Normal.
             Key::Named(NamedKey::ArrowDown) => Some(Action::MoveDown(1)),
             Key::Named(NamedKey::ArrowUp) => Some(Action::MoveUp(1)),
             Key::Named(NamedKey::PageDown) => Some(Action::PageDown),
             Key::Named(NamedKey::PageUp) => Some(Action::PageUp),
-            Key::Named(NamedKey::Home) => Some(Action::Top),
-            Key::Named(NamedKey::End) => Some(Action::Bottom),
             Key::Character(s) => {
                 let c = s.chars().next()?;
+                // Readline-style Ctrl-shortcuts on the query bar.
+                if ctrl {
+                    return match c {
+                        'a' => Some(Action::CursorHome),
+                        'e' => Some(Action::CursorEnd),
+                        'b' => Some(Action::CursorLeft),
+                        'f' => Some(Action::CursorRight),
+                        'w' => Some(Action::DeleteWordBack),
+                        'u' => Some(Action::DeleteToLineStart),
+                        'd' => Some(Action::DeleteForward),
+                        _ => None,
+                    };
+                }
                 Some(Action::InsertChar(c))
             }
             _ => None,
         },
 
-        VimMode::Normal => {
-            // Ex mode started by `:` — handled outside this function by the
-            // view wiring, which intercepts the key before calling here.
-            match key {
-                Key::Named(NamedKey::Escape) => {
-                    // Clear count on Escape.
-                    state.count.set(None);
-                    Some(Action::Cancel)
+        VimMode::Normal => match key {
+            Key::Named(NamedKey::Escape) => {
+                state.count.set(None);
+                Some(Action::Cancel)
+            }
+            _ => normal_or_visual_key(state, key, ctrl),
+        },
+    }
+}
+
+/// Shared keymap for Normal and Visual modes. Both interpret the same motion
+/// vocabulary (j/k/G/gg/arrows/count prefix); the mode-specific arms
+/// (Escape, `v`-to-start, `v`-to-end) are handled in `key_to_action`.
+fn normal_or_visual_key(state: &PickerState, key: &Key, ctrl: bool) -> Option<Action> {
+    match key {
+        Key::Named(NamedKey::Enter) => Some(Action::Accept),
+        Key::Named(NamedKey::ArrowDown) => Some(Action::MoveDown(state.take_count())),
+        Key::Named(NamedKey::ArrowUp) => Some(Action::MoveUp(state.take_count())),
+        Key::Named(NamedKey::PageDown) => {
+            state.count.set(None);
+            Some(Action::PageDown)
+        }
+        Key::Named(NamedKey::PageUp) => {
+            state.count.set(None);
+            Some(Action::PageUp)
+        }
+        Key::Named(NamedKey::Home) => {
+            state.count.set(None);
+            Some(Action::Top)
+        }
+        Key::Named(NamedKey::End) => {
+            state.count.set(None);
+            Some(Action::Bottom)
+        }
+        Key::Character(s) => {
+            let c = s.chars().next()?;
+
+            if c.is_ascii_digit() && c != '0' {
+                state.push_count_digit(c.to_digit(10).unwrap());
+                return None;
+            }
+            if c == '0' && state.count.get().is_none() {
+                return None;
+            }
+            if c == '0' {
+                state.push_count_digit(0);
+                return None;
+            }
+
+            match c {
+                'j' => {
+                    let n = state.take_count();
+                    Some(Action::MoveDown(n))
                 }
-                Key::Named(NamedKey::Enter) => Some(Action::Accept),
-                Key::Named(NamedKey::ArrowDown) => Some(Action::MoveDown(state.take_count())),
-                Key::Named(NamedKey::ArrowUp) => Some(Action::MoveUp(state.take_count())),
-                Key::Named(NamedKey::PageDown) => {
-                    state.count.set(None);
-                    Some(Action::PageDown)
+                'k' => {
+                    let n = state.take_count();
+                    Some(Action::MoveUp(n))
                 }
-                Key::Named(NamedKey::PageUp) => {
-                    state.count.set(None);
-                    Some(Action::PageUp)
-                }
-                Key::Named(NamedKey::Home) => {
-                    state.count.set(None);
-                    Some(Action::Top)
-                }
-                Key::Named(NamedKey::End) => {
+                'G' => {
                     state.count.set(None);
                     Some(Action::Bottom)
                 }
-                Key::Character(s) => {
-                    let c = s.chars().next()?;
-
-                    // Count prefix: digits before a motion.
-                    if c.is_ascii_digit() && c != '0' {
-                        state.push_count_digit(c.to_digit(10).unwrap());
-                        return None; // accumulating, no action yet
-                    }
-                    // '0' alone means Top (gg shorthand) only when count is None.
-                    if c == '0' && state.count.get().is_none() {
-                        // Vim `0` goes to line start; here treat as no-op
-                        // (gg / G are top/bottom). Just clear.
-                        return None;
-                    }
-                    // '0' as part of count prefix.
-                    if c == '0' {
-                        state.push_count_digit(0);
-                        return None;
-                    }
-
-                    match c {
-                        'j' => {
-                            let n = state.take_count();
-                            Some(Action::MoveDown(n))
-                        }
-                        'k' => {
-                            let n = state.take_count();
-                            Some(Action::MoveUp(n))
-                        }
-                        'G' => {
-                            state.count.set(None);
-                            Some(Action::Bottom)
-                        }
-                        'g' => {
-                            // Single `g` — the second `g` is handled on the
-                            // next keystroke in the view layer via `g_pending`.
-                            // Returning None here lets the view accumulate.
-                            None
-                        }
-                        'i' => {
-                            state.count.set(None);
-                            Some(Action::EnterInsert)
-                        }
-                        '/' => {
-                            state.count.set(None);
-                            Some(Action::StartSearch)
-                        }
-                        ':' => {
-                            state.count.set(None);
-                            Some(Action::StartEx)
-                        }
-                        'd' if ctrl => {
-                            state.count.set(None);
-                            Some(Action::PageDown)
-                        }
-                        'u' if ctrl => {
-                            state.count.set(None);
-                            Some(Action::PageUp)
-                        }
-                        _ => {
-                            state.count.set(None);
-                            None
-                        }
-                    }
+                'g' => None,
+                'i' => {
+                    state.count.set(None);
+                    Some(Action::EnterInsert)
                 }
-                _ => None,
+                // `v` / `V` / `<C-v>` start Visual from Normal (and toggle
+                // off when already in Visual — handled at the call site).
+                'v' | 'V' => {
+                    state.count.set(None);
+                    Some(Action::EnterVisual)
+                }
+                '/' => {
+                    state.count.set(None);
+                    Some(Action::StartSearch)
+                }
+                ':' => {
+                    state.count.set(None);
+                    Some(Action::StartEx)
+                }
+                'd' if ctrl => {
+                    state.count.set(None);
+                    Some(Action::PageDown)
+                }
+                'u' if ctrl => {
+                    state.count.set(None);
+                    Some(Action::PageUp)
+                }
+                _ => {
+                    state.count.set(None);
+                    None
+                }
             }
         }
+        _ => None,
     }
 }
 
@@ -157,7 +204,12 @@ mod tests {
     use super::*;
 
     fn make_state() -> PickerState {
-        PickerState::new()
+        let s = PickerState::new();
+        // `PickerState::new()` defaults to Insert (so the user can type on
+        // launch). The Normal-mode keymap tests below expect Normal — reset
+        // here so they keep exercising the same dispatch path.
+        s.vim_mode.set(VimMode::Normal);
+        s
     }
 
     #[test]
@@ -166,6 +218,60 @@ mod tests {
         s.vim_mode.set(VimMode::Insert);
         let a = key_to_action(&s, &Key::Character("a".into()), false);
         assert_eq!(a, Some(Action::InsertChar('a')));
+    }
+
+    #[test]
+    fn insert_left_right_arrow_move_caret() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let left = key_to_action(&s, &Key::Named(NamedKey::ArrowLeft), false);
+        assert_eq!(left, Some(Action::CursorLeft));
+        let right = key_to_action(&s, &Key::Named(NamedKey::ArrowRight), false);
+        assert_eq!(right, Some(Action::CursorRight));
+    }
+
+    #[test]
+    fn insert_home_end_caret() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let home = key_to_action(&s, &Key::Named(NamedKey::Home), false);
+        assert_eq!(home, Some(Action::CursorHome));
+        let end = key_to_action(&s, &Key::Named(NamedKey::End), false);
+        assert_eq!(end, Some(Action::CursorEnd));
+    }
+
+    #[test]
+    fn insert_ctrl_a_e_caret() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let ca = key_to_action(&s, &Key::Character("a".into()), true);
+        assert_eq!(ca, Some(Action::CursorHome));
+        let ce = key_to_action(&s, &Key::Character("e".into()), true);
+        assert_eq!(ce, Some(Action::CursorEnd));
+    }
+
+    #[test]
+    fn insert_ctrl_w_deletes_word() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let cw = key_to_action(&s, &Key::Character("w".into()), true);
+        assert_eq!(cw, Some(Action::DeleteWordBack));
+    }
+
+    #[test]
+    fn insert_ctrl_u_deletes_to_line_start() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let cu = key_to_action(&s, &Key::Character("u".into()), true);
+        assert_eq!(cu, Some(Action::DeleteToLineStart));
+    }
+
+    #[test]
+    fn insert_delete_key_forward() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let d = key_to_action(&s, &Key::Named(NamedKey::Delete), false);
+        assert_eq!(d, Some(Action::DeleteForward));
     }
 
     #[test]
@@ -245,6 +351,46 @@ mod tests {
         let s = make_state();
         let a = key_to_action(&s, &Key::Named(NamedKey::Enter), false);
         assert_eq!(a, Some(Action::Accept));
+    }
+
+    #[test]
+    fn normal_v_enters_visual() {
+        let s = make_state();
+        let a = key_to_action(&s, &Key::Character("v".into()), false);
+        assert_eq!(a, Some(Action::EnterVisual));
+    }
+
+    #[test]
+    fn normal_caps_v_enters_visual() {
+        let s = make_state();
+        let a = key_to_action(&s, &Key::Character("V".into()), false);
+        assert_eq!(a, Some(Action::EnterVisual));
+    }
+
+    #[test]
+    fn visual_jk_moves_cursor() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Visual);
+        let down = key_to_action(&s, &Key::Character("j".into()), false);
+        assert_eq!(down, Some(Action::MoveDown(1)));
+        let up = key_to_action(&s, &Key::Character("k".into()), false);
+        assert_eq!(up, Some(Action::MoveUp(1)));
+    }
+
+    #[test]
+    fn visual_v_toggles_back_to_normal() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Visual);
+        let a = key_to_action(&s, &Key::Character("v".into()), false);
+        assert_eq!(a, Some(Action::EnterNormal));
+    }
+
+    #[test]
+    fn visual_escape_returns_to_normal() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Visual);
+        let a = key_to_action(&s, &Key::Named(NamedKey::Escape), false);
+        assert_eq!(a, Some(Action::EnterNormal));
     }
 
     #[test]

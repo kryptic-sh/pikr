@@ -2,6 +2,8 @@
 
 use std::sync::{Arc, Mutex};
 
+use floem::reactive::SignalUpdate;
+
 use crate::cli::{Cli, Mode};
 use crate::config::Config;
 use crate::modes;
@@ -30,9 +32,15 @@ pub fn run(cli: Cli) -> Result<()> {
     tracing::debug!(count = entries.len(), "entries collected");
 
     let picker = PickerState::new();
+    picker.vim_mode.set(cli.mode);
     let mut matcher = crate::picker::matcher::Matcher::new();
-    let labels: Vec<&str> = entries.iter().map(|e| e.label.as_str()).collect();
-    let mut matches = matcher.rank(&labels, "");
+    // (label, description) — matcher ranks each field separately so a label
+    // hit can outweigh a description hit even at equal nucleo score.
+    let pairs: Vec<(&str, Option<&str>)> = entries
+        .iter()
+        .map(|e| (e.label.as_str(), e.description.as_deref()))
+        .collect();
+    let mut matches = matcher.rank(&pairs, "");
     matches.truncate(cfg.max_results);
 
     let app_state = Arc::new(Mutex::new(AppState {
@@ -45,6 +53,7 @@ pub fn run(cli: Cli) -> Result<()> {
         max_results: cfg.max_results,
         theme: cfg.theme,
         matcher,
+        windowed: cli.no_layer_shell,
     }));
 
     let view = move || picker_view(Arc::clone(&app_state));
@@ -57,10 +66,13 @@ pub fn run(cli: Cli) -> Result<()> {
         // status + ex_bar gutter + outer border slack. Keep in step with
         // ui::view::{ROW_HEIGHT, VISIBLE_ROWS, INPUT_ROW_HEIGHT,
         // STATUS_HEIGHT} so the window doesn't trim a half-row.
-        use crate::ui::view::{INPUT_ROW_HEIGHT, ROW_PITCH, STATUS_HEIGHT, VISIBLE_ROWS};
+        use crate::ui::view::{
+            INPUT_ROW_HEIGHT, ROW_PITCH, STATUS_BAR_TOTAL, STATUS_HEIGHT, VISIBLE_ROWS,
+        };
         let viewport_h = ROW_PITCH * VISIBLE_ROWS as f64;
-        // Ex gutter same height as status when shown, 0 otherwise; reserve it.
-        let chrome_h = INPUT_ROW_HEIGHT + STATUS_HEIGHT + STATUS_HEIGHT + 6.0;
+        // chrome = input row + input margin_bottom + ex gutter + status bar
+        // (height + vert padding + top margin) + panel padding (both sides).
+        let chrome_h = INPUT_ROW_HEIGHT + 8.0 + STATUS_HEIGHT + STATUS_BAR_TOTAL + 20.0;
         let size = floem::kurbo::Size::new(720.0, viewport_h + chrome_h);
 
         let use_layer_shell = !cli.no_layer_shell && std::env::var_os("WAYLAND_DISPLAY").is_some();
@@ -97,7 +109,12 @@ pub fn run(cli: Cli) -> Result<()> {
             //     style Wayland session → plain xdg_toplevel, no X11 attrs.
             let likely_x11 = std::env::var_os("WAYLAND_DISPLAY").is_none();
             tracing::info!(likely_x11, "using plain window path");
-            let mut window_config = WindowConfig::default().size(size).with_transparent(true);
+            // Opaque framebuffer in --windowed mode: vger SDF anti-aliasing
+            // along rounded edges mixes with the framebuffer alpha, not the
+            // parent's bg. On a transparent framebuffer that produces dotted
+            // / fuzzy corners on the status badges. Layer-shell path keeps
+            // transparency for compositor-side corner clipping.
+            let mut window_config = WindowConfig::default().size(size).with_transparent(false);
             if likely_x11 {
                 use floem::window::{X11Config, X11WindowType};
                 window_config = window_config.with_x11_config(X11Config {

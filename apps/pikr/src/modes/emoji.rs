@@ -12,10 +12,14 @@ impl Mode for Emoji {
     }
 
     fn collect(&mut self) -> Result<Vec<Entry>> {
+        // Label = "<glyph> <name>" so the fuzzy matcher actually has a name
+        // to search on (the matcher only sees `label`, not `description`).
+        // Typing "smile" was a no-op when the label was just the emoji char.
+        // Payload stays the bare glyph so accept prints exactly that.
         let entries = emojis::iter()
             .map(|e| Entry {
-                label: e.as_str().to_string(),
-                description: Some(e.name().to_string()),
+                label: format!("{} {}", e.as_str(), e.name()),
+                description: None,
                 payload: Payload::Stdout(e.as_str().to_string()),
             })
             .collect();

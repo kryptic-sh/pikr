@@ -3,6 +3,8 @@
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
+pub use crate::picker::state::VimMode;
+
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "pikr",
@@ -30,8 +32,14 @@ pub struct Cli {
 
     /// Skip Wayland layer-shell, open as a regular window. Useful on compositors
     /// without wlr-layer-shell (Mutter/GNOME) or for X11.
-    #[arg(long = "no-layer-shell")]
+    #[arg(long = "no-layer-shell", alias = "windowed")]
     pub no_layer_shell: bool,
+
+    /// Vim mode to start in. Defaults to `insert` so the user can begin
+    /// typing a query immediately on launch. Values derive from `VimMode`
+    /// so new variants are exposed automatically.
+    #[arg(long = "mode", value_enum, default_value_t = VimMode::Insert)]
+    pub mode: VimMode,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
