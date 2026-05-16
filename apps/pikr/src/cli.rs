@@ -68,8 +68,7 @@ pub struct Cli {
     pub blur: Option<f32>,
 
     /// Preset: smoked-glass look — equivalent to `--blur 2 --opacity 1`.
-    /// Also forces a greyscale backdrop. Explicit `--blur` / `--opacity`
-    /// flags override the preset values; the greyscale effect stays.
+    /// Explicit `--blur` / `--opacity` flags override the preset values.
     #[arg(long = "smoked")]
     pub smoked: bool,
 }

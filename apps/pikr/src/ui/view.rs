@@ -233,8 +233,6 @@ pub struct AppState {
     /// Backdrop blur sigma. `Some(v)` enables capture + blur of the desktop
     /// behind the panel; `None` disables the effect.
     pub blur: Option<f32>,
-    /// Desaturate the captured backdrop to greyscale. Set by `--smoked`.
-    pub grayscale: bool,
     /// Cached fuzzy matcher (nucleo allocates ~135KB per instance).
     pub matcher: Matcher,
 }
@@ -329,7 +327,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // the compositor can show what's behind (alpha < 1.0). Every inner view
     // fills with `Color::TRANSPARENT` (see `inner_bg` below) to avoid
     // stacking fills that would cancel the transparency effect.
-    let (bg, panel_bg, fg, accent, font_family, font_size, blur, grayscale, panel_height) = {
+    let (bg, panel_bg, fg, accent, font_family, font_size, blur, panel_height) = {
         let s = state.lock().unwrap();
         let t = &s.theme;
         let bg = parse_color(&t.bg);
@@ -351,7 +349,6 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             t.font.clone(),
             t.font_size,
             s.blur,
-            s.grayscale,
             panel_h,
         )
     };
@@ -541,7 +538,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     let panel_radius = 8.0_f64;
     let glass_overlays: Box<dyn floem::View> = if let Some(sigma) = blur {
         let backdrop: Box<dyn floem::View> =
-            match crate::backdrop::capture_blurred(panel_w, panel_h_u32, sigma, grayscale) {
+            match crate::backdrop::capture_blurred(panel_w, panel_h_u32, sigma) {
                 Some(bytes) => backdrop_overlay(bytes, panel_radius)
                     .style(|s| s.absolute().width_full().height_full())
                     .into_any(),

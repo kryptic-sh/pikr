@@ -25,23 +25,15 @@ mod windows;
 /// bytes sized to the panel. Returns `None` if capture is unsupported or
 /// fails — the caller falls back to a flat-color panel. `sigma` is applied
 /// at the downsampled scale; effective full-res blur ≈ sigma × downscale.
-///
-/// When `grayscale` is true, each pixel is desaturated to its Rec. 709
-/// luminance after blur — used by `--smoked` for a neutral backdrop.
-pub fn capture_blurred(
-    target_w: u32,
-    target_h: u32,
-    sigma: f32,
-    grayscale: bool,
-) -> Option<Vec<u8>> {
+pub fn capture_blurred(target_w: u32, target_h: u32, sigma: f32) -> Option<Vec<u8>> {
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    return linux::capture(target_w, target_h, sigma, grayscale);
+    return linux::capture(target_w, target_h, sigma);
 
     #[cfg(target_os = "macos")]
-    return macos::capture(target_w, target_h, sigma, grayscale);
+    return macos::capture(target_w, target_h, sigma);
 
     #[cfg(target_os = "windows")]
-    return windows::capture(target_w, target_h, sigma, grayscale);
+    return windows::capture(target_w, target_h, sigma);
 
     #[cfg(not(any(
         target_os = "linux",
@@ -50,7 +42,7 @@ pub fn capture_blurred(
         target_os = "windows",
     )))]
     {
-        let _ = (target_w, target_h, sigma, grayscale);
+        let _ = (target_w, target_h, sigma);
         None
     }
 }

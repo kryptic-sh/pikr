@@ -38,7 +38,6 @@ pub fn run(cli: Cli) -> Result<()> {
     // Resolve --smoked preset BEFORE moving cli.prompt below (methods take &self).
     let opacity = cli.effective_opacity().or(cfg.opacity);
     let blur = cli.effective_blur().or(cfg.blur);
-    let grayscale = cli.smoked;
     let app_state = Arc::new(Mutex::new(AppState {
         picker,
         entries,
@@ -50,7 +49,6 @@ pub fn run(cli: Cli) -> Result<()> {
         theme: cfg.theme,
         opacity,
         blur,
-        grayscale,
         matcher,
     }));
 
