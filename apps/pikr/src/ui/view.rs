@@ -151,38 +151,48 @@ fn entry_row(
     // briefly tracks the click before exit (cosmetic if the exit is instant).
     let click_payload = entry.payload.clone();
 
-    h_stack((label_view.into_any(), desc_view))
-        .style(move |s| {
-            let selected = selected_sig.get() == mi;
-            // Outline-style selection: thin accent border, transparent fill.
-            // The non-selected rows show no border so the list reads as a
-            // clean stack of labels with the focused row gently outlined.
-            // Use the row fill as the border colour when unselected so that
-            // floem never composites a transparent 1-px strip over the
-            // dyn_stack's opaque background (PreMultiplied alpha erases).
-            let border_color = if selected { accent } else { row_fill };
-            s.width_full()
-                .height(ROW_HEIGHT)
-                // Only vertical margin — horizontal "10px gap" comes from
-                // the dyn_stack's `padding_horiz(10)` instead, so the row
-                // never sits in an unpainted margin region at the right
-                // edge (PreMultiplied alpha would show desktop there).
-                .margin_vert(5.0)
-                .padding_horiz(HORIZ_PAD)
-                .items_center()
-                .background(row_fill)
-                .border(1.0)
-                .border_color(border_color)
-                .border_radius(6.0)
-                .cursor(floem::style::CursorStyle::Pointer)
-        })
-        .on_click_stop(move |_| {
-            selected_sig.set(mi);
-            if let Err(e) = crate::modes::execute(&click_payload) {
-                eprintln!("pikr: execute error: {e}");
-            }
-            std::process::exit(0);
-        })
+    // Outline-style selection: nest the row h_stack inside a container whose
+    // background colour acts as the "border" ring. This avoids floem's
+    // center-aligned stroke, whose outer half falls outside the rounded-rect
+    // bg fill on a PreMultiplied-alpha surface → opaque corner leak.
+    //
+    // Outer container:  accent fill when selected, row_fill when not.
+    // Inner h_stack:    always row_fill, margin(1) to expose the outer ring.
+    //
+    // The whole outer container carries margin_vert(5) so the pitch stays
+    // ROW_HEIGHT + ROW_GAP = 50px.
+    let inner_row = h_stack((label_view.into_any(), desc_view)).style(move |s| {
+        let selected = selected_sig.get() == mi;
+        // When selected: margin(1) exposes the outer accent ring.
+        // When not:      margin(0) — outer has same colour, no ring.
+        let m = if selected { 1.0_f64 } else { 0.0_f64 };
+        s.width_full()
+            // Total h_stack height = ROW_HEIGHT − 2*margin so the
+            // outer container ends up exactly ROW_HEIGHT tall.
+            .height(ROW_HEIGHT - 2.0 * m)
+            .padding_horiz(HORIZ_PAD)
+            .items_center()
+            .background(row_fill)
+            .border_radius(if selected { 5.0 } else { 6.0 })
+            .margin(m)
+    });
+    container(inner_row.on_click_stop(move |_| {
+        selected_sig.set(mi);
+        if let Err(e) = crate::modes::execute(&click_payload) {
+            eprintln!("pikr: execute error: {e}");
+        }
+        std::process::exit(0);
+    }))
+    .style(move |s| {
+        let selected = selected_sig.get() == mi;
+        let ring_color = if selected { accent } else { row_fill };
+        s.width_full()
+            .height(ROW_HEIGHT)
+            .margin_vert(5.0)
+            .background(ring_color)
+            .border_radius(6.0)
+            .cursor(floem::style::CursorStyle::Pointer)
+    })
 }
 
 /// Pixel height per result row, in logical pixels. Used both by the row
@@ -471,23 +481,29 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             .margin_left(8.0)
     });
 
-    // Input is its own bordered card — thin accent outline at 35% alpha,
-    // rounded corners matching the row selection style. Horizontal inset
-    // comes from the v_stack's `padding(10)`; only the bottom margin
-    // creates the gap before the result list.
-    // Pre-blend accent against bg so the border is opaque but reads like
-    // a faded accent — `multiply_alpha` would leave partial-alpha pixels
-    // and the framebuffer would show through.
+    // Input card: use a nested-container "border" so no center-aligned stroke
+    // is needed. The outer container carries the border colour as its fill
+    // (a 1px ring visible between it and the inner h_stack). The inner
+    // h_stack has margin(1) to expose that ring. This avoids the corner-zone
+    // stroke leak on a PreMultiplied-alpha surface.
+    //
+    // margin_bottom(10) lives on the OUTER container so the gap between the
+    // card and the result list is covered by the parent v_stack's inner_bg.
     let input_border = blend(accent, bg, 0.35);
-    let input_row = h_stack((prompt_label, query_label)).style(move |s| {
+    let input_row = container(h_stack((prompt_label, query_label)).style(move |s| {
         s.width_full()
-            .height(INPUT_ROW_HEIGHT)
-            .margin_bottom(10.0)
+            .height(INPUT_ROW_HEIGHT - 2.0) // shrink by 2*margin(1)
             .padding_horiz(HORIZ_PAD)
             .items_center()
             .background(inner_bg)
-            .border(1.0)
-            .border_color(input_border)
+            .border_radius(5.0) // outer radius(6) − margin(1)
+            .margin(1.0)
+    }))
+    .style(move |s| {
+        s.width_full()
+            .height(INPUT_ROW_HEIGHT)
+            .margin_bottom(10.0)
+            .background(input_border)
             .border_radius(6.0)
     });
 
@@ -602,36 +618,61 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // directly — no separate surface_bg path needed.
     let surface_bg = panel_bg;
 
+    // Border ring thickness (logical px). Used to inset the inner container
+    // so the outer accent fill shows as a ring of this width.
+    const BORDER_W: f64 = 1.5;
+
     // ── Outer container with keyboard handler ──────────────────────────────
+    // The "border" is rendered as a nested-container paint ring rather than
+    // a stroked path. Floem's paint_border uses a center-aligned stroke: its
+    // outer half falls outside the rounded-rect bg fill on a
+    // PreMultiplied-alpha surface, and those pixels land on the transparent
+    // framebuffer → visible corner halos. Using opaque fills eliminates that.
+    //
+    // Layout:
+    //   outer container — background(accent), border_radius(panel_radius)
+    //     inner container — background(surface_bg), border_radius(inner_r),
+    //                       margin(BORDER_W), height/width_full
+    //       stack(glass, v_stack) — the actual content
+    let inner_r = (panel_radius - BORDER_W).max(0.0);
     let state_key = Arc::clone(&state);
     container(
-        floem::views::stack((
-            // glass FIRST so it paints below, content AFTER so it paints on
-            // top. Stack order = paint order in floem.
-            glass_overlays,
-            v_stack((input_row, scrollable, ex.into_any(), status)).style(move |s| {
-                // 10px outer inset for all children. Paints inner_bg in
-                // its full bounds (including the padding region) so no
-                // unpainted strip can leak the framebuffer.
-                s.width_full()
-                    .height_full()
-                    .padding(10.0)
-                    .background(inner_bg)
-            }),
-        ))
-        .style(move |s| s.width_full().height_full().background(inner_bg)),
+        container(
+            floem::views::stack((
+                // glass FIRST so it paints below, content AFTER so it paints on
+                // top. Stack order = paint order in floem.
+                glass_overlays,
+                v_stack((input_row, scrollable, ex.into_any(), status)).style(move |s| {
+                    // 10px outer inset for all children. Paints inner_bg in
+                    // its full bounds (including the padding region) so no
+                    // unpainted strip can leak the framebuffer.
+                    s.width_full()
+                        .height_full()
+                        .padding(10.0)
+                        .background(inner_bg)
+                }),
+            ))
+            .style(move |s| s.width_full().height_full().background(inner_bg)),
+        )
+        .style(move |s| {
+            s.width_full()
+                .height_full()
+                .background(surface_bg)
+                .border_radius(inner_r)
+        }),
     )
     .style(move |s| {
-        // Layer surfaces don't get compositor borders. Draw our own so
-        // pikr looks like a window on both wlr-layer-shell and xdg
-        // toplevels (where it's also fine — most tiling WMs strip
-        // borders off floating popups anyway).
+        // Outer accent fill is the panel border. No stroke needed: the accent
+        // background is visible as a BORDER_W-pixel ring between the outer
+        // container's rounded edge and the inner container's inset edge.
+        // `padding(BORDER_W)` creates the inset gap — more reliable than
+        // `margin` on the child because `height_full()` inside a padded
+        // container resolves against the content box height (after padding).
         s.width_full()
             .height_full()
-            .background(surface_bg)
-            .border(1.5)
-            .border_color(accent)
+            .background(accent)
             .border_radius(panel_radius)
+            .padding(BORDER_W)
     })
     .keyboard_navigable()
     .on_event(EventListener::KeyDown, move |ev| {
@@ -821,9 +862,4 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         rev.update(|r| *r += 1);
         EventPropagation::Stop
     })
-    // The outermost picker view paints `surface_bg` so the wgpu
-    // PreMultiplied-alpha framebuffer never shows through any inner gap
-    // (row margins, padding, between-section spacing, …). When opacity is
-    // < 1.0 or blur is enabled this surface_bg is already alpha-reduced.
-    .style(move |s| s.width_full().height_full().background(surface_bg))
 }
