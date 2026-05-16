@@ -8,6 +8,69 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-16
+
+### Added
+
+- **Epic 4 — Wayland layer-shell overlay**: pikr now launches as a
+  `zwlr_layer_surface_v1` on wlroots compositors. Required forking `winit`
+  (`mxaddict/winit#layer-shell`) to expose `LayerShellAttributes` on
+  `WindowAttributes` and binding the `zwlr_layer_shell_v1` global through
+  `LayerShellHandler`, and forking floem (`mxaddict/floem#layer-shell`) to
+  surface `LayerShellConfig` + `with_layer_shell_config` + an
+  `Application::new_wayland()` entry point. pikr's `Cargo.toml` patches both via
+  `[patch.crates-io]`.
+- `--no-layer-shell` CLI flag forces a plain `xdg_toplevel`. Auto-engaged when
+  `WAYLAND_DISPLAY` is unset so pikr runs on Mutter/GNOME (no wlr-layer-shell)
+  and on X11 without panicking.
+- **X11 dock fallback**: new `X11Config` / `X11WindowType` on floem's
+  `WindowConfig` exposes `_NET_WM_WINDOW_TYPE` + override-redirect. pikr tags
+  itself as `Dock` when falling back on an X11 session so the WM keeps it on top
+  and out of the taskbar.
+- Vim-mode cursor in the input row: thin bar in Insert, full block in Normal,
+  blinks at ~530 ms via `floem::ext_event::create_signal_from_channel`.
+- Arrow-key navigation: `Up`/`Down`/`PgUp`/`PgDn`/`Home`/`End` now work in both
+  Insert and Normal modes; Normal-mode arrows honor the count prefix.
+
+### Changed
+
+- Default theme font switched from generic `monospace` to `Hack Nerd Font Mono`.
+  Users can still override via `config.toml`.
+- Viewport height locked to an integer multiple of row height
+  (`ROW_HEIGHT * VISIBLE_ROWS`) so scrolling never reveals a half-clipped row.
+  Row chrome bumped (26 px rows, 30 px input, 24 px status) for legibility.
+
+### Fixed
+
+- Render hang on `j` / `k`: the key handler held the `AppState` mutex through
+  `signal.set()`, which fires reactive subscribers synchronously and re-locked
+  the same mutex (the `dyn_stack` items closure). Handler now snapshots state,
+  drops the guard, then updates signals.
+- Selection highlight that didn't move with `j` / `k`: the per-row style closure
+  subscribes to `selected_sig` directly instead of baking `is_selected` in at
+  construction time.
+- Result list still showed stale rows after a query rerank: `dyn_stack` was
+  keyed by slot index alone, so kept slots reused the previously baked entry.
+  Key now packs `(slot, m.index)` so a slot pointing at a new entry forces a
+  rebuild.
+- Scroll-past-end: the result list now uses `scroll.ensure_visible` with a
+  per-selection rect so the viewport follows the cursor.
+- Status bar covered by overflow rows: `scroll`'s `min_height: auto` was
+  expanding to content; explicit `height(viewport_height)` keeps the chrome
+  visible.
+- Space key was dropped in Insert mode — handled via `NamedKey::Space`, not
+  `Key::Character(" ")`.
+- `nucleo 0.5` "should have been caught by prefilter" panic: matcher skips empty
+  labels and wraps `fuzzy_indices` in `catch_unwind`.
+
+### Removed
+
+- Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
+  they were diagnostic for the Epic 4 hang, no longer load-bearing.
+
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.2.0
+
 ## [0.1.0] - 2026-05-16
 
 ### Added
@@ -54,5 +117,4 @@ and this project adheres to
   sed substitutions in `.github/workflows/ci.yml` so the first `v*` tag
   exercises the full aur-bin / alpine / brew-tap release pipeline.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.1.0
