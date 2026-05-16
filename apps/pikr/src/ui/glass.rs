@@ -12,11 +12,13 @@ use floem::{
 
 /// Render the blurred backdrop PNG as a full-size image view.
 ///
-/// The `png_bytes` are the output of `crate::backdrop::capture_blurred`.
-/// The image is stretched to fill the container — since it was cropped to
-/// the panel dimensions at capture time, no distortion occurs.
-pub fn backdrop_overlay(png_bytes: Vec<u8>) -> impl IntoView {
-    img(move || png_bytes.clone()).style(|s| s.width_full().height_full())
+/// `corner_radius` matches the panel's outer rounding so the backdrop is
+/// clipped to the same rounded rect — otherwise the captured-and-blurred
+/// pixels bleed past the panel's border into the compositor's
+/// rounded-corner cutout.
+pub fn backdrop_overlay(png_bytes: Vec<u8>, corner_radius: f64) -> impl IntoView {
+    img(move || png_bytes.clone())
+        .style(move |s| s.width_full().height_full().border_radius(corner_radius))
 }
 
 /// The top-glow overlay: a vertical linear gradient, white at y=0 fading to

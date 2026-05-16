@@ -527,15 +527,19 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     let panel_w = 720_u32;
     let panel_h_u32 = panel_height as u32;
 
+    // Panel corner radius — kept in step with the outer container's
+    // `border_radius` below so the backdrop image clips to the same rounded
+    // rect instead of leaking pixels into the corner cutouts.
+    let panel_radius = 8.0_f64;
     let glass_overlays: Box<dyn floem::View> = if smoked {
         let backdrop: Box<dyn floem::View> =
             match crate::backdrop::capture_blurred(panel_w, panel_h_u32) {
-                Some(bytes) => backdrop_overlay(bytes)
-                    .style(|s| s.absolute().z_index(10).width_full().height_full())
+                Some(bytes) => backdrop_overlay(bytes, panel_radius)
+                    .style(|s| s.absolute().width_full().height_full())
                     .into_any(),
                 None => floem::views::empty().into_any(),
             };
-        let glow = glow_overlay(panel_height).style(|s| s.z_index(11));
+        let glow = glow_overlay(panel_height);
         floem::views::stack((backdrop, glow))
             .style(|s| s.absolute().width_full().height_full())
             .into_any()
@@ -543,13 +547,23 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         floem::views::empty().into_any()
     };
 
+    // When smoked, the panel bg is reduced to a faint tint so the backdrop
+    // shows through. Otherwise it follows `--opacity`.
+    let surface_bg = if smoked {
+        bg.multiply_alpha(0.35)
+    } else {
+        panel_bg
+    };
+
     // ── Outer container with keyboard handler ──────────────────────────────
     let state_key = Arc::clone(&state);
     container(
         floem::views::stack((
+            // glass FIRST so it paints below, content AFTER so it paints on
+            // top. Stack order = paint order in floem.
+            glass_overlays,
             v_stack((input_row, scrollable, ex.into_any(), status))
                 .style(|s| s.width_full().height_full()),
-            glass_overlays,
         ))
         .style(|s| s.width_full().height_full()),
     )
@@ -560,10 +574,10 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         // borders off floating popups anyway).
         s.width_full()
             .height_full()
-            .background(panel_bg)
+            .background(surface_bg)
             .border(1.5)
             .border_color(accent)
-            .border_radius(8.0)
+            .border_radius(panel_radius)
     })
     .keyboard_navigable()
     .on_event(EventListener::KeyDown, move |ev| {
