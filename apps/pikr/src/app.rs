@@ -22,11 +22,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Mode::Run => Box::new(modes::run::Run),
     };
 
-    let entries: Vec<Arc<modes::Entry>> = mode
-        .collect()?
-        .into_iter()
-        .map(Arc::new)
-        .collect();
+    let entries: Vec<Arc<modes::Entry>> = mode.collect()?.into_iter().map(Arc::new).collect();
     tracing::debug!(count = entries.len(), "entries collected");
 
     let picker = PickerState::new();
@@ -51,15 +47,8 @@ pub fn run(cli: Cli) -> Result<()> {
 
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     {
-        use floem::window::{Anchor, LayerShellConfig, WindowConfig};
-        let layer_cfg = LayerShellConfig {
-            namespace: "pikr".into(),
-            // No edge anchors → compositor centers the surface on the output.
-            anchor: Anchor::empty(),
-            // Centered overlays should not reserve a strut.
-            exclusive_zone: 0,
-            ..Default::default()
-        };
+        use floem::window::WindowConfig;
+
         // Height = input row + viewport (ROW_HEIGHT * VISIBLE_ROWS) +
         // status + ex_bar gutter + outer border slack. Keep in step with
         // ui::view::{ROW_HEIGHT, VISIBLE_ROWS, INPUT_ROW_HEIGHT,
@@ -68,13 +57,35 @@ pub fn run(cli: Cli) -> Result<()> {
         let viewport_h = ROW_HEIGHT * VISIBLE_ROWS as f64;
         // Ex gutter same height as status when shown, 0 otherwise; reserve it.
         let chrome_h = INPUT_ROW_HEIGHT + STATUS_HEIGHT + STATUS_HEIGHT + 6.0;
-        let window_config = WindowConfig::default()
-            .size(floem::kurbo::Size::new(640.0, viewport_h + chrome_h))
-            .with_transparent(true)
-            .with_layer_shell_config(layer_cfg);
-        floem::Application::new_wayland()
-            .window(move |_| view(), Some(window_config))
-            .run();
+        let size = floem::kurbo::Size::new(640.0, viewport_h + chrome_h);
+
+        let use_layer_shell = !cli.no_layer_shell && std::env::var_os("WAYLAND_DISPLAY").is_some();
+
+        if use_layer_shell {
+            tracing::info!("using wlr-layer-shell path");
+            use floem::window::{Anchor, LayerShellConfig};
+            let layer_cfg = LayerShellConfig {
+                namespace: "pikr".into(),
+                // No edge anchors → compositor centers the surface on the output.
+                anchor: Anchor::empty(),
+                // Centered overlays should not reserve a strut.
+                exclusive_zone: 0,
+                ..Default::default()
+            };
+            let window_config = WindowConfig::default()
+                .size(size)
+                .with_transparent(true)
+                .with_layer_shell_config(layer_cfg);
+            floem::Application::new_wayland()
+                .window(move |_| view(), Some(window_config))
+                .run();
+        } else {
+            tracing::info!("using plain window path (no-layer-shell or no WAYLAND_DISPLAY)");
+            let window_config = WindowConfig::default().size(size).with_transparent(true);
+            floem::Application::new()
+                .window(move |_| view(), Some(window_config))
+                .run();
+        }
     }
     #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
     floem::launch(view);

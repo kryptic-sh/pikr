@@ -26,6 +26,11 @@ pub struct Cli {
     /// Override config file path.
     #[arg(long = "config")]
     pub config: Option<PathBuf>,
+
+    /// Skip Wayland layer-shell, open as a regular window. Useful on compositors
+    /// without wlr-layer-shell (Mutter/GNOME) or for X11.
+    #[arg(long = "no-layer-shell")]
+    pub no_layer_shell: bool,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
