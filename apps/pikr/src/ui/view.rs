@@ -204,7 +204,12 @@ impl AppState {
             CliMode::Drun => Box::new(crate::modes::drun::Drun),
             CliMode::Run => Box::new(crate::modes::run::Run),
         };
-        self.entries = m.collect().unwrap_or_default().into_iter().map(Arc::new).collect();
+        self.entries = m
+            .collect()
+            .unwrap_or_default()
+            .into_iter()
+            .map(Arc::new)
+            .collect();
         self.picker.query.set(String::new());
         self.picker.selected.set(0);
         self.rerank();
@@ -268,15 +273,23 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 format!("{}: ", p)
             }
         })
-        .style(move |s| {
-            s.color(accent)
-                .font_family(ff.clone())
-                .font_size(font_size)
-        })
+        .style(move |s| s.color(accent).font_family(ff.clone()).font_size(font_size))
     };
 
     let ff_q = font_family.clone();
-    let query_label = label(move || query_sig.get()).style(move |s| {
+    // Cursor glyph follows vim mode: thin bar in Insert (caret between
+    // chars), block in Normal (vim-style block cursor). Both are appended
+    // to the query end since pikr does not track an in-string cursor
+    // position.
+    let query_label = label(move || {
+        let q = query_sig.get();
+        let cursor = match vim_mode_sig.get() {
+            VimMode::Insert => '\u{258F}', // ▏ LEFT ONE EIGHTH BLOCK
+            VimMode::Normal => '\u{2588}', // █ FULL BLOCK
+        };
+        format!("{}{}", q, cursor)
+    })
+    .style(move |s| {
         s.color(fg)
             .font_family(ff_q.clone())
             .font_size(font_size)
@@ -338,11 +351,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             let sel = selected_sig.get() as f64;
             Rect::from_origin_size((0.0, sel * ROW_HEIGHT), KurboSize::new(1.0, ROW_HEIGHT))
         })
-        .style(move |s| {
-            s.width_full()
-                .height(viewport_height)
-                .background(bg)
-        });
+        .style(move |s| s.width_full().height(viewport_height).background(bg));
 
     // ── Status bar ─────────────────────────────────────────────────────────
     let ff_s = font_family.clone();
@@ -526,7 +535,9 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 let sel = selected_sig.get();
                 let payload = {
                     let s = state_key.lock().unwrap();
-                    s.matches.get(sel).map(|m| s.entries[m.index].payload.clone())
+                    s.matches
+                        .get(sel)
+                        .map(|m| s.entries[m.index].payload.clone())
                 };
                 if let Some(payload) = payload {
                     if let Err(e) = modes::execute(&payload) {
