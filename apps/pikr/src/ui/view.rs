@@ -16,6 +16,8 @@ use floem::{
     views::{Decorators, container, dyn_stack, h_stack, label, scroll, stack_from_iter, v_stack},
 };
 
+use crate::ui::glass::{glow_overlay, make_noise_bytes, noise_overlay};
+
 use crate::cli::Mode as CliMode;
 use crate::config::Theme;
 use crate::modes::{self, Entry};
@@ -225,10 +227,11 @@ pub struct AppState {
     pub max_results: usize,
     /// Theme.
     pub theme: Theme,
-    /// Smoked-glass effect — view bg painted with reduced alpha so the
-    /// compositor blurs / shows what's behind. Window framebuffer alpha is
-    /// independent (always transparent so the compositor's window-corner
-    /// rounding clips cleanly).
+    /// Panel background alpha (0.0 transparent → 1.0 opaque). Values < 1.0
+    /// composite with the desktop; compositor must support alpha blending.
+    pub opacity: f32,
+    /// Fake-glass overlay — procedural noise grain + top-glow sheen painted
+    /// over the panel surface. Independent of `opacity`.
     pub smoked: bool,
     /// Cached fuzzy matcher (nucleo allocates ~135KB per instance).
     pub matcher: Matcher,
@@ -320,18 +323,19 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // `bg` is always the opaque theme color — used wherever bg is treated as
     // a *color value* (selected-row text, status-bar fg, etc).
     //
-    // `panel_bg` is what fills the outer container surface. When `smoked`
-    // is on, this is `bg` with alpha=0.85 so the compositor can blur / show
-    // through behind. To make that visible, every inner view fills with
-    // `Color::TRANSPARENT` (see `inner_bg` below) and inherits panel_bg —
-    // stacking opaque-ish fills cancels the smoked effect (1 − 0.15ⁿ → 1).
-    let (bg, panel_bg, fg, accent, font_family, font_size) = {
+    // `panel_bg` fills the outer container. `opacity` controls its alpha so
+    // the compositor can show what's behind (alpha < 1.0). Every inner view
+    // fills with `Color::TRANSPARENT` (see `inner_bg` below) to avoid
+    // stacking fills that would cancel the transparency effect.
+    let (bg, panel_bg, fg, accent, font_family, font_size, smoked, panel_height) = {
         let s = state.lock().unwrap();
         let t = &s.theme;
         let bg = parse_color(&t.bg);
-        // 0.6 alpha is aggressive enough that the backdrop visibly shows
-        // through text-busy regions, not just the empty scrollbar track.
-        let panel_bg = if s.smoked { bg.multiply_alpha(0.6) } else { bg };
+        let panel_bg = bg.multiply_alpha(s.opacity);
+        let panel_h = crate::ui::view::INPUT_ROW_HEIGHT
+            + ROW_HEIGHT * VISIBLE_ROWS as f64
+            + STATUS_HEIGHT * 2.0
+            + 6.0;
         (
             bg,
             panel_bg,
@@ -339,6 +343,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             parse_color(&t.accent),
             t.font.clone(),
             t.font_size,
+            s.smoked,
+            panel_h,
         )
     };
     let inner_bg = Color::TRANSPARENT;
@@ -509,11 +515,31 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // ── Ex bar ─────────────────────────────────────────────────────────────
     let ex = ex_bar(ex_buf_sig, fg);
 
+    // ── Glass overlays (smoked mode) ──────────────────────────────────────
+    // The overlays are rendered OVER the content at very low alpha so
+    // selected-row legibility is preserved. They use `position: absolute`
+    // and a positive z_index to sit above the v_stack without affecting layout.
+    let glass_overlays: Box<dyn floem::View> = if smoked {
+        let noise_bytes = make_noise_bytes();
+        let noise = noise_overlay(noise_bytes)
+            .style(|s| s.absolute().z_index(10).width_full().height_full());
+        let glow = glow_overlay(panel_height).style(|s| s.z_index(11));
+        floem::views::stack((noise, glow))
+            .style(|s| s.absolute().width_full().height_full())
+            .into_any()
+    } else {
+        floem::views::empty().into_any()
+    };
+
     // ── Outer container with keyboard handler ──────────────────────────────
     let state_key = Arc::clone(&state);
     container(
-        v_stack((input_row, scrollable, ex.into_any(), status))
-            .style(|s| s.width_full().height_full()),
+        floem::views::stack((
+            v_stack((input_row, scrollable, ex.into_any(), status))
+                .style(|s| s.width_full().height_full()),
+            glass_overlays,
+        ))
+        .style(|s| s.width_full().height_full()),
     )
     .style(move |s| {
         // Layer surfaces don't get compositor borders. Draw our own so
@@ -715,5 +741,5 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         rev.update(|r| *r += 1);
         EventPropagation::Stop
     })
-    .style(move |s| s.width_full().height_full().background(panel_bg))
+    .style(|s| s.width_full().height_full())
 }

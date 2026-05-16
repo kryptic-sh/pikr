@@ -23,6 +23,7 @@ emojis = "0.6"
 evalexpr = "11"
 floem = "0.2"
 freedesktop-desktop-entry = "0.7"
+image = { version = "0.25", default-features = false, features = ["png"] }
 nucleo = "0.5"
 serde = { version = "1", features = ["derive"] }
 shlex = "1"

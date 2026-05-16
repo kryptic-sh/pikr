@@ -44,6 +44,7 @@ pub fn run(cli: Cli) -> Result<()> {
         prompt: cli.prompt.unwrap_or_default(),
         max_results: cfg.max_results,
         theme: cfg.theme,
+        opacity: cli.opacity.unwrap_or(cfg.opacity),
         smoked: cli.smoked || cfg.smoked,
         matcher,
     }));

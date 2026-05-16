@@ -9,11 +9,13 @@ use std::path::Path;
 pub struct Config {
     pub max_results: usize,
     pub case_sensitive: bool,
-    /// Opt-in smoked-glass panel — the view bg is painted with reduced alpha
-    /// so what's behind shows through. Off by default so pikr looks like
-    /// Raycast / Alfred (solid panel). Compositor support varies; on Wayland
-    /// this needs an alpha-compositing compositor (Hyprland / KWin / Sway /
-    /// wlroots — works), on X11 a compositing WM (picom etc).
+    /// Panel background alpha. 1.0 = fully opaque (default). Values < 1.0
+    /// require an alpha-compositing compositor (Hyprland / KWin / Sway on
+    /// Wayland; picom etc on X11).
+    pub opacity: f32,
+    /// Fake-glass overlay — procedural noise grain + top-glow sheen painted
+    /// over the panel surface. Independent of `opacity`; combine both for a
+    /// frosted-glass look. Off by default.
     pub smoked: bool,
     pub theme: Theme,
 }
@@ -33,6 +35,7 @@ impl Default for Config {
         Self {
             max_results: 256,
             case_sensitive: false,
+            opacity: 1.0,
             smoked: false,
             theme: Theme::default(),
         }

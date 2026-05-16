@@ -2369,6 +2369,7 @@ dependencies = [
  "evalexpr",
  "floem",
  "freedesktop-desktop-entry",
+ "image",
  "nucleo",
  "serde",
  "shlex",
