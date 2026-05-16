@@ -7,9 +7,12 @@
 use anyhow::{Context, Result};
 use std::process::{Command, Stdio};
 
+pub mod clipboard;
 pub mod dmenu;
 pub mod drun;
+pub mod emoji;
 pub mod run;
+pub mod ssh;
 
 /// One selectable row.
 #[derive(Debug, Clone)]

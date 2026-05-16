@@ -201,9 +201,12 @@ impl AppState {
     pub fn switch_mode(&mut self, mode: CliMode) {
         self.cli_mode = mode;
         let mut m: Box<dyn crate::modes::Mode> = match mode {
+            CliMode::Clipboard => Box::new(crate::modes::clipboard::Clipboard),
             CliMode::Dmenu => Box::new(crate::modes::dmenu::Dmenu),
             CliMode::Drun => Box::new(crate::modes::drun::Drun),
+            CliMode::Emoji => Box::new(crate::modes::emoji::Emoji),
             CliMode::Run => Box::new(crate::modes::run::Run),
+            CliMode::Ssh => Box::new(crate::modes::ssh::Ssh),
         };
         self.entries = m
             .collect()
@@ -471,9 +474,12 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                     let cmd = buf.trim().to_string();
                     ex_buf_sig.set(None);
                     let mode_switch = match cmd.as_str() {
-                        "drun" => Some(CliMode::Drun),
-                        "run" => Some(CliMode::Run),
+                        "clipboard" => Some(CliMode::Clipboard),
                         "dmenu" => Some(CliMode::Dmenu),
+                        "drun" => Some(CliMode::Drun),
+                        "emoji" => Some(CliMode::Emoji),
+                        "run" => Some(CliMode::Run),
+                        "ssh" => Some(CliMode::Ssh),
                         "q" | "q!" => {
                             floem::quit_app();
                             return EventPropagation::Stop;

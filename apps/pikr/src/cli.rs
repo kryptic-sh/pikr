@@ -12,6 +12,7 @@ use std::path::PathBuf;
 )]
 pub struct Cli {
     /// Mode to launch in. With --dmenu this is ignored.
+    /// Available: drun, run, dmenu, ssh, emoji, clipboard.
     #[arg(short = 's', long = "show", value_enum, default_value = "drun")]
     pub show: Mode,
 
@@ -38,4 +39,7 @@ pub enum Mode {
     Drun,
     Run,
     Dmenu,
+    Ssh,
+    Emoji,
+    Clipboard,
 }

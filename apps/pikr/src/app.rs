@@ -17,9 +17,12 @@ pub fn run(cli: Cli) -> Result<()> {
     tracing::info!(?chosen_mode, "pikr starting");
 
     let mut mode: Box<dyn modes::Mode> = match chosen_mode {
+        Mode::Clipboard => Box::new(modes::clipboard::Clipboard),
         Mode::Dmenu => Box::new(modes::dmenu::Dmenu),
         Mode::Drun => Box::new(modes::drun::Drun),
+        Mode::Emoji => Box::new(modes::emoji::Emoji),
         Mode::Run => Box::new(modes::run::Run),
+        Mode::Ssh => Box::new(modes::ssh::Ssh),
     };
 
     let entries: Vec<Arc<modes::Entry>> = mode.collect()?.into_iter().map(Arc::new).collect();
