@@ -4,6 +4,7 @@
 #![allow(dead_code)] // v0.1 scaffold — stubs land before consumers.
 
 mod app;
+mod backdrop;
 mod cli;
 mod config;
 mod modes;

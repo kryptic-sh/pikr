@@ -16,7 +16,7 @@ use floem::{
     views::{Decorators, container, dyn_stack, h_stack, label, scroll, stack_from_iter, v_stack},
 };
 
-use crate::ui::glass::{glow_overlay, make_noise_bytes, noise_overlay};
+use crate::ui::glass::{backdrop_overlay, glow_overlay};
 
 use crate::cli::Mode as CliMode;
 use crate::config::Theme;
@@ -516,15 +516,27 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     let ex = ex_bar(ex_buf_sig, fg);
 
     // ── Glass overlays (smoked mode) ──────────────────────────────────────
-    // The overlays are rendered OVER the content at very low alpha so
-    // selected-row legibility is preserved. They use `position: absolute`
-    // and a positive z_index to sit above the v_stack without affecting layout.
+    // When smoked, capture the desktop at startup, blur it heavily, and
+    // render it behind the panel content. The glow overlay is always rendered
+    // on top when smoked. If capture fails (grim absent, X11, etc.) the glow
+    // still renders for a minimal glass look; if both are absent the panel
+    // falls back to its flat-color background.
+    //
+    // Panel dimensions match app.rs: viewport_h + chrome_h. Recompute here
+    // rather than threading an extra parameter so view.rs stays self-contained.
+    let panel_w = 720_u32;
+    let panel_h_u32 = panel_height as u32;
+
     let glass_overlays: Box<dyn floem::View> = if smoked {
-        let noise_bytes = make_noise_bytes();
-        let noise = noise_overlay(noise_bytes)
-            .style(|s| s.absolute().z_index(10).width_full().height_full());
+        let backdrop: Box<dyn floem::View> =
+            match crate::backdrop::capture_blurred(panel_w, panel_h_u32) {
+                Some(bytes) => backdrop_overlay(bytes)
+                    .style(|s| s.absolute().z_index(10).width_full().height_full())
+                    .into_any(),
+                None => floem::views::empty().into_any(),
+            };
         let glow = glow_overlay(panel_height).style(|s| s.z_index(11));
-        floem::views::stack((noise, glow))
+        floem::views::stack((backdrop, glow))
             .style(|s| s.absolute().width_full().height_full())
             .into_any()
     } else {
