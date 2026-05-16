@@ -141,6 +141,7 @@ fn entry_row(
     mi: usize,
     selected_sig: RwSignal<usize>,
     visual_anchor_sig: RwSignal<Option<usize>>,
+    state: Arc<Mutex<AppState>>,
     fg: Color,
     accent: Color,
     muted: Color,
@@ -216,6 +217,18 @@ fn entry_row(
         })
         .on_click_stop(move |_| {
             selected_sig.set(mi);
+            // Mirror the keyboard Accept path: bump frecency + push history.
+            {
+                let mut s = state.lock().unwrap();
+                let cli_mode = s.cli_mode;
+                s.usage.record(cli_mode, &click_payload);
+                s.usage.save();
+                // We don't have the query signal here, so query_sig isn't
+                // tracked. The query is on s.picker.query — fine to read.
+                let q = s.picker.query.get_untracked();
+                s.history.push(cli_mode, &q);
+                s.history.save();
+            }
             if let Err(e) = crate::modes::execute(&click_payload) {
                 eprintln!("pikr: execute error: {e}");
             }
@@ -454,6 +467,12 @@ pub struct AppState {
     /// OS already paints a window border / shadow / corner rounding, so we
     /// drop our own panel border to avoid double-bordering.
     pub windowed: bool,
+    /// Per-mode frecency (count × half-life decay). Loaded from disk at
+    /// startup; bumped on Accept and persisted then.
+    pub usage: crate::picker::frecency::Usage,
+    /// Per-mode query history (most-recent first). Pushed on Accept (with
+    /// non-empty query), recalled via Ctrl-P/Ctrl-N in Insert mode.
+    pub history: crate::picker::history::History,
 }
 
 impl AppState {
@@ -486,7 +505,21 @@ impl AppState {
             .iter()
             .map(|e| (e.label.as_str(), e.description.as_deref()))
             .collect();
-        self.matches = self.matcher.rank(&pairs, &query);
+        let mut ranked = self.matcher.rank(&pairs, &query);
+        // Frecency bonus: per-entry, derived from accept history. Added to
+        // the nucleo score then re-sort, so heavily-used recent payloads
+        // surface above one-off matches with equal text score. Empty query
+        // also benefits — that's when you want the launcher to show the
+        // app you actually launch every day first.
+        let now = std::time::SystemTime::now();
+        for m in &mut ranked {
+            let bonus = self
+                .usage
+                .bonus(self.cli_mode, &self.entries[m.index].payload, now);
+            m.score = m.score.saturating_add(bonus);
+        }
+        ranked.sort_by(|a, b| b.score.cmp(&a.score).then(a.index.cmp(&b.index)));
+        self.matches = ranked;
         self.matches.truncate(self.max_results);
         self.picker.clamp_selected(self.matches.len());
     }
@@ -556,6 +589,13 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     let windowed = state.lock().unwrap().windowed;
 
     let rev: RwSignal<u64> = RwSignal::new(0);
+
+    // History-recall state: `history_cursor` is the index into the per-mode
+    // history list (None = not recalling, just typing live). `history_draft`
+    // stashes the live query when the user first hits Ctrl-P so Ctrl-N can
+    // restore it once they walk back past the most-recent entry.
+    let history_cursor: RwSignal<Option<usize>> = RwSignal::new(None);
+    let history_draft: RwSignal<String> = RwSignal::new(String::new());
 
     // ── Prompt + query input ───────────────────────────────────────────────
     // Use floem's `text_input` widget so cursor / selection / editing all
@@ -664,6 +704,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // so a 1800-entry emoji list paints instantly instead of stalling vger
     // glyph-atlas uploads for hundreds of multi-byte unicode rows.
     let state_list = Arc::clone(&state);
+    let state_row = Arc::clone(&state);
     let ff_list = font_family.clone();
     let result_list = virtual_stack(
         VirtualDirection::Vertical,
@@ -698,6 +739,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 mi,
                 selected_sig,
                 visual_anchor_sig,
+                Arc::clone(&state_row),
                 fg,
                 accent,
                 muted,
@@ -963,8 +1005,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 let sel = selected_sig.get();
                 // Visual: execute every entry in the anchored range.
                 // Normal/Insert: just the cursor row.
-                let payloads: Vec<modes::Payload> = {
-                    let s = state_key.lock().unwrap();
+                let (payloads, cli_mode) = {
+                    let mut s = state_key.lock().unwrap();
                     let anchor = visual_anchor_sig.get_untracked();
                     let range: Vec<usize> = match (vim_mode_sig.get_untracked(), anchor) {
                         (VimMode::Visual, Some(a)) => {
@@ -973,12 +1015,34 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                         }
                         _ => vec![sel],
                     };
-                    range
+                    let payloads: Vec<modes::Payload> = range
                         .into_iter()
                         .filter_map(|mi| s.matches.get(mi))
                         .map(|m| s.entries[m.index].payload.clone())
-                        .collect()
+                        .collect();
+                    // Frecency: bump count + last_used for every accepted
+                    // payload, then persist once. Saving here (rather than
+                    // in record() per entry) keeps a Visual-mode multi-launch
+                    // to a single fsync.
+                    let cli_mode = s.cli_mode;
+                    for payload in &payloads {
+                        s.usage.record(cli_mode, payload);
+                    }
+                    if !payloads.is_empty() {
+                        s.usage.save();
+                    }
+                    // History: record the live query for Ctrl-P/Ctrl-N recall.
+                    // Push the buffer the user actually accepted with — not
+                    // whatever they might still be recalling — so reusing a
+                    // recalled query just dedupes to the front of history.
+                    let query_text = query_sig.get_untracked();
+                    if !payloads.is_empty() {
+                        s.history.push(cli_mode, &query_text);
+                        s.history.save();
+                    }
+                    (payloads, cli_mode)
                 };
+                let _ = cli_mode;
                 for payload in &payloads {
                     if let Err(e) = modes::execute(payload) {
                         eprintln!("pikr: execute error: {e}");
@@ -990,6 +1054,9 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             }
             Action::Cancel => std::process::exit(0),
             Action::InsertChar(c) => {
+                // Any user-initiated edit exits history recall — the buffer
+                // is no longer a verbatim past query.
+                history_cursor.set(None);
                 let cur = query_cursor_sig.get();
                 query_sig.update(|q| {
                     let byte_idx = char_idx_to_byte(q, cur);
@@ -998,6 +1065,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 query_cursor_sig.set(cur + 1);
             }
             Action::Backspace => {
+                history_cursor.set(None);
                 let cur = query_cursor_sig.get();
                 if cur > 0 {
                     query_sig.update(|q| {
@@ -1009,6 +1077,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 }
             }
             Action::DeleteForward => {
+                history_cursor.set(None);
                 let cur = query_cursor_sig.get();
                 query_sig.update(|q| {
                     let total = q.chars().count();
@@ -1038,6 +1107,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 query_cursor_sig.set(total);
             }
             Action::DeleteWordBack => {
+                history_cursor.set(None);
                 let cur = query_cursor_sig.get();
                 if cur > 0 {
                     query_sig.update(|q| {
@@ -1050,6 +1120,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 }
             }
             Action::DeleteToLineStart => {
+                history_cursor.set(None);
                 let cur = query_cursor_sig.get();
                 if cur > 0 {
                     query_sig.update(|q| {
@@ -1057,6 +1128,60 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                         q.replace_range(0..end, "");
                     });
                     query_cursor_sig.set(0);
+                }
+            }
+            Action::HistoryPrev => {
+                let s = state_key.lock().unwrap();
+                let cli_mode = s.cli_mode;
+                let total = s.history.len(cli_mode);
+                if total == 0 {
+                    drop(s);
+                } else {
+                    let next_idx = match history_cursor.get_untracked() {
+                        None => {
+                            // First hop into history — stash the current
+                            // draft so Ctrl-N can restore it later.
+                            history_draft.set(query_sig.get_untracked());
+                            0
+                        }
+                        Some(cur) => (cur + 1).min(total - 1),
+                    };
+                    if let Some(entry) = s.history.get(cli_mode, next_idx) {
+                        let text = entry.to_string();
+                        drop(s);
+                        history_cursor.set(Some(next_idx));
+                        let len = text.chars().count();
+                        query_sig.set(text);
+                        query_cursor_sig.set(len);
+                    } else {
+                        drop(s);
+                    }
+                }
+            }
+            Action::HistoryNext => {
+                // Only meaningful while we're already recalling.
+                if let Some(cur) = history_cursor.get_untracked() {
+                    if cur == 0 {
+                        // At the most-recent entry; the next step is back
+                        // to the live draft.
+                        let text = history_draft.get_untracked();
+                        history_cursor.set(None);
+                        let len = text.chars().count();
+                        query_sig.set(text);
+                        query_cursor_sig.set(len);
+                    } else {
+                        let next_idx = cur - 1;
+                        let s = state_key.lock().unwrap();
+                        let cli_mode = s.cli_mode;
+                        if let Some(entry) = s.history.get(cli_mode, next_idx) {
+                            let text = entry.to_string();
+                            drop(s);
+                            history_cursor.set(Some(next_idx));
+                            let len = text.chars().count();
+                            query_sig.set(text);
+                            query_cursor_sig.set(len);
+                        }
+                    }
                 }
             }
         }

@@ -43,6 +43,8 @@ pub fn run(cli: Cli) -> Result<()> {
     let mut matches = matcher.rank(&pairs, "");
     matches.truncate(cfg.max_results);
 
+    let usage = crate::picker::frecency::Usage::load();
+    let history = crate::picker::history::History::load();
     let app_state = Arc::new(Mutex::new(AppState {
         picker,
         entries,
@@ -54,7 +56,14 @@ pub fn run(cli: Cli) -> Result<()> {
         theme: cfg.theme,
         matcher,
         windowed: cli.no_layer_shell,
+        usage,
+        history,
     }));
+    // Apply frecency bonus to the initial empty-query rank so a fresh
+    // launch already shows favourites at the top instead of XDG order.
+    if let Ok(mut s) = app_state.lock() {
+        s.rerank();
+    }
 
     let view = move || picker_view(Arc::clone(&app_state));
 

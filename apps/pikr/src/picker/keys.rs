@@ -33,6 +33,10 @@ pub enum Action {
     DeleteWordBack,
     /// Delete from the caret to the start of the query (Ctrl-U, readline).
     DeleteToLineStart,
+    /// Recall the previous query from history (Ctrl-P, fzf convention).
+    HistoryPrev,
+    /// Walk forward through history toward the live draft (Ctrl-N).
+    HistoryNext,
 }
 
 /// Translate a floem key event into an `Action` given the current vim mode.
@@ -92,6 +96,8 @@ pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool) -> Option<Actio
                         'w' => Some(Action::DeleteWordBack),
                         'u' => Some(Action::DeleteToLineStart),
                         'd' => Some(Action::DeleteForward),
+                        'p' => Some(Action::HistoryPrev),
+                        'n' => Some(Action::HistoryNext),
                         _ => None,
                     };
                 }
@@ -264,6 +270,22 @@ mod tests {
         s.vim_mode.set(VimMode::Insert);
         let cu = key_to_action(&s, &Key::Character("u".into()), true);
         assert_eq!(cu, Some(Action::DeleteToLineStart));
+    }
+
+    #[test]
+    fn insert_ctrl_p_recalls_history_prev() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let cp = key_to_action(&s, &Key::Character("p".into()), true);
+        assert_eq!(cp, Some(Action::HistoryPrev));
+    }
+
+    #[test]
+    fn insert_ctrl_n_recalls_history_next() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let cn = key_to_action(&s, &Key::Character("n".into()), true);
+        assert_eq!(cn, Some(Action::HistoryNext));
     }
 
     #[test]
