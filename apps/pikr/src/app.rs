@@ -61,12 +61,13 @@ pub fn run(cli: Cli) -> Result<()> {
             ..Default::default()
         };
         // Height = input row + viewport (ROW_HEIGHT * VISIBLE_ROWS) +
-        // status + ex_bar gutter + outer padding/border. Keep this in
-        // step with crate::ui::view::{ROW_HEIGHT, VISIBLE_ROWS} so the
-        // window doesn't trim a half-row at the bottom.
-        let viewport_h = crate::ui::view::ROW_HEIGHT * crate::ui::view::VISIBLE_ROWS as f64;
-        // 22 px input + 22 px status + 22 px ex gutter + ~16 px border/padding slack.
-        let chrome_h = 22.0 + 22.0 + 22.0 + 16.0;
+        // status + ex_bar gutter + outer border slack. Keep in step with
+        // ui::view::{ROW_HEIGHT, VISIBLE_ROWS, INPUT_ROW_HEIGHT,
+        // STATUS_HEIGHT} so the window doesn't trim a half-row.
+        use crate::ui::view::{INPUT_ROW_HEIGHT, ROW_HEIGHT, STATUS_HEIGHT, VISIBLE_ROWS};
+        let viewport_h = ROW_HEIGHT * VISIBLE_ROWS as f64;
+        // Ex gutter same height as status when shown, 0 otherwise; reserve it.
+        let chrome_h = INPUT_ROW_HEIGHT + STATUS_HEIGHT + STATUS_HEIGHT + 6.0;
         let window_config = WindowConfig::default()
             .size(floem::kurbo::Size::new(640.0, viewport_h + chrome_h))
             .with_transparent(true)

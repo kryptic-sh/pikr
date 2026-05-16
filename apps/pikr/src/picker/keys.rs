@@ -35,6 +35,15 @@ pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool) -> Option<Actio
             Key::Named(NamedKey::Escape) => Some(Action::EnterNormal),
             Key::Named(NamedKey::Enter) => Some(Action::Accept),
             Key::Named(NamedKey::Backspace) => Some(Action::Backspace),
+            // Arrow-key navigation works in Insert too so the user can
+            // type a query and immediately steer with the arrows without
+            // bouncing back to Normal mode.
+            Key::Named(NamedKey::ArrowDown) => Some(Action::MoveDown(1)),
+            Key::Named(NamedKey::ArrowUp) => Some(Action::MoveUp(1)),
+            Key::Named(NamedKey::PageDown) => Some(Action::PageDown),
+            Key::Named(NamedKey::PageUp) => Some(Action::PageUp),
+            Key::Named(NamedKey::Home) => Some(Action::Top),
+            Key::Named(NamedKey::End) => Some(Action::Bottom),
             Key::Character(s) => {
                 let c = s.chars().next()?;
                 Some(Action::InsertChar(c))
@@ -52,6 +61,24 @@ pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool) -> Option<Actio
                     Some(Action::Cancel)
                 }
                 Key::Named(NamedKey::Enter) => Some(Action::Accept),
+                Key::Named(NamedKey::ArrowDown) => Some(Action::MoveDown(state.take_count())),
+                Key::Named(NamedKey::ArrowUp) => Some(Action::MoveUp(state.take_count())),
+                Key::Named(NamedKey::PageDown) => {
+                    state.count.set(None);
+                    Some(Action::PageDown)
+                }
+                Key::Named(NamedKey::PageUp) => {
+                    state.count.set(None);
+                    Some(Action::PageUp)
+                }
+                Key::Named(NamedKey::Home) => {
+                    state.count.set(None);
+                    Some(Action::Top)
+                }
+                Key::Named(NamedKey::End) => {
+                    state.count.set(None);
+                    Some(Action::Bottom)
+                }
                 Key::Character(s) => {
                     let c = s.chars().next()?;
 
@@ -167,6 +194,33 @@ mod tests {
         let a2 = key_to_action(&s, &Key::Character("j".into()), false);
         assert_eq!(a2, Some(Action::MoveDown(5)));
         assert_eq!(s.count.get(), None);
+    }
+
+    #[test]
+    fn normal_arrow_keys() {
+        let s = make_state();
+        let down = key_to_action(&s, &Key::Named(NamedKey::ArrowDown), false);
+        assert_eq!(down, Some(Action::MoveDown(1)));
+        let up = key_to_action(&s, &Key::Named(NamedKey::ArrowUp), false);
+        assert_eq!(up, Some(Action::MoveUp(1)));
+        let pgdn = key_to_action(&s, &Key::Named(NamedKey::PageDown), false);
+        assert_eq!(pgdn, Some(Action::PageDown));
+        let home = key_to_action(&s, &Key::Named(NamedKey::Home), false);
+        assert_eq!(home, Some(Action::Top));
+        let end = key_to_action(&s, &Key::Named(NamedKey::End), false);
+        assert_eq!(end, Some(Action::Bottom));
+    }
+
+    #[test]
+    fn insert_arrow_keys() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let down = key_to_action(&s, &Key::Named(NamedKey::ArrowDown), false);
+        assert_eq!(down, Some(Action::MoveDown(1)));
+        let up = key_to_action(&s, &Key::Named(NamedKey::ArrowUp), false);
+        assert_eq!(up, Some(Action::MoveUp(1)));
+        let pgup = key_to_action(&s, &Key::Named(NamedKey::PageUp), false);
+        assert_eq!(pgup, Some(Action::PageUp));
     }
 
     #[test]

@@ -86,11 +86,12 @@ fn entry_row(
     accent: Color,
     bg: Color,
 ) -> impl IntoView {
-    // Selection-blended background, ~30% accent over bg.
+    // Selection-blended background: 55% accent over bg — visible enough
+    // to spot at a glance against a busy dark theme.
     let selected_bg = Color::rgba8(
-        ((accent.r as u16 * 30 + bg.r as u16 * 70) / 100) as u8,
-        ((accent.g as u16 * 30 + bg.g as u16 * 70) / 100) as u8,
-        ((accent.b as u16 * 30 + bg.b as u16 * 70) / 100) as u8,
+        ((accent.r as u16 * 55 + bg.r as u16 * 45) / 100) as u8,
+        ((accent.g as u16 * 55 + bg.g as u16 * 45) / 100) as u8,
+        ((accent.b as u16 * 55 + bg.b as u16 * 45) / 100) as u8,
         255,
     );
 
@@ -109,21 +110,20 @@ fn entry_row(
 
     h_stack((label_view.into_any(), desc_view)).style(move |s| {
         // Subscribe to selected_sig HERE so highlight tracks selection
-        // changes without rebuilding the row. dyn_stack keys items by
-        // `mi`; if we baked is_selected in at construction, the existing
-        // row wouldn't repaint when selection moves between it and a
-        // neighbour.
+        // without rebuilding the row (dyn_stack keys items by `mi`, so
+        // a per-row bg baked in at construction would be stuck).
         let row_bg = if selected_sig.get() == mi {
             selected_bg
         } else {
             bg
         };
-        // Fixed row height: keeps the scroll viewport's row math exact
-        // so we can size it to an integer multiple and never show a
-        // half-clipped row at the top/bottom edge.
+        // Fixed row height so the viewport math stays exact. items_center
+        // vertically aligns the (label, description) pair inside the row
+        // instead of stacking them to the top.
         s.width_full()
             .height(ROW_HEIGHT)
-            .padding_horiz(8.0)
+            .padding_horiz(10.0)
+            .items_center()
             .background(row_bg)
     })
 }
@@ -131,10 +131,14 @@ fn entry_row(
 /// Pixel height per result row, in logical pixels. Used both by the row
 /// itself and by the scroll viewport so the viewport stays an exact
 /// multiple of row height.
-pub(crate) const ROW_HEIGHT: f64 = 22.0;
+pub(crate) const ROW_HEIGHT: f64 = 26.0;
 /// Number of result rows the viewport shows. Window height is sized
 /// from this plus the prompt + status chrome.
-pub(crate) const VISIBLE_ROWS: usize = 12;
+pub(crate) const VISIBLE_ROWS: usize = 10;
+/// Prompt+query row height, matches ROW_HEIGHT for visual consistency.
+pub(crate) const INPUT_ROW_HEIGHT: f64 = 30.0;
+/// Status bar height.
+pub(crate) const STATUS_HEIGHT: f64 = 24.0;
 
 // ─── Ex command bar ──────────────────────────────────────────────────────────
 
@@ -268,7 +272,6 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             s.color(accent)
                 .font_family(ff.clone())
                 .font_size(font_size)
-                .padding(4.0)
         })
     };
 
@@ -278,11 +281,14 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             .font_family(ff_q.clone())
             .font_size(font_size)
             .flex_grow(1.0)
-            .padding(4.0)
+            .margin_left(6.0)
     });
 
     let input_row = h_stack((prompt_label, query_label)).style(move |s| {
         s.width_full()
+            .height(INPUT_ROW_HEIGHT)
+            .padding_horiz(10.0)
+            .items_center()
             .background(bg)
             .border_bottom(1.0)
             .border_color(accent)
@@ -350,7 +356,9 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     })
     .style(move |s| {
         s.width_full()
-            .height(22.0)
+            .height(STATUS_HEIGHT)
+            .padding_horiz(10.0)
+            .items_center()
             .color(bg)
             .background(accent)
             .font_family(ff_s.clone())
