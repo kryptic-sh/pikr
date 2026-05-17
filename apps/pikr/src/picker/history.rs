@@ -89,6 +89,16 @@ impl History {
             .map(String::as_str)
     }
 
+    /// Most-recent-first slice of every stored entry for `mode`, for callers
+    /// that want to render the full list (e.g. calc mode shows past
+    /// expressions as result rows).
+    pub fn list(&self, mode: CliMode) -> &[String] {
+        self.modes
+            .get(&mode_key(mode))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
     /// Number of entries stored for `mode`.
     pub fn len(&self, mode: CliMode) -> usize {
         self.modes.get(&mode_key(mode)).map_or(0, Vec::len)

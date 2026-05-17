@@ -625,26 +625,7 @@ impl AppState {
     pub fn rerank(&mut self) {
         let query = self.picker.query.get();
         if matches!(self.cli_mode, CliMode::Calc) {
-            if let Some(result) = crate::modes::calc::eval(&query) {
-                let label = format!("{} = {}", query.trim(), result);
-                let entry = Entry {
-                    label,
-                    description: None,
-                    icon: None,
-                    payload: crate::modes::Payload::Stdout(result),
-                };
-                self.entries = vec![Arc::new(entry)];
-                self.matches = vec![Match {
-                    index: 0,
-                    score: 0,
-                    positions: Vec::new(),
-                    desc_positions: Vec::new(),
-                }];
-            } else {
-                self.entries = Vec::new();
-                self.matches = Vec::new();
-            }
-            self.picker.clamp_selected(self.matches.len());
+            self.rerank_calc(&query);
             return;
         }
         let pairs: Vec<(&str, Option<&str>)> = self
@@ -667,6 +648,101 @@ impl AppState {
         }
         ranked.sort_by(|a, b| b.score.cmp(&a.score).then(a.index.cmp(&b.index)));
         self.matches = ranked;
+        self.matches.truncate(self.max_results);
+        self.picker.clamp_selected(self.matches.len());
+    }
+
+    /// Calc-mode rerank: build a row list from on-disk history plus the live
+    /// query's eval result. The live entry sits on top (when the expression
+    /// evaluates), historic entries below are fuzzy-filtered through the
+    /// shared matcher. Pure-text queries that don't evaluate (e.g. `10+`)
+    /// fall through to history-only ranking so the user can still scrub past
+    /// expressions while typing a new one.
+    fn rerank_calc(&mut self, query: &str) {
+        let trimmed = query.trim();
+        let live_eval = if trimmed.is_empty() {
+            None
+        } else {
+            crate::modes::calc::eval(query).map(|r| (trimmed.to_string(), r))
+        };
+
+        let history: Vec<(String, String)> = self
+            .history
+            .list(CliMode::Calc)
+            .iter()
+            .filter(|expr| {
+                // Dedupe: when the live query exactly matches a stored entry,
+                // skip the historic row so it doesn't render twice.
+                live_eval
+                    .as_ref()
+                    .is_none_or(|(live_expr, _)| live_expr.as_str() != expr.as_str())
+            })
+            .filter_map(|expr| {
+                let result = crate::modes::calc::eval(expr)?;
+                Some((expr.clone(), result))
+            })
+            .collect();
+
+        let mut entries: Vec<Arc<Entry>> = Vec::with_capacity(history.len() + 1);
+        if let Some((expr, result)) = live_eval.as_ref() {
+            entries.push(Arc::new(Entry {
+                label: format!("{expr} = {result}"),
+                description: None,
+                icon: None,
+                payload: crate::modes::Payload::Stdout(result.clone()),
+            }));
+        }
+        for (expr, result) in &history {
+            entries.push(Arc::new(Entry {
+                label: format!("{expr} = {result}"),
+                description: None,
+                icon: None,
+                payload: crate::modes::Payload::Stdout(result.clone()),
+            }));
+        }
+        self.entries = entries;
+
+        let live_offset = usize::from(live_eval.is_some());
+        let mut matches: Vec<Match> = Vec::new();
+        if live_eval.is_some() {
+            // Live entry always sits at the top, unfiltered, with no
+            // highlight spans (the whole label is the user's input).
+            matches.push(Match {
+                index: 0,
+                score: u16::MAX,
+                positions: Vec::new(),
+                desc_positions: Vec::new(),
+            });
+        }
+
+        if trimmed.is_empty() {
+            // Empty query → show every historic entry verbatim, newest first.
+            for i in 0..history.len() {
+                matches.push(Match {
+                    index: live_offset + i,
+                    score: 0,
+                    positions: Vec::new(),
+                    desc_positions: Vec::new(),
+                });
+            }
+        } else {
+            // Non-empty query → fuzzy-rank history labels against the query
+            // so users can recall past expressions while still typing.
+            let pairs: Vec<(&str, Option<&str>)> = self
+                .entries
+                .iter()
+                .skip(live_offset)
+                .map(|e| (e.label.as_str(), e.description.as_deref()))
+                .collect();
+            let mut ranked = self.matcher.rank(&pairs, query);
+            ranked.sort_by(|a, b| b.score.cmp(&a.score).then(a.index.cmp(&b.index)));
+            for mut m in ranked {
+                m.index += live_offset;
+                matches.push(m);
+            }
+        }
+
+        self.matches = matches;
         self.matches.truncate(self.max_results);
         self.picker.clamp_selected(self.matches.len());
     }
