@@ -46,7 +46,13 @@ fn accepts_show_drun() {
         .spawn()
         .expect("spawn pikr");
 
-    thread::sleep(Duration::from_millis(250));
+    // Wait long enough for pikr's startup to fail headless (when there's no
+    // display) before we sample try_wait. Startup grew with frecency +
+    // history loads + the initial rerank in v0.3.0; on a busy CI runner the
+    // 250 ms timeout we used previously occasionally fired while pikr was
+    // still in its pre-floem init path, making the test flake with a
+    // misleading "pikr is running without any display set" panic.
+    thread::sleep(Duration::from_millis(1500));
 
     match child.try_wait().expect("try_wait") {
         Some(status) => {

@@ -8,6 +8,30 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-05-17
+
+### Added
+
+- **`.deb` + `.rpm` packaging** via [nfpm] (closes #11, #12). A new `nfpm`
+  matrix job in `.github/workflows/ci.yml` builds four artifacts per tag —
+  `pikr_*_amd64.deb`, `pikr_*_arm64.deb`, `pikr-*.x86_64.rpm`,
+  `pikr-*.aarch64.rpm` — using a single `pkg/nfpm/nfpm.yaml.in` manifest with
+  format-specific runtime dependencies in `overrides:` (libxkbcommon / wayland /
+  EGL / GL / vulkan / fontconfig on the deb side; their Fedora equivalents on
+  rpm). Each package + sha256 sidecar is attached to the GitHub release. README
+  gains an `## Install` section with apt / dnf / apk / AUR / brew / cargo
+  snippets.
+
+[nfpm]: https://github.com/goreleaser/nfpm
+
+### Fixed
+
+- Smoke test `accepts_show_drun` was flaky on busy CI runners: pre-floem startup
+  grew with the v0.3.0 frecency / history loads, and the 250 ms `thread::sleep`
+  we used to wait for a headless exit occasionally fired while pikr was still
+  initialising. Bumped to 1500 ms so the assertion sees a real "still running"
+  state and doesn't misread "still in startup" as it.
+
 ## [0.3.1] - 2026-05-16
 
 ### Fixed
@@ -259,7 +283,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.2
 [0.3.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.1
 [0.3.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.0
 [0.2.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.2.0
