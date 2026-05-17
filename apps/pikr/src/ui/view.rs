@@ -62,14 +62,28 @@ fn parse_color(hex: &str) -> Color {
 /// reuse the cached child view. Mixes the match positions so a row rebuilds
 /// when nucleo's highlight set changes — even when mi/idx stay the same.
 ///
+/// `entry_id` is the Arc pointer of the row's `Entry`. Modes whose entry list
+/// is stable across reranks (drun/emoji/…) keep the same Arc → same ptr →
+/// cache stays warm. Calc replaces its single entry with a fresh Arc on every
+/// rerank, so the ptr changes and the row view is rebuilt — otherwise the row
+/// shows the previously-typed query's `"<expr> = <result>"` label.
+///
 /// FNV-1a with the proper non-zero offset basis. A 0-start would collide
 /// across `positions=[]` and `positions=[0]` (the empty-query case vs. a
 /// first-char match) and leave highlights stuck after clearing the query.
-pub(crate) fn row_key(mi: usize, idx: usize, positions: &[u32], desc_positions: &[u32]) -> u64 {
+pub(crate) fn row_key(
+    mi: usize,
+    idx: usize,
+    entry_id: u64,
+    positions: &[u32],
+    desc_positions: &[u32],
+) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     h ^= mi as u64;
     h = h.wrapping_mul(0x100000001b3);
     h ^= idx as u64;
+    h = h.wrapping_mul(0x100000001b3);
+    h ^= entry_id;
     h = h.wrapping_mul(0x100000001b3);
     h ^= positions.len() as u64;
     h = h.wrapping_mul(0x100000001b3);
@@ -865,7 +879,15 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 })
                 .collect::<im::Vector<_>>()
         },
-        |(mi, idx, _, positions, desc_positions)| row_key(*mi, *idx, positions, desc_positions),
+        |(mi, idx, entry, positions, desc_positions)| {
+            row_key(
+                *mi,
+                *idx,
+                Arc::as_ptr(entry) as u64,
+                positions,
+                desc_positions,
+            )
+        },
         move |(mi, _idx, entry, positions, desc_positions)| {
             let ff = ff_list.clone();
             entry_row(
@@ -1338,8 +1360,8 @@ mod tests {
     /// letter highlighted" rendering survives a query clear.
     #[test]
     fn row_key_distinguishes_empty_from_first_char_match() {
-        let empty = row_key(0, 0, &[], &[]);
-        let first = row_key(0, 0, &[0], &[]);
+        let empty = row_key(0, 0, 0, &[], &[]);
+        let first = row_key(0, 0, 0, &[0], &[]);
         assert_ne!(
             empty, first,
             "[] and [0] must hash differently or highlights stick after clear"
@@ -1351,10 +1373,10 @@ mod tests {
     /// span list rebuilds.
     #[test]
     fn row_key_changes_as_positions_grow() {
-        let k1 = row_key(0, 5, &[0], &[]);
-        let k2 = row_key(0, 5, &[0, 1], &[]);
-        let k3 = row_key(0, 5, &[0, 1, 2], &[]);
-        let k4 = row_key(0, 5, &[0, 1, 2, 3], &[]);
+        let k1 = row_key(0, 5, 0, &[0], &[]);
+        let k2 = row_key(0, 5, 0, &[0, 1], &[]);
+        let k3 = row_key(0, 5, 0, &[0, 1, 2], &[]);
+        let k4 = row_key(0, 5, 0, &[0, 1, 2, 3], &[]);
         assert_ne!(k1, k2);
         assert_ne!(k2, k3);
         assert_ne!(k3, k4);
@@ -1363,21 +1385,27 @@ mod tests {
 
     #[test]
     fn row_key_distinguishes_same_len_different_positions() {
-        assert_ne!(row_key(0, 0, &[0, 3], &[]), row_key(0, 0, &[0, 4], &[]));
-        assert_ne!(row_key(0, 0, &[1, 2], &[]), row_key(0, 0, &[2, 1], &[]));
+        assert_ne!(
+            row_key(0, 0, 0, &[0, 3], &[]),
+            row_key(0, 0, 0, &[0, 4], &[])
+        );
+        assert_ne!(
+            row_key(0, 0, 0, &[1, 2], &[]),
+            row_key(0, 0, 0, &[2, 1], &[])
+        );
     }
 
     #[test]
     fn row_key_distinguishes_mi_and_idx() {
-        assert_ne!(row_key(0, 0, &[0], &[]), row_key(1, 0, &[0], &[]));
-        assert_ne!(row_key(0, 0, &[0], &[]), row_key(0, 1, &[0], &[]));
+        assert_ne!(row_key(0, 0, 0, &[0], &[]), row_key(1, 0, 0, &[0], &[]));
+        assert_ne!(row_key(0, 0, 0, &[0], &[]), row_key(0, 1, 0, &[0], &[]));
     }
 
     #[test]
     fn row_key_is_deterministic() {
         assert_eq!(
-            row_key(2, 7, &[0, 1, 2], &[3, 4]),
-            row_key(2, 7, &[0, 1, 2], &[3, 4])
+            row_key(2, 7, 42, &[0, 1, 2], &[3, 4]),
+            row_key(2, 7, 42, &[0, 1, 2], &[3, 4])
         );
     }
 
@@ -1385,8 +1413,22 @@ mod tests {
     /// a description-only match has the same staleness risk as a label match.
     #[test]
     fn row_key_distinguishes_desc_positions() {
-        assert_ne!(row_key(0, 0, &[], &[]), row_key(0, 0, &[], &[0]));
-        assert_ne!(row_key(0, 0, &[0], &[0]), row_key(0, 0, &[0], &[1]));
+        assert_ne!(row_key(0, 0, 0, &[], &[]), row_key(0, 0, 0, &[], &[0]));
+        assert_ne!(row_key(0, 0, 0, &[0], &[0]), row_key(0, 0, 0, &[0], &[1]));
+    }
+
+    /// Regression for the calc-mode "10+10 = 11" stale-label bug. Calc emits
+    /// a single synthetic entry at mi=0/idx=0/positions=[], so without the
+    /// entry-id mix the key is byte-for-byte identical across reranks and
+    /// dyn_stack keeps the cached row → user sees the prior expression's
+    /// result. The fresh Arc per rerank changes `entry_id`; assert that
+    /// different ids hash to different keys.
+    #[test]
+    fn row_key_distinguishes_entry_id() {
+        assert_ne!(
+            row_key(0, 0, 0xdead, &[], &[]),
+            row_key(0, 0, 0xbeef, &[], &[])
+        );
     }
 
     #[test]
