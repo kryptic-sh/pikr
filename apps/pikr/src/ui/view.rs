@@ -11,9 +11,10 @@ use floem::{
     peniko::Color,
     reactive::{RwSignal, SignalGet, SignalUpdate, batch, create_effect},
     style::FlexDirection,
+    text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     views::{
-        Decorators, VirtualDirection, VirtualItemSize, container, h_stack, img, label, scroll,
-        stack_from_iter, v_stack, virtual_stack,
+        Decorators, VirtualDirection, VirtualItemSize, container, h_stack, img, label, rich_text,
+        scroll, v_stack, virtual_stack,
     },
 };
 
@@ -113,41 +114,61 @@ fn blend(over: Color, under: Color, t: f32) -> Color {
 
 // ─── Match-highlight helpers ─────────────────────────────────────────────────
 
+/// Render `label_str` with the `positions` codepoints painted in `accent`
+/// and the rest in `fg`. The whole string lives in a single floem
+/// [`rich_text`] so cosmic-text shapes the run once and per-glyph
+/// advance widths stay stable as `positions` changes — previously each
+/// run was a separate `label()` inside a flex row, and per-label
+/// shaping introduced visible horizontal jitter when characters
+/// switched between matched and unmatched as the user typed.
+///
+/// `font_family` and `font_size` are baked into the `Attrs` because
+/// `rich_text` does not inherit them from the parent style cascade
+/// (unlike `label`, which reads its font off `self.font.*`).
 fn highlighted_label(
     label_str: String,
     positions: Vec<u32>,
-    _mi: usize,
-    selected_sig: RwSignal<usize>,
     fg: Color,
     accent: Color,
+    font_family: String,
+    font_size: f32,
 ) -> impl IntoView {
-    let mut spans: Vec<(String, bool)> = Vec::new();
+    // Collapse adjacent same-color runs to keep the AttrsList compact.
     let pos_set: std::collections::HashSet<u32> = positions.into_iter().collect();
+    let mut runs: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
+    let mut byte = 0usize;
     for (i, c) in label_str.chars().enumerate() {
-        let hl = pos_set.contains(&(i as u32));
-        if let Some(last) = spans.last_mut()
-            && last.1 == hl
-        {
-            last.0.push(c);
-            continue;
+        let next = byte + c.len_utf8();
+        let color = if pos_set.contains(&(i as u32)) {
+            accent
+        } else {
+            fg
+        };
+        match runs.last_mut() {
+            Some(last) if last.1 == color => last.0.end = next,
+            _ => runs.push((byte..next, color)),
         }
-        spans.push((c.to_string(), hl));
+        byte = next;
     }
-    let items: Vec<Box<dyn floem::View>> = spans
-        .into_iter()
-        .map(move |(text, hl)| {
-            label(move || text.clone())
-                .style(move |s| {
-                    let _ = selected_sig.get(); // track for reactive style invalidation
-                    // fzf pattern: matched chars always accent, unmatched fg.
-                    // Selection visual lives on the row (bg + border), not text.
-                    let color = if hl { accent } else { fg };
-                    s.color(color)
-                })
-                .into_any()
-        })
-        .collect();
-    stack_from_iter(items).style(|s| s.flex_direction(FlexDirection::Row))
+
+    rich_text(move || {
+        let families: Vec<FamilyOwned> = FamilyOwned::parse_list(&font_family).collect();
+        let default_attrs = Attrs::new()
+            .color(fg)
+            .family(&families)
+            .font_size(font_size);
+        let mut attrs_list = AttrsList::new(default_attrs);
+        for (range, color) in &runs {
+            let span_attrs = Attrs::new()
+                .color(*color)
+                .family(&families)
+                .font_size(font_size);
+            attrs_list.add_span(range.clone(), span_attrs);
+        }
+        let mut layout = TextLayout::new();
+        layout.set_text(&label_str, attrs_list);
+        layout
+    })
 }
 
 // ─── Entry-row view ──────────────────────────────────────────────────────────
@@ -165,6 +186,8 @@ fn entry_row(
     accent: Color,
     muted: Color,
     selected_bg: Color,
+    font_family: String,
+    font_size: f32,
 ) -> impl IntoView {
     // ── Icon view ─────────────────────────────────────────────────────────
     let icon_style = |s: floem::style::Style| {
@@ -223,8 +246,14 @@ fn entry_row(
         None => floem::views::empty().style(icon_style).into_any(),
     };
 
-    let label_view =
-        highlighted_label(entry.label.clone(), positions, mi, selected_sig, fg, accent);
+    let label_view = highlighted_label(
+        entry.label.clone(),
+        positions,
+        fg,
+        accent,
+        font_family.clone(),
+        font_size,
+    );
 
     let desc_view: Box<dyn floem::View> = match &entry.description {
         Some(d) => {
@@ -238,9 +267,16 @@ fn entry_row(
             // emits the same per-char spans the title uses (matched = accent,
             // unmatched = muted via the default color we set on the wrapper).
             let wrapped = format!("({body})");
-            highlighted_label(wrapped, shifted, mi, selected_sig, muted, accent)
-                .style(move |s| s.color(muted).margin_left(DESC_GAP))
-                .into_any()
+            highlighted_label(
+                wrapped,
+                shifted,
+                muted,
+                accent,
+                font_family.clone(),
+                font_size,
+            )
+            .style(move |s| s.margin_left(DESC_GAP))
+            .into_any()
         }
         None => floem::views::empty().into_any(),
     };
@@ -965,7 +1001,6 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             )
         },
         move |(mi, _idx, entry, positions, desc_positions)| {
-            let ff = ff_list.clone();
             entry_row(
                 entry,
                 positions,
@@ -978,12 +1013,10 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 accent,
                 muted,
                 selected_bg,
+                ff_list.clone(),
+                font_size,
             )
-            .style(move |s| {
-                s.font_family(ff.clone())
-                    .font_size(font_size)
-                    .margin_top(ROW_GAP)
-            })
+            .style(move |s| s.margin_top(ROW_GAP))
         },
     )
     .style(|s| s.width_full().flex_direction(FlexDirection::Column));
