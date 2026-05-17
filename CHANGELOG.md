@@ -8,6 +8,42 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-18
+
+### Added
+
+- **drun icons via XDG theme lookup.** Application list rows now render the
+  declared icon from the `.desktop` file, resolved via the user's active XDG
+  icon theme. Theme fallback chain mirrors the freedesktop spec — explicit theme
+  → hicolor → pixmaps — so apps without a theme-native icon still get a
+  reasonable glyph.
+- **SVG icon rasterisation** via `resvg`. Theme lookups that resolve to SVG
+  assets are rasterised at the row's display size with a multi-theme fallback if
+  the primary theme is missing the icon at the requested size.
+- **Calculator history.** Empty-query state in calc mode now lists past
+  expressions as result rows; selecting one re-loads the expression for editing.
+- **Accept-custom + cancel exit code** for rofi parity (#17). Shift-Enter
+  accepts the raw query as a payload instead of the highlighted row; cancelling
+  (Esc) now exits `1` so shell pipelines can branch on user dismissal.
+
+### Fixed
+
+- **Matcher: substring fallback when nucleo prefilter panics.** nucleo 0.5 has a
+  deterministic panic in its prefilter for certain haystack+needle pairs
+  ("should have been caught by prefilter") — `"Thunder"` against `"Thunderbird"`
+  trips it while `"Thunde"` and `"Thunderb"` score normally. The matcher now
+  walks a case-insensitive substring scan for the panicking row and the rest of
+  the pass, surfacing the obvious hit the user expected. Cross-call recovery via
+  the existing `poisoned` flag is unchanged.
+- **Calc label refreshes** when the same payload is reused across rows. Mixing
+  the entry `Arc` pointer into `row_key` busts the cached child view so the
+  visible label tracks the underlying entry.
+
+### Removed
+
+- `CODE_OF_CONDUCT.md` and `CONTRIBUTING.md` — both inherited from the org-level
+  `kryptic-sh/.github` repo and were duplicates here.
+
 ## [0.3.2] - 2026-05-17
 
 ### Added
@@ -283,7 +319,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.4.0
 [0.3.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.2
 [0.3.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.1
 [0.3.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.0
