@@ -2432,7 +2432,6 @@ dependencies = [
  "freedesktop-desktop-entry",
  "freedesktop-icons",
  "im",
- "image",
  "nucleo",
  "resvg",
  "serde",
