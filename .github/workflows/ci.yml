@@ -106,6 +106,25 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - run: cargo nextest run --workspace --locked --no-fail-fast
 
+  e2e:
+    name: e2e keyboard
+    runs-on: ubuntu-latest
+    # Advisory until the sway-headless harness has shown a few green
+    # main-push runs without flake (tracked in #26). Drop
+    # `continue-on-error` once stability is proven so a real regression
+    # blocks PRs.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - run: sudo apt-get update && sudo apt-get install -y sway wtype
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --bin pikr --locked
+      - run: cargo test --release --test keyboard -- --test-threads=1
+
   build:
     name: Build ${{ matrix.target }}
     needs: [test]

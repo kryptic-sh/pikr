@@ -21,7 +21,11 @@ fn main() -> Result<()> {
     //   - `wgpu_hal` notes missing Vulkan validation layers and an init-time
     //     GLES context re-init under Wayland; neither affects runtime.
     // Users can opt back in with `RUST_LOG=usvg=warn` etc.
+    // Logs go to stderr so stdout stays exclusively the picker payload
+    // (the dmenu-style emit). Without this, every wgpu / floem trace line
+    // ends up in the consumer's stdin pipe alongside the actual selection.
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
                 tracing_subscriber::EnvFilter::new("warn,usvg=error,wgpu_hal=error")
