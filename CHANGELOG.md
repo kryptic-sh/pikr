@@ -8,6 +8,20 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-18
+
+### Fixed
+
+- **Row labels jittered as match highlights changed.** Each entry row's label
+  was a `stack_from_iter` of one `label()` per same-color run, so cosmic-text
+  shaped each run independently and the flex row rounded fractional glyph
+  advance at every boundary. Typing a character that flipped its match state
+  shifted total label width by a fraction of a pixel — letters appeared to
+  wobble. `highlighted_label` now emits a single `floem::rich_text` with one
+  `TextLayout` and per-range color attrs; the run is shaped once, painted with
+  multiple colors. `font_family` and `font_size` are baked into the `Attrs`
+  because `rich_text` does not inherit them from the parent style cascade.
+
 ## [0.4.0] - 2026-05-18
 
 ### Added
@@ -319,7 +333,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.4.1
 [0.4.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.4.0
 [0.3.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.2
 [0.3.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.1
