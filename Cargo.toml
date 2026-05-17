@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "apps/pikr",
     "xtask",
@@ -33,7 +33,6 @@ freedesktop-icons = "0.4"
 # `img()` produces a correct bitmap. resvg is already in the workspace
 # transitively via floem; promoting to a direct dep costs no build time.
 resvg = "0.43"
-image = { version = "0.25", default-features = false, features = ["png"] }
 nucleo = "0.5"
 serde = { version = "1", features = ["derive"] }
 shlex = "1"

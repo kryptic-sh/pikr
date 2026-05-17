@@ -27,7 +27,6 @@ freedesktop-desktop-entry.workspace = true
 freedesktop-icons.workspace = true
 resvg.workspace = true
 im.workspace = true
-image.workspace = true
 nucleo.workspace = true
 serde.workspace = true
 shlex.workspace = true

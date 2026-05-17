@@ -14,10 +14,18 @@ use anyhow::Result;
 use clap::Parser;
 
 fn main() -> Result<()> {
+    // Default filter quiets two chatty deps that emit benign WARNs on every
+    // startup:
+    //   - `usvg` complains about `clip-path: none` / `marker-*: none` and
+    //     missing exotic font-families on icons that still render fine.
+    //   - `wgpu_hal` notes missing Vulkan validation layers and an init-time
+    //     GLES context re-init under Wayland; neither affects runtime.
+    // Users can opt back in with `RUST_LOG=usvg=warn` etc.
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new("warn,usvg=error,wgpu_hal=error")
+            }),
         )
         .init();
 
