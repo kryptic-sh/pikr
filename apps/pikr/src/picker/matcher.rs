@@ -77,28 +77,16 @@ impl Matcher {
         std::panic::set_hook(Box::new(|_| {}));
 
         let mut out: Vec<Match> = Vec::with_capacity(entries.len());
-        let mut panicked = false;
-        'rows: for (i, (label, description)) in entries.iter().enumerate() {
-            // Try label and description independently.
-            let label_hit = self.try_match(label, needle, &mut panicked);
-            if panicked {
-                tracing::warn!(index = i, label = %label, "nucleo panicked; aborting rank");
-                break 'rows;
-            }
+        // `nucleo_dead` is set once any row panics nucleo. The internal
+        // slab is corrupted after the panic, so the rest of the pass
+        // walks substring_match instead of try_match. Subsequent rank
+        // calls rebuild via the `poisoned` flag at the top of the fn.
+        let mut nucleo_dead = false;
+        for (i, (label, description)) in entries.iter().enumerate() {
+            let label_hit = self.match_field(label, needle, query, &mut nucleo_dead, i, "label");
             let desc_hit = description.and_then(|d| {
-                let h = self.try_match(d, needle, &mut panicked);
-                if panicked {
-                    // Record but keep this iteration — we still want
-                    // label_hit reported; the outer loop bails next round.
-                    None
-                } else {
-                    h
-                }
+                self.match_field(d, needle, query, &mut nucleo_dead, i, "description")
             });
-            if panicked {
-                tracing::warn!(index = i, "nucleo panicked on description; aborting rank");
-                break 'rows;
-            }
 
             match (label_hit, desc_hit) {
                 (None, None) => {}
@@ -122,7 +110,7 @@ impl Matcher {
                 }),
             }
         }
-        if panicked {
+        if nucleo_dead {
             self.poisoned = true;
         }
 
@@ -131,6 +119,40 @@ impl Matcher {
 
         out.sort_by(|a, b| b.score.cmp(&a.score).then(a.index.cmp(&b.index)));
         out
+    }
+
+    /// Match `haystack` against `needle` for one row, falling back to a
+    /// substring scan when nucleo panics (or has been disabled for the
+    /// remainder of the pass). `nucleo_dead` is set on first panic.
+    fn match_field(
+        &mut self,
+        haystack: &str,
+        needle: Utf32Str<'_>,
+        query: &str,
+        nucleo_dead: &mut bool,
+        row: usize,
+        field: &'static str,
+    ) -> Option<(u16, Vec<u32>)> {
+        if *nucleo_dead {
+            return substring_match(haystack, query);
+        }
+        let mut panicked = false;
+        let hit = self.try_match(haystack, needle, &mut panicked);
+        if panicked {
+            tracing::warn!(
+                index = row,
+                field,
+                haystack = %haystack,
+                query = %query,
+                "nucleo panicked; falling back to substring for the rest of this rank pass"
+            );
+            *nucleo_dead = true;
+            // nucleo had a chance and gave up — try substring instead. For
+            // queries like \"Thunder\" against \"Thunderbird\" this still
+            // yields the obvious match the user expects.
+            return substring_match(haystack, query);
+        }
+        hit
     }
 
     /// Inner fuzzy match helper. Returns `Some((score, positions))` if the
@@ -162,6 +184,25 @@ impl Matcher {
             }
         }
     }
+}
+
+/// Case-insensitive substring scan used as a fallback when nucleo panics
+/// inside its prefilter. Emits codepoint positions covering the matched
+/// span; arbitrary score is high enough to outrank typical fuzzy hits so
+/// that direct-substring queries surface near the top.
+fn substring_match(haystack: &str, query: &str) -> Option<(u16, Vec<u32>)> {
+    if haystack.is_empty() || query.is_empty() {
+        return None;
+    }
+    let h_lower = haystack.to_lowercase();
+    let q_lower = query.to_lowercase();
+    let byte_idx = h_lower.find(&q_lower)?;
+    let cp_start = h_lower[..byte_idx].chars().count();
+    let cp_count = q_lower.chars().count();
+    let positions: Vec<u32> = (cp_start..cp_start + cp_count).map(|i| i as u32).collect();
+    // 200 is comfortably above typical nucleo scores (~100-180 range for
+    // short queries). Substring matches are high-quality by definition.
+    Some((200, positions))
 }
 
 #[cfg(test)]
@@ -296,6 +337,26 @@ mod tests {
             "label vs description hit must produce identical scores; got {:?}",
             out
         );
+    }
+
+    /// Regression for "Thunder" vs "Thunderbird": the substring query that
+    /// stops exactly at a word boundary inside the haystack must match, just
+    /// like any one-character-shorter or one-character-longer query around
+    /// that boundary does. Caught a real-world bug where typing "Thunderb"
+    /// or "Thunde" matched but typing "Thunder" did not.
+    #[test]
+    fn substring_query_at_word_boundary_matches() {
+        let mut m = Matcher::new();
+        let pairs = no_desc(&["Thunderbird"]);
+        for q in ["Thunde", "Thunder", "Thunderb", "Thunderbird"] {
+            let out = m.rank(&pairs, q);
+            assert_eq!(
+                out.len(),
+                1,
+                "query {q:?} against \"Thunderbird\" must match; got {} results",
+                out.len(),
+            );
+        }
     }
 
     /// Both fields hit → both position vectors populated, score is the sum
