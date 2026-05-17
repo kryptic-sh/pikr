@@ -47,6 +47,7 @@ fn make_entry(id: u64, preview: String) -> Entry {
     Entry {
         label,
         description: None,
+        icon: None,
         payload: Payload::Exec {
             program: "sh".to_string(),
             args: vec!["-c".to_string(), format!("cliphist decode {id} | wl-copy")],

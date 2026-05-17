@@ -22,6 +22,9 @@ pub struct Entry {
     pub label: String,
     /// Optional sub-text shown on the right of the row.
     pub description: Option<String>,
+    /// Optional icon: either a freedesktop icon name (e.g. `"firefox"`) or
+    /// an absolute path. Resolved at render time via `IconCache`.
+    pub icon: Option<String>,
     /// What happens on accept.
     pub payload: Payload,
 }
@@ -33,6 +36,7 @@ impl Entry {
             payload: Payload::Stdout(label.clone()),
             label,
             description: None,
+            icon: None,
         }
     }
 
@@ -40,6 +44,7 @@ impl Entry {
         Self {
             label: label.into(),
             description: None,
+            icon: None,
             payload: Payload::Exec {
                 program: program.into(),
                 args: Vec::new(),
@@ -56,6 +61,11 @@ impl Entry {
         if let Payload::Exec { args: a, .. } = &mut self.payload {
             *a = args;
         }
+        self
+    }
+
+    pub fn with_icon(mut self, icon: impl Into<String>) -> Self {
+        self.icon = Some(icon.into());
         self
     }
 }

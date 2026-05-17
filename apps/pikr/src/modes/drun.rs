@@ -48,10 +48,14 @@ impl Mode for Drun {
                 .or_else(|| de.comment(&locales))
                 .map(|s| s.into_owned());
 
+            let icon = de.icon().map(|s| s.to_string());
             let id = de.appid.clone();
             let mut entry = Entry::exec(label, program).with_args(args);
             if let Some(d) = description {
                 entry = entry.with_description(d);
+            }
+            if let Some(i) = icon {
+                entry = entry.with_icon(i);
             }
             by_id.insert(id, entry);
         }

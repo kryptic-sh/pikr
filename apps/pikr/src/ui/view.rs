@@ -12,8 +12,8 @@ use floem::{
     reactive::{RwSignal, SignalGet, SignalUpdate, batch, create_effect},
     style::FlexDirection,
     views::{
-        Decorators, VirtualDirection, VirtualItemSize, container, h_stack, label, scroll,
-        stack_from_iter, v_stack, virtual_stack,
+        Decorators, VirtualDirection, VirtualItemSize, container, h_stack, img, label, scroll,
+        stack_from_iter, svg, v_stack, virtual_stack,
     },
 };
 
@@ -41,6 +41,11 @@ const DESC_GAP: f64 = 10.0;
 const PANEL_RADIUS: f64 = 10.0;
 const ROW_RADIUS: f64 = 6.0;
 const BORDER_W: f64 = 1.5;
+/// Rendered icon size (px). Source icons are resolved at 32 px so they
+/// downscale cleanly to this render target.
+const ICON_SIZE: f64 = 24.0;
+/// Gap between the icon slot and the label text.
+const ICON_GAP: f64 = 8.0;
 
 // ─── Colour helpers ──────────────────────────────────────────────────────────
 
@@ -147,6 +152,36 @@ fn entry_row(
     muted: Color,
     selected_bg: Color,
 ) -> impl IntoView {
+    // ── Icon view ─────────────────────────────────────────────────────────
+    let icon_style = |s: floem::style::Style| {
+        s.width(ICON_SIZE)
+            .height(ICON_SIZE)
+            .min_width(ICON_SIZE)
+            .min_height(ICON_SIZE)
+            .margin_right(ICON_GAP)
+            .flex_shrink(0.0)
+    };
+    let icon_view: Box<dyn floem::View> = if let Some(ref name) = entry.icon {
+        let resolved = state.lock().unwrap().icons.lock().unwrap().resolve(name);
+        match resolved {
+            Some(ref path) if path.extension().and_then(|s| s.to_str()) == Some("svg") => {
+                // The fork's svg() takes impl Into<String> + 'static — read at
+                // row-construction time (cheap: rows build only when visible).
+                let svg_str = std::fs::read_to_string(path).unwrap_or_default();
+                svg(svg_str).style(icon_style).into_any()
+            }
+            Some(path) => {
+                // Use the generic img() which takes a Vec<u8> closure.
+                img(move || std::fs::read(&path).unwrap_or_default())
+                    .style(icon_style)
+                    .into_any()
+            }
+            None => floem::views::empty().style(icon_style).into_any(),
+        }
+    } else {
+        floem::views::empty().style(icon_style).into_any()
+    };
+
     let label_view =
         highlighted_label(entry.label.clone(), positions, mi, selected_sig, fg, accent);
 
@@ -176,7 +211,7 @@ fn entry_row(
     // stays distinct from the cursor row (which keeps the deeper selected_bg
     // and the accent border).
     let visual_bg = blend(accent, selected_bg, 0.35);
-    h_stack((label_view.into_any(), desc_view))
+    h_stack((icon_view, label_view.into_any(), desc_view))
         .style(move |s| {
             let cursor_row = selected_sig.get() == mi;
             let in_visual_range = match visual_anchor_sig.get() {
@@ -540,6 +575,9 @@ pub struct AppState {
     /// Per-mode query history (most-recent first). Pushed on Accept (with
     /// non-empty query), recalled via Ctrl-P/Ctrl-N in Insert mode.
     pub history: crate::picker::history::History,
+    /// XDG icon-theme lookup cache. Populated lazily as rows scroll into
+    /// view; icons are picker-only (message_view doesn't use it).
+    pub icons: Arc<Mutex<crate::picker::icons::IconCache>>,
 }
 
 impl AppState {
@@ -551,6 +589,7 @@ impl AppState {
                 let entry = Entry {
                     label,
                     description: None,
+                    icon: None,
                     payload: crate::modes::Payload::Stdout(result),
                 };
                 self.entries = vec![Arc::new(entry)];

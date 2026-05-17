@@ -103,6 +103,7 @@ fn make_entry(
     Entry {
         label: host,
         description,
+        icon: None,
         payload: Payload::Exec {
             program: terminal.to_string(),
             args,

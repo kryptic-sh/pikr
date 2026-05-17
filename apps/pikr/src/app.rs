@@ -109,6 +109,7 @@ pub fn run(cli: Cli) -> Result<()> {
 
     let usage = crate::picker::frecency::Usage::load();
     let history = crate::picker::history::History::load();
+    let icons = Arc::new(Mutex::new(crate::picker::icons::IconCache::new()));
     let app_state = Arc::new(Mutex::new(AppState {
         picker,
         entries,
@@ -123,6 +124,7 @@ pub fn run(cli: Cli) -> Result<()> {
         password: cli.password,
         usage,
         history,
+        icons,
     }));
     // Apply frecency bonus to the initial empty-query rank so a fresh
     // launch already shows favourites at the top instead of XDG order.

@@ -20,6 +20,7 @@ impl Mode for Emoji {
             .map(|e| Entry {
                 label: format!("{} {}", e.as_str(), e.name()),
                 description: None,
+                icon: None,
                 payload: Payload::Stdout(e.as_str().to_string()),
             })
             .collect();
