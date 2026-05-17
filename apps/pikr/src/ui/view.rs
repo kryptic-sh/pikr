@@ -1101,6 +1101,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             return EventPropagation::Continue;
         };
         let ctrl = ke.modifiers.control();
+        let shift = ke.modifiers.shift();
         let key = &ke.key.logical_key;
 
         enum NavAction {
@@ -1117,7 +1118,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             let action = if ex_open.is_some() {
                 None
             } else {
-                key_to_action(&s.picker, key, ctrl)
+                key_to_action(&s.picker, key, ctrl, shift)
             };
             (vim_mode, ex_open, total, g_pending, action)
         };
@@ -1276,6 +1277,25 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                     }
                     (payloads, cli_mode)
                 };
+                // In dmenu mode with no matches, fall through to AcceptCustom
+                // semantics so the typed query is returned as output — rofi
+                // parity (rofi --dmenu returns the unmatched input).
+                if payloads.is_empty() && cli_mode == CliMode::Dmenu {
+                    let query_text = query_sig.get_untracked();
+                    let payload = modes::Payload::Stdout(query_text.trim().to_string());
+                    {
+                        let mut s = state_key.lock().unwrap();
+                        let q = query_text.trim();
+                        if !q.is_empty() {
+                            s.history.push(cli_mode, q);
+                            s.history.save();
+                        }
+                    }
+                    if let Err(e) = modes::execute(&payload) {
+                        eprintln!("pikr: execute error: {e}");
+                    }
+                    std::process::exit(0);
+                }
                 let _ = cli_mode;
                 for payload in &payloads {
                     if let Err(e) = modes::execute(payload) {
@@ -1286,7 +1306,24 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                     std::process::exit(0);
                 }
             }
-            Action::Cancel => std::process::exit(0),
+            Action::AcceptCustom => {
+                let query_text = query_sig.get_untracked();
+                let payload = modes::Payload::Stdout(query_text.trim().to_string());
+                {
+                    let mut s = state_key.lock().unwrap();
+                    let cli_mode = s.cli_mode;
+                    let q = query_text.trim();
+                    if !q.is_empty() {
+                        s.history.push(cli_mode, q);
+                        s.history.save();
+                    }
+                }
+                if let Err(e) = modes::execute(&payload) {
+                    eprintln!("pikr: execute error: {e}");
+                }
+                std::process::exit(0);
+            }
+            Action::Cancel => std::process::exit(1),
             Action::InsertChar(c) => {
                 // Any user-initiated edit exits history recall — the buffer
                 // is no longer a verbatim past query.

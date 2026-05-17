@@ -19,6 +19,7 @@ pub enum Action {
     StartSearch,
     StartEx,
     Accept,
+    AcceptCustom,
     Cancel,
     InsertChar(char),
     Backspace,
@@ -43,7 +44,7 @@ pub enum Action {
 ///
 /// Returns `None` for unhandled keys. Count prefix digits in Normal mode are
 /// accumulated on `state` before a motion is returned.
-pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool) -> Option<Action> {
+pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool, shift: bool) -> Option<Action> {
     let vim_mode = state.vim_mode.get();
 
     match vim_mode {
@@ -66,7 +67,13 @@ pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool) -> Option<Actio
 
         VimMode::Insert => match key {
             Key::Named(NamedKey::Escape) => Some(Action::EnterNormal),
-            Key::Named(NamedKey::Enter) => Some(Action::Accept),
+            Key::Named(NamedKey::Enter) => {
+                if shift {
+                    Some(Action::AcceptCustom)
+                } else {
+                    Some(Action::Accept)
+                }
+            }
             Key::Named(NamedKey::Backspace) => Some(Action::Backspace),
             Key::Named(NamedKey::Delete) => Some(Action::DeleteForward),
             // Space arrives as NamedKey::Space, not Key::Character(" ").
@@ -222,7 +229,7 @@ mod tests {
     fn insert_mode_char() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let a = key_to_action(&s, &Key::Character("a".into()), false);
+        let a = key_to_action(&s, &Key::Character("a".into()), false, false);
         assert_eq!(a, Some(Action::InsertChar('a')));
     }
 
@@ -230,9 +237,9 @@ mod tests {
     fn insert_left_right_arrow_move_caret() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let left = key_to_action(&s, &Key::Named(NamedKey::ArrowLeft), false);
+        let left = key_to_action(&s, &Key::Named(NamedKey::ArrowLeft), false, false);
         assert_eq!(left, Some(Action::CursorLeft));
-        let right = key_to_action(&s, &Key::Named(NamedKey::ArrowRight), false);
+        let right = key_to_action(&s, &Key::Named(NamedKey::ArrowRight), false, false);
         assert_eq!(right, Some(Action::CursorRight));
     }
 
@@ -240,9 +247,9 @@ mod tests {
     fn insert_home_end_caret() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let home = key_to_action(&s, &Key::Named(NamedKey::Home), false);
+        let home = key_to_action(&s, &Key::Named(NamedKey::Home), false, false);
         assert_eq!(home, Some(Action::CursorHome));
-        let end = key_to_action(&s, &Key::Named(NamedKey::End), false);
+        let end = key_to_action(&s, &Key::Named(NamedKey::End), false, false);
         assert_eq!(end, Some(Action::CursorEnd));
     }
 
@@ -250,9 +257,9 @@ mod tests {
     fn insert_ctrl_a_e_caret() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let ca = key_to_action(&s, &Key::Character("a".into()), true);
+        let ca = key_to_action(&s, &Key::Character("a".into()), true, false);
         assert_eq!(ca, Some(Action::CursorHome));
-        let ce = key_to_action(&s, &Key::Character("e".into()), true);
+        let ce = key_to_action(&s, &Key::Character("e".into()), true, false);
         assert_eq!(ce, Some(Action::CursorEnd));
     }
 
@@ -260,7 +267,7 @@ mod tests {
     fn insert_ctrl_w_deletes_word() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let cw = key_to_action(&s, &Key::Character("w".into()), true);
+        let cw = key_to_action(&s, &Key::Character("w".into()), true, false);
         assert_eq!(cw, Some(Action::DeleteWordBack));
     }
 
@@ -268,7 +275,7 @@ mod tests {
     fn insert_ctrl_u_deletes_to_line_start() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let cu = key_to_action(&s, &Key::Character("u".into()), true);
+        let cu = key_to_action(&s, &Key::Character("u".into()), true, false);
         assert_eq!(cu, Some(Action::DeleteToLineStart));
     }
 
@@ -276,7 +283,7 @@ mod tests {
     fn insert_ctrl_p_recalls_history_prev() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let cp = key_to_action(&s, &Key::Character("p".into()), true);
+        let cp = key_to_action(&s, &Key::Character("p".into()), true, false);
         assert_eq!(cp, Some(Action::HistoryPrev));
     }
 
@@ -284,7 +291,7 @@ mod tests {
     fn insert_ctrl_n_recalls_history_next() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let cn = key_to_action(&s, &Key::Character("n".into()), true);
+        let cn = key_to_action(&s, &Key::Character("n".into()), true, false);
         assert_eq!(cn, Some(Action::HistoryNext));
     }
 
@@ -292,7 +299,7 @@ mod tests {
     fn insert_delete_key_forward() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let d = key_to_action(&s, &Key::Named(NamedKey::Delete), false);
+        let d = key_to_action(&s, &Key::Named(NamedKey::Delete), false, false);
         assert_eq!(d, Some(Action::DeleteForward));
     }
 
@@ -300,16 +307,16 @@ mod tests {
     fn insert_mode_escape_exits() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let a = key_to_action(&s, &Key::Named(NamedKey::Escape), false);
+        let a = key_to_action(&s, &Key::Named(NamedKey::Escape), false, false);
         assert_eq!(a, Some(Action::EnterNormal));
     }
 
     #[test]
     fn normal_j_k() {
         let s = make_state();
-        let down = key_to_action(&s, &Key::Character("j".into()), false);
+        let down = key_to_action(&s, &Key::Character("j".into()), false, false);
         assert_eq!(down, Some(Action::MoveDown(1)));
-        let up = key_to_action(&s, &Key::Character("k".into()), false);
+        let up = key_to_action(&s, &Key::Character("k".into()), false, false);
         assert_eq!(up, Some(Action::MoveUp(1)));
     }
 
@@ -317,11 +324,11 @@ mod tests {
     fn count_prefix_5j() {
         let s = make_state();
         // Press '5' — accumulates count, no action.
-        let a1 = key_to_action(&s, &Key::Character("5".into()), false);
+        let a1 = key_to_action(&s, &Key::Character("5".into()), false, false);
         assert_eq!(a1, None);
         assert_eq!(s.count.get(), Some(5));
         // Press 'j' — consume count → MoveDown(5).
-        let a2 = key_to_action(&s, &Key::Character("j".into()), false);
+        let a2 = key_to_action(&s, &Key::Character("j".into()), false, false);
         assert_eq!(a2, Some(Action::MoveDown(5)));
         assert_eq!(s.count.get(), None);
     }
@@ -329,15 +336,15 @@ mod tests {
     #[test]
     fn normal_arrow_keys() {
         let s = make_state();
-        let down = key_to_action(&s, &Key::Named(NamedKey::ArrowDown), false);
+        let down = key_to_action(&s, &Key::Named(NamedKey::ArrowDown), false, false);
         assert_eq!(down, Some(Action::MoveDown(1)));
-        let up = key_to_action(&s, &Key::Named(NamedKey::ArrowUp), false);
+        let up = key_to_action(&s, &Key::Named(NamedKey::ArrowUp), false, false);
         assert_eq!(up, Some(Action::MoveUp(1)));
-        let pgdn = key_to_action(&s, &Key::Named(NamedKey::PageDown), false);
+        let pgdn = key_to_action(&s, &Key::Named(NamedKey::PageDown), false, false);
         assert_eq!(pgdn, Some(Action::PageDown));
-        let home = key_to_action(&s, &Key::Named(NamedKey::Home), false);
+        let home = key_to_action(&s, &Key::Named(NamedKey::Home), false, false);
         assert_eq!(home, Some(Action::Top));
-        let end = key_to_action(&s, &Key::Named(NamedKey::End), false);
+        let end = key_to_action(&s, &Key::Named(NamedKey::End), false, false);
         assert_eq!(end, Some(Action::Bottom));
     }
 
@@ -345,7 +352,7 @@ mod tests {
     fn insert_space_inserts_space() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let a = key_to_action(&s, &Key::Named(NamedKey::Space), false);
+        let a = key_to_action(&s, &Key::Named(NamedKey::Space), false, false);
         assert_eq!(a, Some(Action::InsertChar(' ')));
     }
 
@@ -353,39 +360,39 @@ mod tests {
     fn insert_arrow_keys() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let down = key_to_action(&s, &Key::Named(NamedKey::ArrowDown), false);
+        let down = key_to_action(&s, &Key::Named(NamedKey::ArrowDown), false, false);
         assert_eq!(down, Some(Action::MoveDown(1)));
-        let up = key_to_action(&s, &Key::Named(NamedKey::ArrowUp), false);
+        let up = key_to_action(&s, &Key::Named(NamedKey::ArrowUp), false, false);
         assert_eq!(up, Some(Action::MoveUp(1)));
-        let pgup = key_to_action(&s, &Key::Named(NamedKey::PageUp), false);
+        let pgup = key_to_action(&s, &Key::Named(NamedKey::PageUp), false, false);
         assert_eq!(pgup, Some(Action::PageUp));
     }
 
     #[test]
     fn normal_g_is_bottom() {
         let s = make_state();
-        let a = key_to_action(&s, &Key::Character("G".into()), false);
+        let a = key_to_action(&s, &Key::Character("G".into()), false, false);
         assert_eq!(a, Some(Action::Bottom));
     }
 
     #[test]
     fn normal_enter_accepts() {
         let s = make_state();
-        let a = key_to_action(&s, &Key::Named(NamedKey::Enter), false);
+        let a = key_to_action(&s, &Key::Named(NamedKey::Enter), false, false);
         assert_eq!(a, Some(Action::Accept));
     }
 
     #[test]
     fn normal_v_enters_visual() {
         let s = make_state();
-        let a = key_to_action(&s, &Key::Character("v".into()), false);
+        let a = key_to_action(&s, &Key::Character("v".into()), false, false);
         assert_eq!(a, Some(Action::EnterVisual));
     }
 
     #[test]
     fn normal_caps_v_enters_visual() {
         let s = make_state();
-        let a = key_to_action(&s, &Key::Character("V".into()), false);
+        let a = key_to_action(&s, &Key::Character("V".into()), false, false);
         assert_eq!(a, Some(Action::EnterVisual));
     }
 
@@ -393,9 +400,9 @@ mod tests {
     fn visual_jk_moves_cursor() {
         let s = make_state();
         s.vim_mode.set(VimMode::Visual);
-        let down = key_to_action(&s, &Key::Character("j".into()), false);
+        let down = key_to_action(&s, &Key::Character("j".into()), false, false);
         assert_eq!(down, Some(Action::MoveDown(1)));
-        let up = key_to_action(&s, &Key::Character("k".into()), false);
+        let up = key_to_action(&s, &Key::Character("k".into()), false, false);
         assert_eq!(up, Some(Action::MoveUp(1)));
     }
 
@@ -403,7 +410,7 @@ mod tests {
     fn visual_v_toggles_back_to_normal() {
         let s = make_state();
         s.vim_mode.set(VimMode::Visual);
-        let a = key_to_action(&s, &Key::Character("v".into()), false);
+        let a = key_to_action(&s, &Key::Character("v".into()), false, false);
         assert_eq!(a, Some(Action::EnterNormal));
     }
 
@@ -411,14 +418,30 @@ mod tests {
     fn visual_escape_returns_to_normal() {
         let s = make_state();
         s.vim_mode.set(VimMode::Visual);
-        let a = key_to_action(&s, &Key::Named(NamedKey::Escape), false);
+        let a = key_to_action(&s, &Key::Named(NamedKey::Escape), false, false);
         assert_eq!(a, Some(Action::EnterNormal));
     }
 
     #[test]
     fn normal_i_enters_insert() {
         let s = make_state();
-        let a = key_to_action(&s, &Key::Character("i".into()), false);
+        let a = key_to_action(&s, &Key::Character("i".into()), false, false);
         assert_eq!(a, Some(Action::EnterInsert));
+    }
+
+    #[test]
+    fn insert_shift_enter_accept_custom() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let a = key_to_action(&s, &Key::Named(NamedKey::Enter), false, true);
+        assert_eq!(a, Some(Action::AcceptCustom));
+    }
+
+    #[test]
+    fn insert_plain_enter_still_accept() {
+        let s = make_state();
+        s.vim_mode.set(VimMode::Insert);
+        let a = key_to_action(&s, &Key::Named(NamedKey::Enter), false, false);
+        assert_eq!(a, Some(Action::Accept));
     }
 }
