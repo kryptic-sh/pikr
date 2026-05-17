@@ -553,3 +553,94 @@ jobs:
           fi
           git commit -m "pikr ${{ steps.tag.outputs.version }}"
           git push origin HEAD:main
+
+  # ── .deb + .rpm via nfpm ────────────────────────────────────────────────
+  # Mirrors the alpine/aur/brew shape: gated on tag pushes, depends on
+  # the per-target binary builds, renders a single nfpm.yaml manifest per
+  # (format, arch) and uploads the resulting package + sha256 to the
+  # GitHub release. nfpm drives both deb and rpm from the same config.
+  # Issues #11 (.deb) and #12 (.rpm).
+  nfpm:
+    name: Package ${{ matrix.format }} (${{ matrix.arch.nfpm }})
+    needs: [build]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # nfpm's normalized arch name (amd64/arm64) + the upstream rust
+        # target whose tarball we pull off the release. Output filename
+        # is `pikr_<ver>_<deb-arch>.deb` for deb and
+        # `pikr-<ver>-1.<rpm-arch>.rpm` for rpm — nfpm translates the arch.
+        arch:
+          - { nfpm: amd64, target: x86_64-unknown-linux-gnu }
+          - { nfpm: arm64, target: aarch64-unknown-linux-gnu }
+        format: [deb, rpm]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install nfpm
+        run: |
+          set -euo pipefail
+          NFPM_VERSION="2.41.0"
+          curl -fsSL \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin nfpm
+          nfpm --version
+
+      - name: Resolve version
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch binary tarball + extract
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${{ steps.tag.outputs.version }}"
+          TARBALL="pikr-v${V}-${{ matrix.arch.target }}.tar.gz"
+          BASE="https://github.com/kryptic-sh/pikr/releases/download/v${V}"
+          curl -fsSL "$BASE/$TARBALL" -o "$TARBALL"
+          tar xzf "$TARBALL"
+
+      - name: Render nfpm config
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed \
+            -e "s|{VERSION}|${{ steps.tag.outputs.version }}|g" \
+            -e "s|{ARCH}|${{ matrix.arch.nfpm }}|g" \
+            pkg/nfpm/nfpm.yaml.in > nfpm.yaml
+          echo "--- rendered nfpm.yaml ---"
+          cat nfpm.yaml
+
+      - name: Build package
+        shell: bash
+        run: |
+          set -euo pipefail
+          nfpm package --packager ${{ matrix.format }} --config nfpm.yaml --target .
+          # Single artifact per invocation; capture its name for the sha256.
+          PKG=$(ls pikr*.${{ matrix.format }} | head -1)
+          if [ -z "$PKG" ]; then
+            echo "::error::no .${{ matrix.format }} produced"
+            exit 1
+          fi
+          sha256sum "$PKG" > "$PKG.sha256"
+          echo "built: $PKG"
+
+      - name: Upload package + sha256
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            pikr*.${{ matrix.format }}
+            pikr*.${{ matrix.format }}.sha256
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

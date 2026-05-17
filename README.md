@@ -4,14 +4,46 @@ Vim-modal picker / launcher. Rofi replacement with hjkl keys.
 
 ## Status
 
-v0.1 scaffold. Not yet usable. See
-[issues](https://github.com/kryptic-sh/pikr/issues) for milestones.
+Shipping. Latest release on
+[GitHub](https://github.com/kryptic-sh/pikr/releases). Roadmap + known gaps in
+[issues](https://github.com/kryptic-sh/pikr/issues).
 
 ## Modes
 
 - `dmenu` — read entries from stdin, print selection to stdout
 - `drun` — XDG `.desktop` application launcher
 - `run` — `$PATH` executable runner
+- `ssh` — pick a host from `~/.ssh/config` / `~/.ssh/known_hosts`
+- `emoji` — searchable Unicode emoji picker (output via stdout)
+- `clipboard` — recent clipboard history
+- `calc` — reactive expression evaluator
+
+## Install
+
+Tag releases ship `.deb` / `.rpm` / `.apk` / Homebrew formula / AUR package
+alongside per-target binary tarballs.
+
+```sh
+# Debian / Ubuntu / Mint / Pop!_OS
+curl -fsSLO https://github.com/kryptic-sh/pikr/releases/latest/download/pikr_*_amd64.deb
+sudo dpkg -i pikr_*_amd64.deb
+
+# Fedora / RHEL / Rocky / Alma / openSUSE
+sudo dnf install https://github.com/kryptic-sh/pikr/releases/latest/download/pikr-*.x86_64.rpm
+
+# Alpine
+sudo apk add --allow-untrusted \
+  https://github.com/kryptic-sh/pikr/releases/latest/download/pikr-*.apk
+
+# Arch (AUR)
+yay -S pikr-bin
+
+# macOS / Linuxbrew
+brew install kryptic-sh/tap/pikr
+
+# Build from source
+cargo install --git https://github.com/kryptic-sh/pikr pikr
+```
 
 ## Usage
 

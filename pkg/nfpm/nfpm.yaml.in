@@ -1,0 +1,65 @@
+# Auto-generated. Source: https://github.com/kryptic-sh/pikr
+# Edits made directly to a built .deb / .rpm are not tracked. To change
+# this manifest, edit `pkg/nfpm/nfpm.yaml.in` in the upstream repo and
+# let `.github/workflows/ci.yml` rebuild on the next tag.
+#
+# `arch` is nfpm's normalized form (amd64 / arm64); the tool translates
+# to the per-format native name (amd64 → x86_64 on rpm, arm64 → aarch64).
+name: pikr
+arch: {ARCH}
+platform: linux
+version: {VERSION}
+section: x11
+priority: optional
+maintainer: mxaddict <mxaddict@kryptic.sh>
+description: |
+  Vim-modal application launcher — rofi replacement built on floem.
+  Modal editing (Insert / Normal / Visual), fuzzy matching with
+  frecency scoring, per-mode query history, and Wayland layer-shell
+  support.
+vendor: kryptic-sh
+homepage: https://pikr.kryptic.sh/
+license: MIT
+
+# Binary layout. The tarball produced by the build matrix contains a
+# top-level `pikr` executable plus LICENSE / README; the CI job extracts
+# them into the workdir before invoking nfpm so these paths are relative.
+contents:
+  - src: ./pikr
+    dst: /usr/bin/pikr
+    file_info:
+      mode: 0755
+  - src: ./LICENSE
+    dst: /usr/share/licenses/pikr/LICENSE
+    file_info:
+      mode: 0644
+  - src: ./README.md
+    dst: /usr/share/doc/pikr/README.md
+    file_info:
+      mode: 0644
+
+# Format-specific runtime dependencies. floem/wgpu wants:
+# - libxkbcommon for keyboard handling
+# - wayland client/cursor/egl for Wayland surfaces (default path)
+# - libGL / libEGL for the wgpu adapter
+# - libvulkan for the wgpu Vulkan backend
+# - fontconfig for font discovery
+# X11 fallback deps (libX11, libXcursor) are pulled transitively via Mesa.
+overrides:
+  deb:
+    depends:
+      - libxkbcommon0
+      - libwayland-client0
+      - libwayland-cursor0
+      - libwayland-egl1
+      - libegl1
+      - libgl1
+      - libvulkan1
+      - libfontconfig1
+  rpm:
+    depends:
+      - libxkbcommon
+      - mesa-libEGL
+      - mesa-libGL
+      - vulkan-loader
+      - fontconfig
