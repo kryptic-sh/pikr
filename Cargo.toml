@@ -26,6 +26,13 @@ evalexpr = "11"
 floem = "0.2"
 freedesktop-desktop-entry = "0.7"
 freedesktop-icons = "0.4"
+# resvg + tiny-skia for server-side SVG rasterisation (icon-only). Floem's
+# `svg` view goes through vello which silently drops unsupported features
+# (markers, complex clip-paths) and renders the icon's black background
+# plate alone. Rasterising once with resvg → PNG and feeding through
+# `img()` produces a correct bitmap. resvg is already in the workspace
+# transitively via floem; promoting to a direct dep costs no build time.
+resvg = "0.43"
 image = { version = "0.25", default-features = false, features = ["png"] }
 nucleo = "0.5"
 serde = { version = "1", features = ["derive"] }

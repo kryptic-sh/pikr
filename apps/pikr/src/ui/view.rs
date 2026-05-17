@@ -13,7 +13,7 @@ use floem::{
     style::FlexDirection,
     views::{
         Decorators, VirtualDirection, VirtualItemSize, container, h_stack, img, label, scroll,
-        stack_from_iter, svg, v_stack, virtual_stack,
+        stack_from_iter, v_stack, virtual_stack,
     },
 };
 
@@ -161,25 +161,52 @@ fn entry_row(
             .margin_right(ICON_GAP)
             .flex_shrink(0.0)
     };
-    let icon_view: Box<dyn floem::View> = if let Some(ref name) = entry.icon {
-        let resolved = state.lock().unwrap().icons.lock().unwrap().resolve(name);
-        match resolved {
-            Some(ref path) if path.extension().and_then(|s| s.to_str()) == Some("svg") => {
-                // The fork's svg() takes impl Into<String> + 'static — read at
-                // row-construction time (cheap: rows build only when visible).
-                let svg_str = std::fs::read_to_string(path).unwrap_or_default();
-                svg(svg_str).style(icon_style).into_any()
+    // Resolve the entry's icon, falling back through a chain of
+    // conventional generic-app icon names so drun entries with a missing
+    // or unresolvable `Icon=` still render the slot. Picker rows always
+    // reserve the slot whether or not anything ends up in it — labels
+    // stay aligned across the column.
+    //
+    // For SVGs we go through `IconCache::rasterise_svg` (resvg → PNG)
+    // because floem's `svg()` runs the file through vello, which silently
+    // drops unsupported features (markers, complex clip-paths) and
+    // commonly renders only the icon's solid background plate. resvg
+    // handles full SVG 1.1, so the rasterised PNG fed through `img()`
+    // produces a correct bitmap.
+    let resolved = state
+        .lock()
+        .unwrap()
+        .icons
+        .lock()
+        .unwrap()
+        .resolve_or_fallback(
+            entry.icon.as_deref(),
+            crate::picker::icons::GENERIC_FALLBACK_NAMES,
+        );
+    let icon_view: Box<dyn floem::View> = match resolved {
+        Some(ref path) if path.extension().and_then(|s| s.to_str()) == Some("svg") => {
+            // Rasterise at 48 px (2× display) so downscaling stays sharp.
+            // The cache holds the rendered PNG bytes per path.
+            let bytes = state
+                .lock()
+                .unwrap()
+                .icons
+                .lock()
+                .unwrap()
+                .rasterise_svg(path, 48);
+            match bytes {
+                Some(arc) => img(move || (*arc).clone()).style(icon_style).into_any(),
+                None => floem::views::empty().style(icon_style).into_any(),
             }
-            Some(path) => {
-                // Use the generic img() which takes a Vec<u8> closure.
-                img(move || std::fs::read(&path).unwrap_or_default())
-                    .style(icon_style)
-                    .into_any()
-            }
-            None => floem::views::empty().style(icon_style).into_any(),
         }
-    } else {
-        floem::views::empty().style(icon_style).into_any()
+        Some(path) => {
+            // Raster: PNG / JPEG. floem's `img()` takes `Fn() -> Vec<u8>`,
+            // and the `image` crate sniffs the format from magic bytes.
+            img(move || std::fs::read(&path).unwrap_or_default())
+                .style(icon_style)
+                .into_any()
+        }
+        None => floem::views::empty().style(icon_style).into_any(),
     };
 
     let label_view =
