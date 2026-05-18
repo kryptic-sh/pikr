@@ -30,11 +30,6 @@ pub struct Cli {
     #[arg(long = "config")]
     pub config: Option<PathBuf>,
 
-    /// Open a regular Wayland window instead of a layer-shell surface. Useful on
-    /// compositors without wlr-layer-shell (e.g. GNOME Mutter).
-    #[arg(long = "no-layer-shell", alias = "windowed")]
-    pub no_layer_shell: bool,
-
     /// Vim mode to start in. Defaults to `insert` so the user can begin
     /// typing a query immediately on launch. Values derive from `VimMode`
     /// so new variants are exposed automatically.

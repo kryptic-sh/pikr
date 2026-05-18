@@ -1,6 +1,6 @@
 //! Vim keymap → picker action + dispatch.
 
-use floem::keyboard::{Key, NamedKey};
+use floem::ui_events::keyboard::{Key, NamedKey};
 use floem::reactive::{SignalGet, SignalUpdate};
 
 use super::state::{PickerState, VimMode};
@@ -76,8 +76,8 @@ pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool, shift: bool) ->
             }
             Key::Named(NamedKey::Backspace) => Some(Action::Backspace),
             Key::Named(NamedKey::Delete) => Some(Action::DeleteForward),
-            // Space arrives as NamedKey::Space, not Key::Character(" ").
-            Key::Named(NamedKey::Space) => Some(Action::InsertChar(' ')),
+            // Space arrives as Key::Character(" ") per keyboard-types spec.
+            // Handled by the Key::Character arm below (InsertChar(' ')).
             // Caret navigation inside the query text.
             Key::Named(NamedKey::ArrowLeft) => Some(Action::CursorLeft),
             Key::Named(NamedKey::ArrowRight) => Some(Action::CursorRight),
@@ -352,7 +352,8 @@ mod tests {
     fn insert_space_inserts_space() {
         let s = make_state();
         s.vim_mode.set(VimMode::Insert);
-        let a = key_to_action(&s, &Key::Named(NamedKey::Space), false, false);
+        // keyboard-types 0.8.3: Space is Key::Character(" "), not NamedKey
+        let a = key_to_action(&s, &Key::Character(" ".into()), false, false);
         assert_eq!(a, Some(Action::InsertChar(' ')));
     }
 

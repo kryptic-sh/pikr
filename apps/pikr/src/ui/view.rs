@@ -3,20 +3,21 @@
 use std::sync::{Arc, Mutex};
 
 use floem::{
-    IntoView,
-    event::{Event, EventListener, EventPropagation},
-    ext_event::create_signal_from_channel,
-    keyboard::{Key, NamedKey},
+    IntoView, ViewId,
+    event::{EventCx, EventPropagation},
+    event::listener::{Click, KeyDown, WindowGainedFocus},
     kurbo::{Rect, Size as KurboSize},
     peniko::Color,
-    reactive::{RwSignal, SignalGet, SignalUpdate, batch, create_effect},
+    reactive::{Effect, RwSignal, SignalGet, SignalUpdate},
+    receiver_signal::ChannelSignal,
     style::FlexDirection,
-    text::{Attrs, AttrsList, FamilyOwned, TextLayout},
+    text::{Attrs, AttrsList, FamilyOwned},
     views::{
-        Decorators, VirtualDirection, VirtualItemSize, container, h_stack, img, label, rich_text,
-        scroll, v_stack, virtual_stack,
+        Container, Decorators, Empty, Label,
+        Stack, img, rich_text, virtual_stack,
     },
 };
+use floem::ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
 
 use crate::cli::Mode as CliMode;
 use crate::config::Theme;
@@ -34,9 +35,11 @@ pub const ROW_GAP: f64 = 4.0;
 pub const ROW_PITCH: f64 = ROW_HEIGHT + ROW_GAP;
 pub const VISIBLE_ROWS: usize = 8;
 pub const INPUT_ROW_HEIGHT: f64 = ROW_HEIGHT;
+/// Margin between the input row and the result list. Drives chrome_h in app.rs.
+pub const INPUT_MARGIN_BOTTOM: f64 = 8.0;
 pub const STATUS_HEIGHT: f64 = 0.0;
 const SCROLLOFF: f64 = 1.0;
-const PANEL_PAD: f64 = 10.0;
+pub const PANEL_PAD: f64 = 10.0;
 const HORIZ_PAD: f64 = 14.0;
 const DESC_GAP: f64 = 10.0;
 const PANEL_RADIUS: f64 = 10.0;
@@ -56,7 +59,7 @@ fn parse_color(hex: &str) -> Color {
     let r = ((rgb >> 16) & 0xff) as u8;
     let g = ((rgb >> 8) & 0xff) as u8;
     let b = (rgb & 0xff) as u8;
-    Color::rgb8(r, g, b)
+    Color::from_rgb8(r, g, b)
 }
 
 /// Stable key for a result-list row, used by dyn_stack to decide whether to
@@ -106,10 +109,12 @@ pub(crate) fn row_key(
 /// where partial-alpha would leak the framebuffer through.
 fn blend(over: Color, under: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
-    let r = (over.r as f32 * t + under.r as f32 * (1.0 - t)) as u8;
-    let g = (over.g as f32 * t + under.g as f32 * (1.0 - t)) as u8;
-    let b = (over.b as f32 * t + under.b as f32 * (1.0 - t)) as u8;
-    Color::rgb8(r, g, b)
+    let o = over.to_rgba8();
+    let u = under.to_rgba8();
+    let r = (o.r as f32 * t + u.r as f32 * (1.0 - t)) as u8;
+    let g = (o.g as f32 * t + u.g as f32 * (1.0 - t)) as u8;
+    let b = (o.b as f32 * t + u.b as f32 * (1.0 - t)) as u8;
+    Color::from_rgb8(r, g, b)
 }
 
 // ─── Match-highlight helpers ─────────────────────────────────────────────────
@@ -151,7 +156,7 @@ fn highlighted_label(
         byte = next;
     }
 
-    rich_text(move || {
+    let compute = move || {
         let families: Vec<FamilyOwned> = FamilyOwned::parse_list(&font_family).collect();
         let default_attrs = Attrs::new()
             .color(fg)
@@ -165,10 +170,10 @@ fn highlighted_label(
                 .font_size(font_size);
             attrs_list.add_span(range.clone(), span_attrs);
         }
-        let mut layout = TextLayout::new();
-        layout.set_text(&label_str, attrs_list);
-        layout
-    })
+        (label_str.clone(), attrs_list)
+    };
+    let (initial_text, initial_attrs) = compute();
+    rich_text(initial_text, initial_attrs, compute)
 }
 
 // ─── Entry-row view ──────────────────────────────────────────────────────────
@@ -233,7 +238,7 @@ fn entry_row(
                 .rasterise_svg(path, 48);
             match bytes {
                 Some(arc) => img(move || (*arc).clone()).style(icon_style).into_any(),
-                None => floem::views::empty().style(icon_style).into_any(),
+                None => Empty::new().style(icon_style).into_any(),
             }
         }
         Some(path) => {
@@ -243,7 +248,7 @@ fn entry_row(
                 .style(icon_style)
                 .into_any()
         }
-        None => floem::views::empty().style(icon_style).into_any(),
+        None => Empty::new().style(icon_style).into_any(),
     };
 
     let label_view = highlighted_label(
@@ -278,7 +283,7 @@ fn entry_row(
             .style(move |s| s.margin_left(DESC_GAP))
             .into_any()
         }
-        None => floem::views::empty().into_any(),
+        None => Empty::new().into_any(),
     };
 
     let click_payload = entry.payload.clone();
@@ -288,7 +293,7 @@ fn entry_row(
     // stays distinct from the cursor row (which keeps the deeper selected_bg
     // and the accent border).
     let visual_bg = blend(accent, selected_bg, 0.35);
-    h_stack((icon_view, label_view.into_any(), desc_view))
+    Stack::horizontal((icon_view, label_view.into_any(), desc_view))
         .style(move |s| {
             let cursor_row = selected_sig.get() == mi;
             let in_visual_range = match visual_anchor_sig.get() {
@@ -327,7 +332,7 @@ fn entry_row(
                 // for keyboard / programmatic selection (j/k/arrows).
                 .apply_if(!highlighted, |s| s.hover(|s| s.background(hover_bg)))
         })
-        .on_click_stop(move |_| {
+        .on_event_stop(Click, move |_cx: &mut EventCx, _ev: &()| {
             selected_sig.set(mi);
             // Mirror the keyboard Accept path: bump frecency + push history.
             {
@@ -430,21 +435,21 @@ pub(crate) fn mask_password(enabled: bool, text: &str) -> String {
 /// Renders `text` inside the same panel chrome as `picker_view` — same bg,
 /// border, radius, and padding. No input row, no result list, no status bar.
 /// Pressing Escape dismisses via `std::process::exit(0)`.
-pub fn message_view(text: String, theme: crate::config::Theme, windowed: bool) -> impl IntoView {
+pub fn message_view(text: String, theme: crate::config::Theme) -> impl IntoView {
     let bg = parse_color(&theme.bg);
     let fg = parse_color(&theme.fg);
     let accent = parse_color(&theme.accent);
     let font_family = theme.font.clone();
     let font_size = theme.font_size;
 
-    let msg_label = label(move || text.clone()).style(move |s| {
+    let msg_label = Label::derived(move || text.clone()).style(move |s| {
         s.color(fg)
             .font_family(font_family.clone())
             .font_size(font_size)
     });
 
-    container(
-        container(container(msg_label).style(move |s| {
+    Container::new(
+        Container::new(Container::new(msg_label).style(move |s| {
             s.width_full()
                 .height_full()
                 .padding(PANEL_PAD)
@@ -452,23 +457,20 @@ pub fn message_view(text: String, theme: crate::config::Theme, windowed: bool) -
                 .justify_center()
         }))
         .style(move |s| {
-            let s = s.width_full().height_full().background(bg);
-            if windowed {
-                s
-            } else {
-                s.border(BORDER_W)
-                    .border_color(accent)
-                    .border_radius(PANEL_RADIUS)
-            }
+            s.width_full()
+                .height_full()
+                .background(bg)
+                .border(BORDER_W)
+                .border_color(accent)
+                .border_radius(PANEL_RADIUS)
         }),
     )
     .style(move |s| s.width_full().height_full().background(bg))
-    .keyboard_navigable()
-    .on_event(EventListener::KeyDown, move |ev| {
-        let Event::KeyDown(ke) = ev else {
-            return EventPropagation::Continue;
-        };
-        if matches!(ke.key.logical_key, Key::Named(NamedKey::Escape)) {
+    .style(|s| s.keyboard_navigable())
+    .on_event(KeyDown, move |_cx: &mut EventCx, kb_event: &KeyboardEvent| {
+        // Esc is shortcut-like → reaches us via the registry fallback,
+        // no focus required.
+        if matches!(kb_event.key, Key::Named(NamedKey::Escape)) {
             std::process::exit(0);
         }
         EventPropagation::Stop
@@ -490,7 +492,7 @@ fn ex_bar(
     // Wrap the label in an h_stack so `items_center` actually centers the
     // glyphs vertically. A bare label doesn't have flex children, so
     // `items_center` on it would be a no-op and the text sticks to the top.
-    h_stack((label(move || match ex_buf.get() {
+    Stack::horizontal((Label::derived(move || match ex_buf.get() {
         Some(s) => {
             // Ex caret always at end of buffer for now — ex command doesn't
             // support mid-buffer editing yet.
@@ -529,6 +531,10 @@ const STATUS_BAR_MARGIN_BOTTOM: f64 = 0.0;
 pub const STATUS_BAR_TOTAL: f64 =
     STATUS_BAR_HEIGHT + STATUS_BAR_VPAD * 2.0 + STATUS_BAR_MARGIN_TOP + STATUS_BAR_MARGIN_BOTTOM;
 
+/// Total vertical space the ex bar occupies. height(22) + margin_top(8) +
+/// margin_bottom(2) — keep in sync with `fn ex_bar` if those change.
+pub const EX_BAR_TOTAL: f64 = 22.0 + 8.0 + 2.0;
+
 #[allow(clippy::too_many_arguments)]
 fn status_bar(
     vim_mode_sig: RwSignal<VimMode>,
@@ -547,7 +553,7 @@ fn status_bar(
     let count_bg = blend(accent, selected_bg, 0.25);
 
     let ff_mode = font_family.clone();
-    let mode_label = label(move || match vim_mode_sig.get() {
+    let mode_label = Label::derived(move || match vim_mode_sig.get() {
         VimMode::Insert => "INSERT".to_string(),
         VimMode::Normal => "NORMAL".to_string(),
         VimMode::Visual => "VISUAL".to_string(),
@@ -571,7 +577,7 @@ fn status_bar(
 
     let ff_mode_name = font_family.clone();
     let state_mode = Arc::clone(&state);
-    let mode_name_label = label(move || {
+    let mode_name_label = Label::derived(move || {
         let _ = rev.get();
         let s = state_mode.lock().unwrap();
         format!("{:?}", s.cli_mode).to_lowercase()
@@ -585,7 +591,7 @@ fn status_bar(
 
     let ff_count = font_family.clone();
     let state_count = Arc::clone(&state);
-    let count_label = label(move || {
+    let count_label = Label::derived(move || {
         let _ = rev.get();
         let sel = selected_sig.get();
         let total = state_count.lock().unwrap().matches.len();
@@ -605,10 +611,10 @@ fn status_bar(
             .border_radius(4.0)
     });
 
-    h_stack((
+    Stack::horizontal((
         mode_label,
         mode_name_label,
-        container(floem::views::empty()).style(|s| s.flex_grow(1.0)),
+        Container::new(Empty::new()).style(|s| s.flex_grow(1.0)),
         count_label,
     ))
     .style(move |s| {
@@ -638,10 +644,6 @@ pub struct AppState {
     pub max_results: usize,
     pub theme: Theme,
     pub matcher: Matcher,
-    /// True when running as a regular OS window (no wlr-layer-shell). The
-    /// OS already paints a window border / shadow / corner rounding, so we
-    /// drop our own panel border to avoid double-bordering.
-    pub windowed: bool,
     /// When true, the query bar renders each character as ● (U+25CF) instead
     /// of the actual glyph. The underlying `query` signal still holds the
     /// real text — masking is display-only.
@@ -810,6 +812,11 @@ impl AppState {
 // ─── Picker view ─────────────────────────────────────────────────────────────
 
 pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
+    // Typing-key events in floem main route only to the focused view. We
+    // construct the outer container with a stable `root_id` so two
+    // listeners below (WindowGainedFocus + per-KeyDown) can pin focus to
+    // it — see the comments at the bottom of this function.
+    let root_id = ViewId::new();
     let (
         query_sig,
         query_cursor_sig,
@@ -845,7 +852,6 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         )
     };
     let prompt_str = state.lock().unwrap().prompt.clone();
-    let windowed = state.lock().unwrap().windowed;
     let password = state.lock().unwrap().password;
 
     let rev: RwSignal<u64> = RwSignal::new(0);
@@ -868,7 +874,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         format!("{}:", prompt_str)
     };
     let ff_prompt = font_family.clone();
-    let prompt_label = label(move || prompt_text.clone()).style(move |s| {
+    let prompt_label = Label::derived(move || prompt_text.clone()).style(move |s| {
         s.color(accent)
             .font_family(ff_prompt.clone())
             .font_size(input_font_size)
@@ -881,10 +887,10 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     let ff_q = font_family.clone();
     let blink_on: RwSignal<bool> = RwSignal::new(true);
     {
-        let (tx, rx) = crossbeam_channel::unbounded::<()>();
-        let tick_sig = create_signal_from_channel(rx);
-        create_effect(move |_| {
-            let _ = tick_sig.get();
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let tick_sig = ChannelSignal::new(rx);
+        Effect::new(move |_| {
+            let _ = tick_sig.get(); // Option<()> — any value triggers the blink flip
             blink_on.update(|b| *b = !*b);
         });
         std::thread::spawn(move || {
@@ -898,13 +904,13 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     }
     // Keep cursor visible on every keystroke so the caret never hides mid-type.
     // Both query, query_cursor, and ex_buf mutations should reset the blink phase.
-    create_effect(move |_| {
+    Effect::new(move |_| {
         let _ = query_sig.get();
         let _ = query_cursor_sig.get();
         let _ = ex_buf_sig.get();
         blink_on.set(true);
     });
-    let query_label = label(move || {
+    let query_label = Label::derived(move || {
         let q = query_sig.get();
         let displayed = mask_password(password, &q);
         with_cursor(
@@ -925,7 +931,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // Rerank whenever the query mutates. Bump `rev` so the dyn_stack rebuilds
     // against the new match list.
     let state_rerank = Arc::clone(&state);
-    create_effect(move |prev: Option<String>| {
+    Effect::new(move |prev: Option<String>| {
         let cur = query_sig.get();
         if prev.as_deref() != Some(cur.as_str()) {
             // `rerank()` calls `picker.clamp_selected` which `selected.set(0)`s
@@ -936,7 +942,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             // Mutex isn't re-entrant, so the second lock hangs forever (the
             // "no-results hang"). `batch` queues subscriber effects until
             // the closure returns; by then the mutex is dropped.
-            batch(|| {
+            Effect::batch(|| {
                 {
                     let mut s = state_rerank.lock().unwrap();
                     s.rerank();
@@ -948,7 +954,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     });
 
     let hover_bg = blend(accent, selected_bg, 0.18);
-    let input_row = h_stack((prompt_label, query_label)).style(move |s| {
+    let input_row = Stack::horizontal((prompt_label, query_label)).style(move |s| {
         s.width_full()
             .height(INPUT_ROW_HEIGHT)
             .min_height(INPUT_ROW_HEIGHT)
@@ -957,7 +963,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             .items_center()
             .background(selected_bg)
             .border_radius(ROW_RADIUS)
-            .margin_bottom(8.0)
+            .margin_bottom(INPUT_MARGIN_BOTTOM)
             .hover(|s| s.background(hover_bg))
     });
 
@@ -969,8 +975,6 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     let state_row = Arc::clone(&state);
     let ff_list = font_family.clone();
     let result_list = virtual_stack(
-        VirtualDirection::Vertical,
-        VirtualItemSize::Fixed(Box::new(|| ROW_PITCH)),
         move || {
             let _r = rev.get();
             let s = state_list.lock().unwrap();
@@ -989,9 +993,10 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                         m.desc_positions.clone(),
                     )
                 })
-                .collect::<im::Vector<_>>()
+                .collect::<imbl::Vector<_>>()
         },
-        |(mi, idx, entry, positions, desc_positions)| {
+        |item| {
+            let (mi, idx, entry, positions, desc_positions) = item;
             row_key(
                 *mi,
                 *idx,
@@ -1019,6 +1024,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             .style(move |s| s.margin_top(ROW_GAP))
         },
     )
+    .item_size_fixed(|| ROW_PITCH)
     .style(|s| s.width_full().flex_direction(FlexDirection::Column));
 
     // Empty-state hint shown inside the scroll viewport when there are zero
@@ -1028,7 +1034,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     let state_empty = Arc::clone(&state);
     let state_empty_style = Arc::clone(&state);
     let ff_empty = font_family.clone();
-    let empty_msg = h_stack((label(move || {
+    let empty_msg = Stack::horizontal((Label::derived(move || {
         let _ = rev.get();
         let s = state_empty.lock().unwrap();
         if s.picker.query.get().is_empty() {
@@ -1052,11 +1058,11 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             .apply_if(!visible, |s| s.display(floem::style::Display::None))
     });
 
-    let result_area = v_stack((result_list, empty_msg))
+    let result_area = Stack::vertical((result_list, empty_msg))
         .style(|s| s.width_full().flex_direction(FlexDirection::Column));
 
     let state_ensure = Arc::clone(&state);
-    let scrollable = scroll(result_area)
+    let scrollable = floem::views::Scroll::new(result_area)
         .ensure_visible(move || {
             let _r = rev.get(); // re-evaluate whenever the match list churns
             // Empty list: returning a non-zero rect for a row that doesn't
@@ -1106,36 +1112,45 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // transparency doesn't leak outside the rounded corners or border ring),
     // and the rounded inner panel that holds the actual content.
     let state_key = Arc::clone(&state);
-    container(
-        container(
-            v_stack((input_row, scrollable, ex.into_any(), status.into_any())).style(move |s| {
+    Container::with_id(
+        root_id,
+        Container::new(
+            Stack::vertical((input_row, scrollable, ex.into_any(), status.into_any())).style(move |s| {
                 s.width_full()
                     .height_full()
-                    .padding_top(PANEL_PAD)
-                    .padding_horiz(PANEL_PAD)
+                    .padding(PANEL_PAD)
             }),
         )
         .style(move |s| {
-            let s = s.width_full().height_full().background(bg);
-            if windowed {
-                // OS window paints its own border/shadow/rounding; skip ours.
-                s
-            } else {
-                s.border(BORDER_W)
-                    .border_color(accent)
-                    .border_radius(PANEL_RADIUS)
-            }
+            s.width_full()
+                .height_full()
+                .background(bg)
+                .border(BORDER_W)
+                .border_color(accent)
+                .border_radius(PANEL_RADIUS)
         }),
     )
     .style(move |s| s.width_full().height_full().background(bg))
-    .keyboard_navigable()
-    .on_event(EventListener::KeyDown, move |ev| {
-        let Event::KeyDown(ke) = ev else {
-            return EventPropagation::Continue;
-        };
-        let ctrl = ke.modifiers.control();
+    .style(|s| s.keyboard_navigable())
+    .on_event(WindowGainedFocus, move |_cx: &mut EventCx, _ev: &()| {
+        // Compositor handed our surface keyboard focus — claim view focus
+        // immediately so the very first keystroke is delivered. Without
+        // this pikr drops keys until Esc→i: the Esc registry-fallback
+        // is the only thing that nudges focus onto root.
+        root_id.request_focus();
+        EventPropagation::Continue
+    })
+    .on_event(KeyDown, move |_cx: &mut EventCx, ke: &KeyboardEvent| {
+        // Re-claim focus on every keystroke. New floem main routes typing
+        // keys ONLY to the focused element; the reactive update triggered
+        // by `picker.query.set(...)` below can drop focus on the next
+        // render and strand subsequent keystrokes. TODO: investigate
+        // upstream — figure out which sub-effect of the rerank chain
+        // moves focus, and pin it so this per-key reclaim can go.
+        root_id.request_focus();
+        let ctrl = ke.modifiers.ctrl();
         let shift = ke.modifiers.shift();
-        let key = &ke.key.logical_key;
+        let key = &ke.key;
 
         enum NavAction {
             None,
@@ -1194,7 +1209,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                     }
                 }
                 Key::Character(ch) => {
-                    buf.push_str(ch);
+                    buf.push_str(ch.as_str());
                     ex_buf_sig.set(Some(buf));
                 }
                 _ => {}

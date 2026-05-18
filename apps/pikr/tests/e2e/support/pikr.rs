@@ -28,9 +28,6 @@ impl Pikr {
         let bin = pikr_bin();
         let mut cmd = Command::new(&bin);
         cmd.args(args)
-            // --no-layer-shell: open as a regular window so we don't need
-            // the wlr-layer-shell protocol enabled on the headless backend.
-            .arg("--no-layer-shell")
             .envs(sway.env_vars())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -89,7 +86,15 @@ impl Pikr {
                     if Instant::now() >= deadline {
                         let _ = self.child.kill();
                         let _ = self.child.wait();
-                        return Err(format!("pikr did not exit within {:?}", timeout));
+                        use std::io::Read;
+                        let mut stderr = String::new();
+                        if let Some(mut r) = self.child.stderr.take() {
+                            let _ = r.read_to_string(&mut stderr);
+                        }
+                        return Err(format!(
+                            "pikr did not exit within {:?}; stderr:\n{}",
+                            timeout, stderr
+                        ));
                     }
                     std::thread::sleep(Duration::from_millis(100));
                 }
