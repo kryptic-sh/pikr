@@ -1,7 +1,8 @@
 //! pikr — vim-modal picker / launcher.
 
 #![forbid(unsafe_code)]
-#![allow(dead_code)] // v0.1 scaffold — stubs land before consumers.
+#![allow(dead_code)]
+// v0.1 scaffold — stubs land before consumers.
 // floem's reactive primitives (RwSignal etc.) are intentionally single-thread
 // and not Send+Sync. Arc<Mutex<AppState>> holding them is deliberate.
 #![allow(clippy::arc_with_non_send_sync)]

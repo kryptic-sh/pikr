@@ -1,7 +1,7 @@
 //! Vim keymap → picker action + dispatch.
 
-use floem::ui_events::keyboard::{Key, NamedKey};
 use floem::reactive::{SignalGet, SignalUpdate};
+use floem::ui_events::keyboard::{Key, NamedKey};
 
 use super::state::{PickerState, VimMode};
 

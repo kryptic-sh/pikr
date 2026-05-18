@@ -2,22 +2,19 @@
 
 use std::sync::{Arc, Mutex};
 
+use floem::ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
 use floem::{
     IntoView, ViewId,
-    event::{EventCx, EventPropagation},
     event::listener::{Click, KeyDown, WindowGainedFocus},
+    event::{EventCx, EventPropagation},
     kurbo::{Rect, Size as KurboSize},
     peniko::Color,
     reactive::{Effect, RwSignal, SignalGet, SignalUpdate},
     receiver_signal::ChannelSignal,
     style::FlexDirection,
     text::{Attrs, AttrsList, FamilyOwned},
-    views::{
-        Container, Decorators, Empty, Label,
-        Stack, img, rich_text, virtual_stack,
-    },
+    views::{Container, Decorators, Empty, Label, Stack, img, rich_text, virtual_stack},
 };
-use floem::ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
 
 use crate::cli::Mode as CliMode;
 use crate::config::Theme;
@@ -467,14 +464,17 @@ pub fn message_view(text: String, theme: crate::config::Theme) -> impl IntoView 
     )
     .style(move |s| s.width_full().height_full().background(bg))
     .style(|s| s.keyboard_navigable())
-    .on_event(KeyDown, move |_cx: &mut EventCx, kb_event: &KeyboardEvent| {
-        // Esc is shortcut-like → reaches us via the registry fallback,
-        // no focus required.
-        if matches!(kb_event.key, Key::Named(NamedKey::Escape)) {
-            std::process::exit(0);
-        }
-        EventPropagation::Stop
-    })
+    .on_event(
+        KeyDown,
+        move |_cx: &mut EventCx, kb_event: &KeyboardEvent| {
+            // Esc is shortcut-like → reaches us via the registry fallback,
+            // no focus required.
+            if matches!(kb_event.key, Key::Named(NamedKey::Escape)) {
+                std::process::exit(0);
+            }
+            EventPropagation::Stop
+        },
+    )
 }
 
 // ─── Ex command bar ──────────────────────────────────────────────────────────
@@ -1115,11 +1115,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     Container::with_id(
         root_id,
         Container::new(
-            Stack::vertical((input_row, scrollable, ex.into_any(), status.into_any())).style(move |s| {
-                s.width_full()
-                    .height_full()
-                    .padding(PANEL_PAD)
-            }),
+            Stack::vertical((input_row, scrollable, ex.into_any(), status.into_any()))
+                .style(move |s| s.width_full().height_full().padding(PANEL_PAD)),
         )
         .style(move |s| {
             s.width_full()
