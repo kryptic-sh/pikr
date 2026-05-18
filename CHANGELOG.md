@@ -8,6 +8,30 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-05-18
+
+### Fixed
+
+- **`cargo test` no longer pops a pikr window on dev boxes.** The
+  `accepts_show_drun` smoke test inherited the user's `WAYLAND_DISPLAY` and
+  spawned pikr against the live compositor, putting a stray layer-shell surface
+  on screen every time anyone ran the test suite. The live-render path is
+  already exercised by the e2e harness in `tests/e2e/` (which spins its own
+  `sway --headless` fixture), so the smoke test collapsed to a single check:
+  pikr exits non-zero with the guard message when `WAYLAND_DISPLAY` is unset.
+  Renamed to `missing_wayland_display_exits_with_guard`.
+- **Build matrix unblocked for tag releases.** Dropped both `*-apple-darwin`
+  targets — pikr can't compile on macOS until Epic 5 / #10 restores a
+  non-Wayland runtime path (the floem fork's `Application::new_wayland()` is
+  `cfg`-gated to Linux/FreeBSD). The `brew-tap` publish job is short-circuited
+  (`if: false`) to match; flip back when macOS lands.
+- **Linux build scripts find pkg-config.** The build matrix now installs
+  `libgtk-3-dev` + `libxkbcommon-dev` for the host (glib-sys / gobject-sys build
+  scripts pulled via floem's `muda` Linux dep). For `aarch64-unknown-linux-gnu`
+  it layers Ubuntu's `:arm64` multiarch and sets `PKG_CONFIG_PATH` /
+  `PKG_CONFIG_ALLOW_CROSS` / `PKG_CONFIG_SYSROOT_DIR` so the cross-target's
+  `.pc` files resolve.
+
 ## [0.5.2] - 2026-05-18
 
 ### Fixed
@@ -433,7 +457,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.3
 [0.5.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.2
 [0.5.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.1
 [0.5.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.0
