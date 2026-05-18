@@ -8,6 +8,18 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-05-18
+
+### Fixed
+
+- **e2e flake on CI** (closes #29).
+  `accept_matched_candidate_with_return_emits_stdout` failed on Ubuntu's
+  pixman-renderer headless sway: 500ms pre-key delay wasn't enough for pikr's
+  full startup (XDG icon theme + frecency load + first paint) before wtype
+  started sending keys, so the typed "ban" + Return landed before pikr could
+  grab focus. Bumped wtype `.delay` 500ms → 1500ms and `wait_timeout` 5s → 10s
+  across the suite. Local Wayland still passes in ~10s.
+
 ## [0.6.2] - 2026-05-18
 
 ### Fixed
@@ -538,7 +550,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.3
 [0.6.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.2
 [0.6.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.1
 [0.6.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.0
