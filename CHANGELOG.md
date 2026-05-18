@@ -8,13 +8,73 @@ and this project adheres to
 
 ## [Unreleased]
 
-### Removed
+## [0.5.0] - 2026-05-18
+
+### Breaking
 
 - **X11 support dropped — pikr is now Wayland-only.** `Application::new()`,
   `X11Config`, and `X11WindowType` paths have been removed. `WAYLAND_DISPLAY`
   unset now prints a clear error and exits non-zero instead of falling back to
-  an X11 window. `--no-layer-shell` continues to work, opening a regular
-  `xdg_toplevel` Wayland window (useful for GNOME Mutter and the e2e harness).
+  an X11 window.
+- **`--no-layer-shell` / `--windowed` CLI flag removed.** pikr now strictly uses
+  `wlr_layer_shell_v1`; the regular `xdg_toplevel` fallback path is gone.
+  Compositors without wlr-layer-shell (e.g. GNOME Mutter) are unsupported.
+- **Layer-shell now requests `KeyboardInteractivity::Exclusive`.** While pikr is
+  open the compositor routes all keys to it; other apps can't take input until
+  pikr is dismissed (Esc x2 / Enter). Mirrors the rofi/wofi modal-launcher
+  contract.
+
+### Changed
+
+- **floem + floem-winit `[patch.crates-io]` refs moved from `layer-shell` to
+  `layer-shell-port`.** Old branches tracked floem 0.2.0 / floem-winit 0.29.5
+  byte-for-byte; new branches sit on top of current `lapce/{floem,winit}` main.
+  pikr migrated through the API shifts that came with Faster Style v2, the unit
+  overhaul, and the `ui-events` keyboard re-routing — `Color::rgb8` →
+  `Color::from_rgb8`, `floem::keyboard` → `floem::ui_events::keyboard`,
+  `Event::KeyDown(ke)` → `Event::Key(KeyboardEvent)` via `listener::KeyDown`,
+  `virtual_stack` 3-arg signature + `.item_size_fixed`,
+  `rich_text(text, attrs, fn)`, `create_signal_from_channel` →
+  `receiver_signal::ChannelSignal`, `im::Vector` → `imbl::Vector` (floem's
+  `VirtualVector` impl moved), and the `v_stack`/`h_stack`/`container`/`label`
+  helper deprecations swapped for `Stack::vertical`/`horizontal`,
+  `Container::new`, `Label::derived`.
+- **Window chrome height recomputed.** Old `chrome_h` in `app.rs` under-counted
+  the ex_bar gutter (32 px) and the panel `padding_bottom` (10 px). Old floem's
+  box-model swallowed the discrepancy, new floem doesn't — the status bar
+  drifted ~8 px down. `chrome_h` now sums every non-scrollable v_stack element
+  precisely: two `PANEL_PAD`s, `INPUT_ROW_HEIGHT`, `INPUT_MARGIN_BOTTOM`,
+  `EX_BAR_TOTAL`, `STATUS_HEIGHT`, `STATUS_BAR_TOTAL`. The panel is now ~32 px
+  taller, and the "8 visible rows" claim is finally honest. New `pub const`s in
+  `ui::view`: `INPUT_MARGIN_BOTTOM`, `EX_BAR_TOTAL`; `PANEL_PAD` is now `pub`.
+
+### Fixed
+
+- **Keystrokes were dropped until the user pressed Esc→i.** In new floem main,
+  typing keys (unmodified character input) route only to the focused view;
+  shortcut-like keys (Esc, Tab, …) fall back to the listener registry. pikr's
+  outer container is `keyboard_navigable` but the mount-time
+  `request_focus(|| {})` Effect raced with the compositor's first key delivery
+  on Hyprland — the first keys landed before floem committed focus, so they fell
+  on the floor. The Esc→i workaround happened to claim focus via the
+  registry-fallback Esc path. Fix: capture a stable `root_id: ViewId` on the
+  outer Container and re-claim focus on `WindowGainedFocus` (initial,
+  compositor-aligned) plus at the top of the `KeyDown` handler (per-key, because
+  reactive updates from `picker.query.set(...)` drop view-focus mid-typing). The
+  latter is a workaround for a focus-drop in the rerank reactive chain — see
+  followup tracking issue.
+
+### Removed
+
+- `--no-layer-shell` / `--windowed` CLI flag (see Breaking).
+- `AppState.windowed` field, `message_view(_, _, windowed)` parameter, and the
+  `if windowed { ... } else { border }` panel-border branch — pikr is always
+  layer-shell now so the OS-window vs layer-shell distinction is gone. The panel
+  always paints its own rounded border.
+- `crossbeam-channel` workspace + crate dep (unused after `ChannelSignal`
+  swapped to `std::sync::mpsc`; `crossbeam_channel::Receiver` doesn't implement
+  floem's `BlockingReceiver` trait).
+- `im` workspace dep (replaced by `imbl 7.0` for floem's `VirtualVector` impl).
 
 ## [0.4.1] - 2026-05-18
 
@@ -341,7 +401,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.0
 [0.4.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.4.1
 [0.4.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.4.0
 [0.3.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.3.2
