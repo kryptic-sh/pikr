@@ -8,6 +8,17 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-05-18
+
+### Fixed
+
+- **e2e: `accept_matched` now uses `--filter` instead of live typing.** The
+  1500ms key-delay bump in v0.6.3 still wasn't enough on CI's pixman +
+  zink-broken-Vulkan stack — per-key rerank+repaint outran wtype's pacing and
+  Return arrived before the match list was settled. Switched to `--filter ban`
+  so pikr does one matcher pass at startup, then the test sends only Return.
+  Local: ~1.8s (was ~10s); CI: expected to hold without the live-typing race.
+
 ## [0.6.3] - 2026-05-18
 
 ### Fixed
@@ -550,7 +561,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.4
 [0.6.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.3
 [0.6.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.2
 [0.6.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.1
