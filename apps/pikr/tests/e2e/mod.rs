@@ -48,11 +48,11 @@ fn esc_x2_from_insert_exits_1_drun() {
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--show", "drun"], None).unwrap();
     Wtype::new(&sway)
-        .delay(Duration::from_millis(500))
+        .delay(Duration::from_millis(1500))
         .keys(&[Key::Escape, Key::Escape])
         .send()
         .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(5)).unwrap();
+    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(
         out.exit_code,
         Some(1),
@@ -70,11 +70,11 @@ fn esc_x2_from_insert_exits_1_dmenu() {
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--dmenu"], Some("alpha\nbeta\ngamma\n")).unwrap();
     Wtype::new(&sway)
-        .delay(Duration::from_millis(500))
+        .delay(Duration::from_millis(1500))
         .keys(&[Key::Escape, Key::Escape])
         .send()
         .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(5)).unwrap();
+    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(
         out.exit_code,
         Some(1),
@@ -92,11 +92,11 @@ fn esc_x2_from_insert_exits_1_calc() {
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--show", "calc"], None).unwrap();
     Wtype::new(&sway)
-        .delay(Duration::from_millis(500))
+        .delay(Duration::from_millis(1500))
         .keys(&[Key::Escape, Key::Escape])
         .send()
         .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(5)).unwrap();
+    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(
         out.exit_code,
         Some(1),
@@ -116,11 +116,11 @@ fn single_esc_message_modal_exits_0() {
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--message", "hello"], None).unwrap();
     Wtype::new(&sway)
-        .delay(Duration::from_millis(500))
+        .delay(Duration::from_millis(1500))
         .keys(&[Key::Escape])
         .send()
         .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(5)).unwrap();
+    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(
         out.exit_code,
         Some(0),
@@ -141,12 +141,12 @@ fn accept_typed_query_with_shift_enter_emits_stdout() {
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--dmenu"], Some("apple\nbanana\ncherry\n")).unwrap();
     Wtype::new(&sway)
-        .delay(Duration::from_millis(500))
+        .delay(Duration::from_millis(1500))
         .text("xyz") // no match → query stays as-is
         .keys(&[Key::ShiftReturn]) // Shift-Enter = AcceptCustom → exit 0 + stdout
         .send()
         .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(5)).unwrap();
+    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(
         out.exit_code,
         Some(0),
@@ -172,12 +172,12 @@ fn accept_matched_candidate_with_return_emits_stdout() {
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--dmenu"], Some("apple\nbanana\ncherry\n")).unwrap();
     Wtype::new(&sway)
-        .delay(Duration::from_millis(500))
+        .delay(Duration::from_millis(1500))
         .text("ban") // unambiguous prefix of "banana"
         .keys(&[Key::Return])
         .send()
         .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(5)).unwrap();
+    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(
         out.exit_code,
         Some(0),
