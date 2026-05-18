@@ -8,6 +8,26 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-05-18
+
+### Fixed
+
+- **Windows clippy: round 2.** v0.6.1 cleaned up `xdg` + freedesktop refs but
+  missed five more unix-only sites:
+  - `modes/run.rs` — `PermissionsExt::mode()` for executable-bit detection on
+    PATH entries.
+  - `modes/ssh.rs` — same `PermissionsExt::mode()` for the terminal `which`
+    lookup; also assumed `/etc/ssh/ssh_config` + `alacritty/kitty/foot/xterm`.
+  - `ui/view.rs::AppState::switch_mode` — the `CliMode::Drun` match arm
+    referenced `modes::drun` unconditionally; Run/Ssh arms needed the same gate.
+  - `tests/keyboard.rs` (e2e entry) — `libc::kill` in `sway.rs`; whole harness
+    is unix-only.
+  - Fix: `#[cfg(unix)] pub mod {run,ssh}` in `modes/mod.rs`; per-arm
+    `#[cfg(unix)] / #[cfg(not(unix))]` in `app.rs::run` and
+    `view.rs::switch_mode` (exit 2 / no-op respectively); `#![cfg(unix)]` on
+    `tests/keyboard.rs`. Calc / clipboard / dmenu / emoji keep working on
+    Windows.
+
 ## [0.6.1] - 2026-05-18
 
 ### Fixed
@@ -518,7 +538,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.2
 [0.6.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.1
 [0.6.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.0
 [0.5.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.4
