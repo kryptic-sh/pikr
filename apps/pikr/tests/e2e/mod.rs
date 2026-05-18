@@ -164,16 +164,26 @@ fn accept_typed_query_with_shift_enter_emits_stdout() {
 /// Typing a prefix that matches a candidate and pressing Return
 /// (`Accept`) must print the matched candidate to stdout and exit 0.
 /// Distinguishes the `Accept` arm from `AcceptCustom` (shift-enter).
+///
+/// Uses `--filter` to pre-seed the query so pikr runs ONE matcher pass
+/// at startup; the test then sends only Return. Typing characters live
+/// was racy on CI's pixman+broken-Vulkan path — each keystroke
+/// triggered a per-key rerank+repaint that occasionally outran wtype's
+/// pacing, leaving Return queued before pikr finished re-rendering.
 #[test]
 fn accept_matched_candidate_with_return_emits_stdout() {
     if !require_tools() {
         return;
     }
     let sway = Sway::headless();
-    let pikr = Pikr::spawn(&sway, &["--dmenu"], Some("apple\nbanana\ncherry\n")).unwrap();
+    let pikr = Pikr::spawn(
+        &sway,
+        &["--dmenu", "--filter", "ban"],
+        Some("apple\nbanana\ncherry\n"),
+    )
+    .unwrap();
     Wtype::new(&sway)
         .delay(Duration::from_millis(1500))
-        .text("ban") // unambiguous prefix of "banana"
         .keys(&[Key::Return])
         .send()
         .unwrap();
