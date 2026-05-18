@@ -8,6 +8,16 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-05-18
+
+### Added
+
+- **`aur-bin` publish is back, x86_64-only.** Restored the AUR push job that was
+  short-circuited in v0.5.4 when aarch64 fell out of the build matrix.
+  `pkg/aur/PKGBUILD-bin.in` now declares `arch=('x86_64')` and the workflow
+  fetches only the x86_64 sha sidecar. `yay -S pikr-bin` works again. arm64
+  entries will be restored when #31 lands `aarch64-unknown-linux-gnu`.
+
 ## [0.6.4] - 2026-05-18
 
 ### Fixed
@@ -561,7 +571,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.5...HEAD
+[0.6.5]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.5
 [0.6.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.4
 [0.6.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.3
 [0.6.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.2
