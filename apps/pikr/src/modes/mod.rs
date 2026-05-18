@@ -10,6 +10,8 @@ use std::process::{Command, Stdio};
 pub mod calc;
 pub mod clipboard;
 pub mod dmenu;
+// drun reads `.desktop` files via freedesktop-desktop-entry — Linux/BSD only.
+#[cfg(unix)]
 pub mod drun;
 pub mod emoji;
 pub mod run;

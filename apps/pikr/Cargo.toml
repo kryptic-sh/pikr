@@ -22,8 +22,6 @@ clap.workspace = true
 emojis.workspace = true
 evalexpr.workspace = true
 floem.workspace = true
-freedesktop-desktop-entry.workspace = true
-freedesktop-icons.workspace = true
 resvg.workspace = true
 imbl.workspace = true
 nucleo.workspace = true
@@ -32,6 +30,13 @@ shlex.workspace = true
 toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+# Freedesktop-spec crates (drun, icon theme, XDG base dirs) are
+# unix-only. On macOS / Windows the drun mode degrades to an empty
+# entry list and config / frecency / history fall back to defaults.
+[target.'cfg(unix)'.dependencies]
+freedesktop-desktop-entry.workspace = true
+freedesktop-icons.workspace = true
 xdg.workspace = true
 
 [dev-dependencies]

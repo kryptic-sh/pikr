@@ -114,8 +114,17 @@ fn mode_key(mode: CliMode) -> String {
 }
 
 fn state_file_path() -> Option<PathBuf> {
-    let dirs = xdg::BaseDirectories::with_prefix("pikr").ok()?;
-    dirs.place_state_file("history.toml").ok()
+    // See `frecency::state_file_path` — same unix-only gate; history is
+    // session-scoped on macOS / Windows until we route through `dirs`.
+    #[cfg(unix)]
+    {
+        let dirs = xdg::BaseDirectories::with_prefix("pikr").ok()?;
+        dirs.place_state_file("history.toml").ok()
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
 }
 
 #[cfg(test)]

@@ -76,7 +76,13 @@ pub fn run(cli: Cli) -> Result<()> {
         Mode::Calc => Box::new(modes::calc::Calc),
         Mode::Clipboard => Box::new(modes::clipboard::Clipboard),
         Mode::Dmenu => Box::new(modes::dmenu::Dmenu),
+        #[cfg(unix)]
         Mode::Drun => Box::new(modes::drun::Drun),
+        #[cfg(not(unix))]
+        Mode::Drun => {
+            eprintln!("pikr: --show drun is unix-only; pick another mode.");
+            std::process::exit(2);
+        }
         Mode::Emoji => Box::new(modes::emoji::Emoji),
         Mode::Run => Box::new(modes::run::Run),
         Mode::Ssh => Box::new(modes::ssh::Ssh),

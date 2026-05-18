@@ -39,6 +39,7 @@ pub const GENERIC_FALLBACK_NAMES: &[&str] = &[
 /// falls back to hicolor — which doesn't ship the conventional
 /// `application-x-executable` / `applications-other` generic icons.
 /// Adwaita and Papirus do, and `breeze` is the KDE equivalent.
+#[cfg(unix)]
 const FALLBACK_THEMES: &[&str] = &["Adwaita", "Papirus", "breeze", "hicolor"];
 
 impl IconCache {
@@ -71,23 +72,29 @@ impl IconCache {
         let resolved = if name_or_path.starts_with('/') {
             Some(PathBuf::from(name_or_path))
         } else {
-            // Try the default-theme lookup first (honours
-            // XDG_CURRENT_DESKTOP / dconf / GTK theme settings). If that
-            // misses — common on minimal sessions where no theme is
-            // configured — walk a small list of widely-installed themes.
-            freedesktop_icons::lookup(name_or_path)
-                .with_size(32)
-                .with_scale(1)
-                .find()
-                .or_else(|| {
-                    FALLBACK_THEMES.iter().find_map(|theme| {
-                        freedesktop_icons::lookup(name_or_path)
-                            .with_size(32)
-                            .with_scale(1)
-                            .with_theme(theme)
-                            .find()
+            // freedesktop_icons is unix-only. On macOS / Windows bare
+            // icon names don't resolve to anything useful — the picker
+            // shows no icon and the cache stores the miss.
+            #[cfg(unix)]
+            {
+                freedesktop_icons::lookup(name_or_path)
+                    .with_size(32)
+                    .with_scale(1)
+                    .find()
+                    .or_else(|| {
+                        FALLBACK_THEMES.iter().find_map(|theme| {
+                            freedesktop_icons::lookup(name_or_path)
+                                .with_size(32)
+                                .with_scale(1)
+                                .with_theme(theme)
+                                .find()
+                        })
                     })
-                })
+            }
+            #[cfg(not(unix))]
+            {
+                None
+            }
         };
 
         self.cache

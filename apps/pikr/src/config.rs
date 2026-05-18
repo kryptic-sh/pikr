@@ -54,13 +54,22 @@ impl Config {
         let path = match path {
             Some(p) => p.to_path_buf(),
             None => {
-                let dirs = match xdg::BaseDirectories::with_prefix("pikr") {
-                    Ok(d) => d,
-                    Err(_) => return Ok(Self::default()),
-                };
-                match dirs.place_config_file("config.toml") {
-                    Ok(p) => p,
-                    Err(_) => return Ok(Self::default()),
+                // XDG config lookup on unix; non-unix falls back to
+                // in-memory defaults until we route through `dirs`.
+                #[cfg(unix)]
+                {
+                    let dirs = match xdg::BaseDirectories::with_prefix("pikr") {
+                        Ok(d) => d,
+                        Err(_) => return Ok(Self::default()),
+                    };
+                    match dirs.place_config_file("config.toml") {
+                        Ok(p) => p,
+                        Err(_) => return Ok(Self::default()),
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    return Ok(Self::default());
                 }
             }
         };

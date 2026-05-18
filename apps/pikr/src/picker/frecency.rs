@@ -158,8 +158,18 @@ fn score_bonus(entry: &UsageEntry, now_secs: i64) -> u16 {
 }
 
 fn state_file_path() -> Option<PathBuf> {
-    let dirs = xdg::BaseDirectories::with_prefix("pikr").ok()?;
-    dirs.place_state_file("usage.toml").ok()
+    // XDG state dir on unix; persistence is dropped on non-unix targets
+    // for now (frecency rebuilds from XDG order on every launch).
+    // Followup: route through `dirs::data_dir()` on macOS / Windows.
+    #[cfg(unix)]
+    {
+        let dirs = xdg::BaseDirectories::with_prefix("pikr").ok()?;
+        dirs.place_state_file("usage.toml").ok()
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
 }
 
 #[cfg(test)]
