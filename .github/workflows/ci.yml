@@ -293,11 +293,13 @@ jobs:
   aur-bin:
     name: Publish pikr-bin to AUR
     needs: [build]
-    # Disabled while the build matrix is x86_64-only. The pikr-bin
-    # PKGBUILD ships both x86_64 and aarch64 tarballs and AUR's
-    # multi-arch convention assumes both are present. Flip back when
-    # aarch64-unknown-linux-gnu is restored to the binary matrix.
-    if: false
+    # x86_64-only while the binary matrix is missing
+    # `aarch64-unknown-linux-gnu` (#31). The PKGBUILD-bin.in template
+    # mirrors that — `arch=('x86_64')`. Restore both arches when #31
+    # lands.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
@@ -320,20 +322,18 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "release tag: $TAG (pkgver=$VERSION)"
 
-      - name: Fetch tarball sha256 sidecars
+      - name: Fetch tarball sha256 sidecar
         id: sha
         run: |
           set -euo pipefail
           V="${{ steps.tag.outputs.version }}"
           BASE="https://github.com/kryptic-sh/pikr/releases/download/v${V}"
-          # The build matrix uploaded both arches before this job ran
-          # (we `needs: [build]`), so the sidecars are guaranteed to exist.
-          for arch in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
-            curl -fsSL "$BASE/pikr-v${V}-${arch}.tar.gz.sha256" -o "sha.${arch}"
-          done
+          # Build job uploads the x86_64-linux-gnu sidecar before this
+          # one runs (we `needs: [build]`). Restore aarch64 here when
+          # #31 lands.
+          curl -fsSL "$BASE/pikr-v${V}-x86_64-unknown-linux-gnu.tar.gz.sha256" -o "sha.x86_64"
           # sidecar format: `<hash>  <filename>` — keep first column.
-          echo "x86_64=$(awk '{print $1}' sha.x86_64-unknown-linux-gnu)" >> "$GITHUB_OUTPUT"
-          echo "aarch64=$(awk '{print $1}' sha.aarch64-unknown-linux-gnu)" >> "$GITHUB_OUTPUT"
+          echo "x86_64=$(awk '{print $1}' sha.x86_64)" >> "$GITHUB_OUTPUT"
 
       - name: Render PKGBUILD
         run: |
@@ -342,7 +342,6 @@ jobs:
           sed \
             -e "s/{VERSION}/${{ steps.tag.outputs.version }}/g" \
             -e "s/{SHA256_X86_64}/${{ steps.sha.outputs.x86_64 }}/g" \
-            -e "s/{SHA256_AARCH64}/${{ steps.sha.outputs.aarch64 }}/g" \
             pkg/aur/PKGBUILD-bin.in > out/PKGBUILD
           echo "--- rendered PKGBUILD ---"
           cat out/PKGBUILD
