@@ -16,6 +16,19 @@ ignore = [
     # maintained but the API surface is closed and the crate has no known
     # CVE. Tracked upstream; revisit when floem drops the dep.
     "RUSTSEC-2024-0436",
+    # gtk-rs GTK3 bindings family — pulled transitively via
+    # jrmoulton/understory (a floem main dep). Upstream gtk-rs deprecated
+    # the GTK3 bindings in favour of GTK4. No CVE; revisit when the floem
+    # tree moves off the GTK3 generation.
+    "RUSTSEC-2024-0412",
+    "RUSTSEC-2024-0413",
+    "RUSTSEC-2024-0415",
+    "RUSTSEC-2024-0416",
+    "RUSTSEC-2024-0418",
+    "RUSTSEC-2024-0419",
+    "RUSTSEC-2024-0420",
+    # proc-macro-error — unmaintained, pulled transitively. No CVE.
+    "RUSTSEC-2024-0370",
 ]
 
 [licenses]
@@ -47,12 +60,13 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
-    # Epic 4 — Wayland layer-shell + X11 dock attrs live on forks of
+    # Epic 4 — Wayland layer-shell support lives on forks of
     # lapce/floem and rust-windowing/winit until the patches land upstream.
     "https://github.com/mxaddict/floem.git",
     "https://github.com/mxaddict/winit.git",
-    # Transitive: the floem fork now pins vger-rs to mxaddict/vger-rs (the
-    # `alpha-blend-fix` branch — separate alpha blend factor so SDF / text-AA
-    # edges don't leak the framebuffer through on transparent Wayland surfaces).
-    "https://github.com/mxaddict/vger-rs",
+    # Transitive deps of the current lapce/floem main that the
+    # layer-shell-port branch tracks: vger-rs (Vello SDF renderer) and
+    # jrmoulton/understory (box-tree / focus utilities).
+    "https://github.com/lapce/vger-rs",
+    "https://github.com/jrmoulton/understory",
 ]
