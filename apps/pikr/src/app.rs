@@ -15,12 +15,18 @@ pub fn run(cli: Cli) -> Result<()> {
     let cfg = Config::load(cli.config.as_deref())?;
     tracing::debug!(?cfg, "config loaded");
 
-    if std::env::var_os("WAYLAND_DISPLAY").is_none() {
-        eprintln!("pikr: WAYLAND_DISPLAY is not set — pikr requires a Wayland compositor");
-        std::process::exit(1);
+    // Wayland-capable unix: require a compositor at startup. Other OSes
+    // (macOS / Windows once they're back in CI) skip the guard — they
+    // open a regular OS-managed top-level window instead of layer-shell.
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    {
+        if std::env::var_os("WAYLAND_DISPLAY").is_none() {
+            eprintln!("pikr: WAYLAND_DISPLAY is not set — pikr requires a Wayland compositor");
+            std::process::exit(1);
+        }
     }
 
-    use floem::window::{Anchor, KeyboardInteractivity, LayerShellConfig, WindowConfig};
+    use floem::window::WindowConfig;
 
     // ── Message modal path ─────────────────────────────────────────────────
     // When --message is given we skip all picker logic and render a simple
@@ -31,20 +37,33 @@ pub fn run(cli: Cli) -> Result<()> {
 
         let width = cli.width.unwrap_or(720);
         let size = floem::kurbo::Size::new(width as f64, 120.0);
-        let layer_cfg = LayerShellConfig {
-            namespace: "pikr".into(),
-            anchor: Anchor::empty(),
-            exclusive_zone: 0,
-            keyboard_interactivity: KeyboardInteractivity::Exclusive,
-            ..Default::default()
-        };
-        let window_config = WindowConfig::default()
-            .size(size)
-            .with_transparent(true)
-            .with_layer_shell(layer_cfg);
-        floem::Application::new_wayland()
-            .window(move |_| view(), Some(window_config))
-            .run();
+
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        {
+            use floem::window::{Anchor, KeyboardInteractivity, LayerShellConfig};
+            let layer_cfg = LayerShellConfig {
+                namespace: "pikr".into(),
+                anchor: Anchor::empty(),
+                exclusive_zone: 0,
+                keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                ..Default::default()
+            };
+            let window_config = WindowConfig::default()
+                .size(size)
+                .with_transparent(true)
+                .with_layer_shell(layer_cfg);
+            floem::Application::new_wayland()
+                .window(move |_| view(), Some(window_config))
+                .run();
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        {
+            let window_config = WindowConfig::default().size(size).with_transparent(true);
+            floem::Application::new()
+                .window(move |_| view(), Some(window_config))
+                .run();
+        }
         return Ok(());
     }
 
@@ -133,28 +152,45 @@ pub fn run(cli: Cli) -> Result<()> {
     let win_width = cli.width.unwrap_or(720) as f64;
     let size = floem::kurbo::Size::new(win_width, viewport_h + chrome_h);
 
-    // The window framebuffer is transparent so the compositor's window-corner
-    // rounding (Hyprland / KWin / etc.) can clip cleanly without leaking the
-    // opaque framebuffer fill into the rounded cutout.
-    let layer_cfg = LayerShellConfig {
-        namespace: "pikr".into(),
-        // No edge anchors → compositor centers the surface on the output.
-        anchor: Anchor::empty(),
-        // Centered overlays should not reserve a strut.
-        exclusive_zone: 0,
-        // Exclusive keyboard focus: the compositor routes all key events to
-        // pikr while open. Other apps can't take input until pikr is
-        // dismissed (Esc x2 / Enter). Matches the rofi/wofi modal-launcher
-        // convention.
-        keyboard_interactivity: KeyboardInteractivity::Exclusive,
-        ..Default::default()
-    };
-    let window_config = WindowConfig::default()
-        .size(size)
-        .with_transparent(true)
-        .with_layer_shell(layer_cfg);
-    floem::Application::new_wayland()
-        .window(move |_| view(), Some(window_config))
-        .run();
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    {
+        use floem::window::{Anchor, KeyboardInteractivity, LayerShellConfig};
+
+        // The window framebuffer is transparent so the compositor's window-corner
+        // rounding (Hyprland / KWin / etc.) can clip cleanly without leaking the
+        // opaque framebuffer fill into the rounded cutout.
+        let layer_cfg = LayerShellConfig {
+            namespace: "pikr".into(),
+            // No edge anchors → compositor centers the surface on the output.
+            anchor: Anchor::empty(),
+            // Centered overlays should not reserve a strut.
+            exclusive_zone: 0,
+            // Exclusive keyboard focus: the compositor routes all key events to
+            // pikr while open. Other apps can't take input until pikr is
+            // dismissed (Esc x2 / Enter). Matches the rofi/wofi modal-launcher
+            // convention.
+            keyboard_interactivity: KeyboardInteractivity::Exclusive,
+            ..Default::default()
+        };
+        let window_config = WindowConfig::default()
+            .size(size)
+            .with_transparent(true)
+            .with_layer_shell(layer_cfg);
+        floem::Application::new_wayland()
+            .window(move |_| view(), Some(window_config))
+            .run();
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+    {
+        // macOS / Windows: pikr opens a regular OS-managed top-level window.
+        // No layer-shell, no exclusive keyboard grab — the host compositor's
+        // window manager owns z-order and focus. Modal-launcher semantics
+        // (Esc dismiss) still apply at the view layer.
+        let window_config = WindowConfig::default().size(size).with_transparent(true);
+        floem::Application::new()
+            .window(move |_| view(), Some(window_config))
+            .run();
+    }
     Ok(())
 }
