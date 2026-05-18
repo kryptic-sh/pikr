@@ -8,6 +8,26 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-18
+
+### Fixed
+
+- **Windows clippy + build path** — `xdg::BaseDirectories` unresolved (the crate
+  is unix-only) and `gettext-sys` crashed on Windows because there's no `make` /
+  `configure` toolchain. Moved `xdg`, `freedesktop-icons`, and
+  `freedesktop-desktop-entry` under `[target.'cfg(unix)'.dependencies]` in
+  `apps/pikr/Cargo.toml` and cfg-gated every call site:
+  - `config.rs::Config::load` — non-unix returns `Self::default()` until we
+    route through `dirs`.
+  - `picker/{frecency,history}.rs::state_file_path` — non-unix returns `None`;
+    frecency / history are session-scoped on macOS and Windows.
+  - `picker/icons.rs::IconCache::resolve` — bare freedesktop icon names resolve
+    to `None` on non-unix; absolute paths still pass through.
+  - `modes/mod.rs` — `pub mod drun` is `#[cfg(unix)]`.
+  - `app.rs` — `Mode::Drun` arm splits per cfg; non-unix exits 2 with a
+    "unix-only" message. Other modes (calc, clipboard, dmenu, emoji, run, ssh)
+    work cross-platform.
+
 ## [0.6.0] - 2026-05-18
 
 ### Added
@@ -498,7 +518,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.1
 [0.6.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.0
 [0.5.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.4
 [0.5.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.3
