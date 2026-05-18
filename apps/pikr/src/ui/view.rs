@@ -791,10 +791,19 @@ impl AppState {
             CliMode::Calc => Box::new(crate::modes::calc::Calc),
             CliMode::Clipboard => Box::new(crate::modes::clipboard::Clipboard),
             CliMode::Dmenu => Box::new(crate::modes::dmenu::Dmenu),
+            #[cfg(unix)]
             CliMode::Drun => Box::new(crate::modes::drun::Drun),
+            #[cfg(not(unix))]
+            CliMode::Drun => return,
             CliMode::Emoji => Box::new(crate::modes::emoji::Emoji),
+            #[cfg(unix)]
             CliMode::Run => Box::new(crate::modes::run::Run),
+            #[cfg(not(unix))]
+            CliMode::Run => return,
+            #[cfg(unix)]
             CliMode::Ssh => Box::new(crate::modes::ssh::Ssh),
+            #[cfg(not(unix))]
+            CliMode::Ssh => return,
         };
         self.entries = m
             .collect()

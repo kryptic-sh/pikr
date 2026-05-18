@@ -14,7 +14,12 @@ pub mod dmenu;
 #[cfg(unix)]
 pub mod drun;
 pub mod emoji;
+// run + ssh use `std::os::unix::fs::PermissionsExt` to detect executable bits
+// and assume unix terminal-emulator names (alacritty/kitty/foot/xterm). Both
+// gated to unix; Windows / non-unix users see a "unix-only" exit at startup.
+#[cfg(unix)]
 pub mod run;
+#[cfg(unix)]
 pub mod ssh;
 
 /// One selectable row.
