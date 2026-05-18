@@ -8,6 +8,18 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-05-18
+
+### Fixed
+
+- **Test target build broken by deprecated
+  `floem::reactive::{batch, create_effect}` in `picker/state.rs`** — the
+  migration in 0.5.0 missed these calls because they live inside a
+  `#[cfg(test)]` block, and the local clippy gate didn't pass `--all-targets`.
+  CI's `--all-targets --all-features` with `-D warnings` caught it on the v0.5.1
+  tag push. Swapped both for `Effect::new` / `Effect::batch` (the new
+  free-function shims) — behaviour unchanged.
+
 ## [0.5.1] - 2026-05-18
 
 ### Fixed
@@ -421,7 +433,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.2
 [0.5.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.1
 [0.5.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.0
 [0.4.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.4.1
