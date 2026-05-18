@@ -8,6 +8,26 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-18
+
+### Fixed
+
+- **CI green after the floem layer-shell-port migration.** The v0.5.0 main push
+  surfaced four blockers in the new dep tree:
+  - `cargo fmt --check` — imports re-ordered post-migration. `cargo fmt` applied
+    across `apps/pikr/src/{main,picker/keys,ui/view}.rs`.
+  - `cargo-deny sources` — current `lapce/floem` main pulls `lapce/vger-rs` and
+    `jrmoulton/understory` transitively. Added both to `deny.toml` `allow-git`
+    and dropped the obsolete `mxaddict/vger-rs` entry (the new fork uses
+    upstream lapce/vger-rs).
+  - `cargo-deny advisories` — gtk-rs GTK3 bindings family
+    (`RUSTSEC-2024-0412/0413/0415/0416/0418/0419/0420`) and `proc-macro-error`
+    (`RUSTSEC-2024-0370`) are unmaintained; ignored with rationale (no CVEs,
+    pulled transitively, revisit when floem moves off the GTK3 generation).
+  - `cargo build` on Linux — `glib-sys`/`gobject-sys` build scripts need
+    `libgtk-3-dev` + `libxkbcommon-dev` installed. Added to the `clippy`,
+    `test`, and `e2e` jobs in `.github/workflows/ci.yml`.
+
 ## [0.5.0] - 2026-05-18
 
 ### Breaking
@@ -401,7 +421,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.1
 [0.5.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.0
 [0.4.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.4.1
 [0.4.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.4.0
