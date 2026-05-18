@@ -8,6 +8,21 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-05-18
+
+### Fixed
+
+- **Tag release CI now actually publishes artifacts.** Two binary-matrix targets
+  broke on the layer-shell-port migration's gtk-rs / glib-sys cross-compile
+  plumbing: `aarch64-unknown-linux-gnu` (`security.ubuntu.com` doesn't host
+  arm64 indexes, so the multiarch apt fetch 404'd on every index file) and
+  `x86_64-unknown-linux-musl` (pkg-config can't cross-compile musl-target glib
+  without a real sysroot). Both rows removed from the binary matrix; the
+  downstream packaging jobs that consume them — `nfpm` arm64 row, `alpine`
+  (.apk), and `aur-bin` — are short-circuited (`if: false`) to match. v0.5.4
+  ships an `x86_64-unknown-linux-gnu` tarball + `.deb` + `.rpm`; the dropped
+  rows are tracked for restore alongside macOS.
+
 ## [0.5.3] - 2026-05-18
 
 ### Fixed
@@ -457,7 +472,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.5.4...HEAD
+[0.5.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.4
 [0.5.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.3
 [0.5.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.2
 [0.5.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.1
