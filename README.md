@@ -2,6 +2,10 @@
 
 Vim-modal picker / launcher. Rofi replacement with hjkl keys.
 
+[![CI](https://github.com/kryptic-sh/pikr/actions/workflows/ci.yml/badge.svg)](https://github.com/kryptic-sh/pikr/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/kryptic-sh/pikr)](https://github.com/kryptic-sh/pikr/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 ## Status
 
 Shipping. Latest release on
@@ -92,9 +96,13 @@ protocol (Hyprland, sway, niri, river, wayfire, …). GNOME Mutter does not
 advertise the protocol — use `--no-layer-shell` for a regular Wayland window.
 X11 is not supported.
 
-## Render backend
+## Architecture
 
 Built on [floem](https://crates.io/crates/floem) (winit + vello), Wayland-only.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) (if exists) or open an issue / PR.
 
 ## License
 
