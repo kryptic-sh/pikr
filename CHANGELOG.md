@@ -8,6 +8,32 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-18
+
+### Added
+
+- **macOS binaries are back.** `aarch64-apple-darwin` + `x86_64-apple-darwin`
+  re-added to the binary build matrix. `apps/pikr/src/app.rs` now selects the
+  runtime window shape per target via `#[cfg]`:
+  - Linux / FreeBSD: unchanged — `WAYLAND_DISPLAY` guard, layer-shell surface
+    with `KeyboardInteractivity::Exclusive`, transparent framebuffer for
+    compositor-side corner rounding.
+  - macOS / Windows: `floem::Application::new()` + a regular `WindowConfig`. No
+    layer-shell types referenced, no Wayland env guard. The host window manager
+    owns z-order and focus; pikr's view-level Esc-dismiss still applies.
+- **`brew-tap` publish job re-enabled** — tag pushes now render the Homebrew
+  formula against the new macOS sha256 sidecars and push to
+  `kryptic-sh/homebrew-tap`.
+
+### Open
+
+- macOS isn't validated end-to-end yet (see #8). The build matrix proves it
+  compiles + ships; runtime behaviour on Apple silicon / Intel needs a live
+  install pass.
+- Linux cross-targets `aarch64-unknown-linux-gnu` (#31) and
+  `x86_64-unknown-linux-musl` (#32) are still out — separate workstream, blocked
+  on cross-compile plumbing for muda+gtk-rs.
+
 ## [0.5.4] - 2026-05-18
 
 ### Fixed
@@ -472,7 +498,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.5.4...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.0
 [0.5.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.4
 [0.5.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.3
 [0.5.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.5.2
