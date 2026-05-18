@@ -155,25 +155,14 @@ jobs:
             macos_min: ""
             suffix: ""
             archive: tar.gz
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            zigbuild_target: aarch64-unknown-linux-gnu.2.28
-            zig: "true"
-            macos_min: ""
-            suffix: ""
-            archive: tar.gz
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            zigbuild_target: x86_64-unknown-linux-musl
-            zig: "true"
-            macos_min: ""
-            suffix: ""
-            archive: tar.gz
-          # macOS targets are intentionally absent — pikr's Wayland-only
-          # pivot (#28, v0.5.0) removed the non-Wayland fallback path, so
-          # the macOS binary won't compile against the current floem fork.
-          # Tracking under Epic 5 (#10): restore a non-Wayland runtime
-          # path before re-adding macos-latest builds.
+          # Trimmed matrix during the layer-shell-port migration. The
+          # `aarch64-unknown-linux-gnu` and `x86_64-unknown-linux-musl`
+          # targets both broke on pkg-config / glib-sys cross-compile
+          # plumbing after the floem fork started pulling muda+gtk-rs.
+          # Restoring them needs either (a) cross-rs/cross with prepared
+          # sysroots or (b) a properly multiarch'd apt source layout plus
+          # musl-static glib — both bigger than this hot-fix. macOS is
+          # gated on Epic 5 / #10 (non-Wayland runtime path) too.
 
     steps:
       - uses: actions/checkout@v6
@@ -188,29 +177,12 @@ jobs:
             exit 1
           fi
 
-      # System deps for transitive gtk-rs / glib-sys build scripts pulled in
-      # via current lapce/floem main (muda on Linux uses gtk). Multiarch
-      # arm64 layer for the cross-aarch64 target — without :arm64 glib /
-      # gtk libs, glib-sys's build script can't resolve pkg-config.
+      # System deps for transitive gtk-rs / glib-sys build scripts pulled
+      # in via current lapce/floem main (muda on Linux uses gtk). Matrix
+      # is x86_64-linux-gnu only for now (see the matrix comment), so the
+      # host's amd64 gtk dev pkgs are enough for pkg-config to resolve.
       - name: Install build deps
-        run: |
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            sudo dpkg --add-architecture arm64
-            sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list
-            sudo tee /etc/apt/sources.list.d/arm64.list <<EOF
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-updates main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-security main restricted universe multiverse
-          EOF
-            sudo apt-get update
-            sudo apt-get install -y libgtk-3-dev:arm64 libxkbcommon-dev:arm64
-            echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
-            echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-            echo "PKG_CONFIG_SYSROOT_DIR=/" >> $GITHUB_ENV
-          else
-            sudo apt-get update
-            sudo apt-get install -y libgtk-3-dev libxkbcommon-dev
-          fi
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxkbcommon-dev
 
       - name: Install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -312,9 +284,11 @@ jobs:
   aur-bin:
     name: Publish pikr-bin to AUR
     needs: [build]
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    # Disabled while the build matrix is x86_64-only. The pikr-bin
+    # PKGBUILD ships both x86_64 and aarch64 tarballs and AUR's
+    # multi-arch convention assumes both are present. Flip back when
+    # aarch64-unknown-linux-gnu is restored to the binary matrix.
+    if: false
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
@@ -423,9 +397,11 @@ jobs:
   alpine:
     name: Build .apk for Alpine (x86_64)
     needs: [build]
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    # Disabled while the build matrix is missing
+    # `x86_64-unknown-linux-musl`. Alpine pulls the musl tarball off the
+    # GitHub release; no tarball, nothing to package. Flip back when musl
+    # is restored to the binary matrix.
+    if: false
     runs-on: ubuntu-latest
     container: alpine:latest
     permissions:
@@ -641,9 +617,10 @@ jobs:
         # target whose tarball we pull off the release. Output filename
         # is `pikr_<ver>_<deb-arch>.deb` for deb and
         # `pikr-<ver>-1.<rpm-arch>.rpm` for rpm — nfpm translates the arch.
+        # arm64 row removed while the build matrix is x86_64-only; restore
+        # alongside aarch64-unknown-linux-gnu in the binary matrix.
         arch:
           - { nfpm: amd64, target: x86_64-unknown-linux-gnu }
-          - { nfpm: arm64, target: aarch64-unknown-linux-gnu }
         format: [deb, rpm]
     steps:
       - uses: actions/checkout@v6
