@@ -85,11 +85,16 @@ font = "monospace"
 font_size = 14.0
 ```
 
+## Requirements
+
+Requires a Wayland compositor advertising the `wlr-layer-shell-unstable-v1`
+protocol (Hyprland, sway, niri, river, wayfire, …). GNOME Mutter does not
+advertise the protocol — use `--no-layer-shell` for a regular Wayland window.
+X11 is not supported.
+
 ## Render backend
 
-Built on [floem](https://crates.io/crates/floem) (winit + vello). Wayland
-layer-shell support is tracked in Epic 4 — landing via a winit fork at
-`mxaddict/winit` which will be upstreamed once proven.
+Built on [floem](https://crates.io/crates/floem) (winit + vello), Wayland-only.
 
 ## License
 

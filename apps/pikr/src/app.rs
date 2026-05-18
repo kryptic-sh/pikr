@@ -27,10 +27,14 @@ pub fn run(cli: Cli) -> Result<()> {
         {
             use floem::window::WindowConfig;
 
+            if std::env::var_os("WAYLAND_DISPLAY").is_none() {
+                eprintln!("pikr: WAYLAND_DISPLAY is not set — pikr requires a Wayland compositor");
+                std::process::exit(1);
+            }
+
             let width = cli.width.unwrap_or(720);
             let size = floem::kurbo::Size::new(width as f64, 120.0);
-            let use_layer_shell =
-                !cli.no_layer_shell && std::env::var_os("WAYLAND_DISPLAY").is_some();
+            let use_layer_shell = !cli.no_layer_shell;
             if use_layer_shell {
                 use floem::window::{Anchor, LayerShellConfig};
                 let layer_cfg = LayerShellConfig {
@@ -47,16 +51,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     .window(move |_| view(), Some(window_config))
                     .run();
             } else {
-                let likely_x11 = std::env::var_os("WAYLAND_DISPLAY").is_none();
-                let mut window_config = WindowConfig::default().size(size).with_transparent(false);
-                if likely_x11 {
-                    use floem::window::{X11Config, X11WindowType};
-                    window_config = window_config.with_x11_config(X11Config {
-                        window_types: vec![X11WindowType::Dock],
-                        override_redirect: false,
-                    });
-                }
-                floem::Application::new()
+                let window_config = WindowConfig::default().size(size).with_transparent(false);
+                floem::Application::new_wayland()
                     .window(move |_| view(), Some(window_config))
                     .run();
             }
@@ -153,7 +149,10 @@ pub fn run(cli: Cli) -> Result<()> {
         let win_width = cli.width.unwrap_or(720) as f64;
         let size = floem::kurbo::Size::new(win_width, viewport_h + chrome_h);
 
-        let use_layer_shell = !cli.no_layer_shell && std::env::var_os("WAYLAND_DISPLAY").is_some();
+        if std::env::var_os("WAYLAND_DISPLAY").is_none() {
+            eprintln!("pikr: WAYLAND_DISPLAY is not set — pikr requires a Wayland compositor");
+            std::process::exit(1);
+        }
 
         // The window framebuffer is ALWAYS transparent so the compositor's
         // window-corner rounding (Hyprland / KWin / etc.) can clip cleanly
@@ -161,7 +160,7 @@ pub fn run(cli: Cli) -> Result<()> {
         // cutout. The `transparent` config / CLI flag instead controls the
         // alpha of the VIEW's background fill — see view.rs.
 
-        if use_layer_shell {
+        if !cli.no_layer_shell {
             tracing::info!("using wlr-layer-shell path");
             use floem::window::{Anchor, LayerShellConfig};
             let layer_cfg = LayerShellConfig {
@@ -180,27 +179,14 @@ pub fn run(cli: Cli) -> Result<()> {
                 .window(move |_| view(), Some(window_config))
                 .run();
         } else {
-            // When falling back from wlr-layer-shell, distinguish two cases:
-            //   * WAYLAND_DISPLAY unset → assume X11 → tag window as a Dock so
-            //     the WM keeps it on top and out of the taskbar.
-            //   * WAYLAND_DISPLAY set but --no-layer-shell → Mutter/GNOME
-            //     style Wayland session → plain xdg_toplevel, no X11 attrs.
-            let likely_x11 = std::env::var_os("WAYLAND_DISPLAY").is_none();
-            tracing::info!(likely_x11, "using plain window path");
-            // Opaque framebuffer in --windowed mode: vger SDF anti-aliasing
+            tracing::info!("using plain Wayland window path (--no-layer-shell)");
+            // Opaque framebuffer in --no-layer-shell mode: vger SDF anti-aliasing
             // along rounded edges mixes with the framebuffer alpha, not the
             // parent's bg. On a transparent framebuffer that produces dotted
             // / fuzzy corners on the status badges. Layer-shell path keeps
             // transparency for compositor-side corner clipping.
-            let mut window_config = WindowConfig::default().size(size).with_transparent(false);
-            if likely_x11 {
-                use floem::window::{X11Config, X11WindowType};
-                window_config = window_config.with_x11_config(X11Config {
-                    window_types: vec![X11WindowType::Dock],
-                    override_redirect: false,
-                });
-            }
-            floem::Application::new()
+            let window_config = WindowConfig::default().size(size).with_transparent(false);
+            floem::Application::new_wayland()
                 .window(move |_| view(), Some(window_config))
                 .run();
         }

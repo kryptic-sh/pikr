@@ -8,6 +8,14 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Removed
+
+- **X11 support dropped — pikr is now Wayland-only.** `Application::new()`,
+  `X11Config`, and `X11WindowType` paths have been removed. `WAYLAND_DISPLAY`
+  unset now prints a clear error and exits non-zero instead of falling back to
+  an X11 window. `--no-layer-shell` continues to work, opening a regular
+  `xdg_toplevel` Wayland window (useful for GNOME Mutter and the e2e harness).
+
 ## [0.4.1] - 2026-05-18
 
 ### Fixed

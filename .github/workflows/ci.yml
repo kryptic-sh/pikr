@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Pikr is Linux-first (Wayland/X11). macOS / Windows clippy is
+        # Pikr is Linux-first, Wayland-only. macOS / Windows clippy is
         # advisory until #8 / #9 (cross-platform desktop support) land —
         # floem's layer-shell fork doesn't build on those targets yet, so
         # `continue-on-error` keeps the matrix informative without
@@ -89,7 +89,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux-first GUI: rofi replacement targets Wayland/X11. macOS
+        # Linux-first GUI: rofi replacement targets Wayland only. macOS
         # release builds are still produced for the Homebrew tap but
         # exercising them under runtime tests adds little value while
         # gettext-sys / floem display-detection break the matrix. Revisit
