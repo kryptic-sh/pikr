@@ -30,8 +30,8 @@ pub struct Cli {
     #[arg(long = "config")]
     pub config: Option<PathBuf>,
 
-    /// Skip Wayland layer-shell, open as a regular window. Useful on compositors
-    /// without wlr-layer-shell (Mutter/GNOME) or for X11.
+    /// Open a regular Wayland window instead of a layer-shell surface. Useful on
+    /// compositors without wlr-layer-shell (e.g. GNOME Mutter).
     #[arg(long = "no-layer-shell", alias = "windowed")]
     pub no_layer_shell: bool,
 
