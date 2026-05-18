@@ -84,7 +84,7 @@ impl Default for PickerState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use floem::reactive::{batch, create_effect};
+    use floem::reactive::Effect;
     use std::cell::Cell;
     use std::rc::Rc;
     use std::sync::{Arc, Mutex};
@@ -115,7 +115,7 @@ mod tests {
         {
             let shared = Arc::clone(&shared);
             let observed = observed.clone();
-            create_effect(move |_| {
+            Effect::new(move |_| {
                 let _ = selected.get();
                 let mut g = shared.lock().unwrap();
                 *g += 1;
@@ -130,7 +130,7 @@ mod tests {
         // Without `batch`, the subscriber would try to re-lock the held
         // mutex and the test thread would hang here (std::sync::Mutex is
         // non-reentrant).
-        batch(|| {
+        Effect::batch(|| {
             let g = shared.lock().unwrap();
             // With batch, signal dispatch is queued; the closure returns
             // and the guard drops before the subscriber actually runs.
@@ -154,7 +154,7 @@ mod tests {
         {
             let count = count.clone();
             let sel = st.selected;
-            create_effect(move |_| {
+            Effect::new(move |_| {
                 let _ = sel.get();
                 count.set(count.get() + 1);
             });
