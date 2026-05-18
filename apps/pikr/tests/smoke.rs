@@ -27,55 +27,31 @@ fn prints_help() {
     assert!(stdout.contains("--dmenu"));
 }
 
-/// Spawns the binary in drun mode and checks that it either enters the floem
-/// event loop (display present → still running after 250 ms, we kill it) or
-/// exits with a missing-display error (headless).
+/// Without `WAYLAND_DISPLAY`, pikr must exit non-zero and print the
+/// "WAYLAND_DISPLAY is not set" guard message. The full live-render path
+/// is exercised by the e2e harness (`tests/e2e/`), which runs pikr inside
+/// a `sway --headless` fixture so dev machines don't see a stray window
+/// pop on every `cargo test` invocation.
 #[test]
-fn accepts_show_drun() {
-    use std::thread;
-    use std::time::Duration;
-
-    let has_display =
-        std::env::var_os("WAYLAND_DISPLAY").is_some() || std::env::var_os("DISPLAY").is_some();
-
-    let mut child = Command::new(bin())
+fn missing_wayland_display_exits_with_guard() {
+    let out = Command::new(bin())
         .args(["--show", "drun"])
+        .env_remove("WAYLAND_DISPLAY")
+        .env_remove("DISPLAY")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
-        .spawn()
+        .output()
         .expect("spawn pikr");
 
-    // Wait long enough for pikr's startup to fail headless (when there's no
-    // display) before we sample try_wait. Startup grew with frecency +
-    // history loads + the initial rerank in v0.3.0; on a busy CI runner the
-    // 250 ms timeout we used previously occasionally fired while pikr was
-    // still in its pre-floem init path, making the test flake with a
-    // misleading "pikr is running without any display set" panic.
-    thread::sleep(Duration::from_millis(1500));
-
-    match child.try_wait().expect("try_wait") {
-        Some(status) => {
-            // Already exited — only acceptable headless.
-            assert!(
-                !has_display,
-                "pikr exited unexpectedly under a display ({status})"
-            );
-            let mut buf = String::new();
-            if let Some(mut err) = child.stderr.take() {
-                use std::io::Read;
-                let _ = err.read_to_string(&mut buf);
-            }
-            assert!(
-                buf.contains("WAYLAND_DISPLAY") || buf.contains("DISPLAY") || !status.success(),
-                "unexpected headless failure: {buf}"
-            );
-        }
-        None => {
-            // Still running — event loop entered. Kill it.
-            child.kill().ok();
-            child.wait().ok();
-            assert!(has_display, "pikr is running without any display set");
-        }
-    }
+    assert!(
+        !out.status.success(),
+        "pikr without WAYLAND_DISPLAY must exit non-zero; got {}",
+        out.status
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("WAYLAND_DISPLAY"),
+        "expected guard message, got stderr: {err}"
+    );
 }
