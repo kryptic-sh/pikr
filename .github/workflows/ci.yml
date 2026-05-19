@@ -745,3 +745,81 @@ jobs:
           fi
           git commit -m "pikr ${{ steps.tag.outputs.version }}"
           git push origin HEAD:main
+
+  # Scoop auto-publish for the kryptic-sh/scoop-bucket repo so Windows
+  # users can `scoop install kryptic/pikr`. Pulls the Windows zip's
+  # sha256 sidecar off the GH release, renders pkg/scoop/pikr.json.in,
+  # and pushes to bucket/pikr.json. Tag-gating cascades from
+  # publish-github-release.
+  #
+  # Required org/repo secret:
+  #   SCOOP_SSH_KEY — ed25519 private key whose public half is a
+  #                   deploy key on kryptic-sh/scoop-bucket (write).
+  #                   NOTE: SCOOP_SSH_KEY is org-level SELECTED-scope — it
+  #                   must be explicitly granted to kryptic-sh/pikr or the
+  #                   deploy step fails with a libcrypto error that
+  #                   misdiagnoses missing access as a bad key. Grant it
+  #                   in Settings → Secrets → SCOOP_SSH_KEY → Repository access.
+  scoop-bucket:
+    name: Publish pikr manifest to scoop-bucket
+    needs: [publish-github-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve version
+        id: tag
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release tag: $TAG (manifest version=$VERSION)"
+
+      - name: Fetch Windows sha256 sidecar
+        id: sha
+        run: |
+          set -euo pipefail
+          V="${{ steps.tag.outputs.version }}"
+          BASE="https://github.com/kryptic-sh/pikr/releases/download/v${V}"
+          curl -fsSL "$BASE/pikr-v${V}-x86_64-pc-windows-msvc.zip.sha256" -o sha.win
+          echo "x86_64=$(awk '{print $1}' sha.win)" >> "$GITHUB_OUTPUT"
+
+      - name: Render manifest
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          sed \
+            -e "s|{VERSION}|${{ steps.tag.outputs.version }}|g" \
+            -e "s|{SHA256_X86_64_WINDOWS}|${{ steps.sha.outputs.x86_64 }}|g" \
+            pkg/scoop/pikr.json.in > out/pikr.json
+          echo "--- rendered manifest ---"
+          cat out/pikr.json
+
+      - name: Configure SSH for scoop-bucket
+        env:
+          SCOOP_SSH_KEY: ${{ secrets.SCOOP_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -dm700 ~/.ssh
+          printf '%s\n' "$SCOOP_SSH_KEY" > ~/.ssh/scoop
+          chmod 600 ~/.ssh/scoop
+
+      - name: Push manifest to scoop-bucket
+        env:
+          GIT_SSH_COMMAND: "ssh -i ~/.ssh/scoop -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=~/.ssh/known_hosts"
+        run: |
+          set -euo pipefail
+          git config --global user.name  "pikr-ci"
+          git config --global user.email "ci@kryptic.sh"
+          git clone git@github.com:kryptic-sh/scoop-bucket.git bucket
+          mkdir -p bucket/bucket
+          cp out/pikr.json bucket/bucket/pikr.json
+          cd bucket
+          git add bucket/pikr.json
+          if git diff --cached --quiet; then
+            echo "no changes vs current bucket head; nothing to push"
+            exit 0
+          fi
+          git commit -m "pikr ${{ steps.tag.outputs.version }}"
+          git push origin HEAD:main

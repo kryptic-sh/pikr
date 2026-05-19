@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Scoop manifest for Windows install via `scoop install kryptic/pikr`. The new
+  `scoop-bucket` CI job renders `pkg/scoop/pikr.json.in` and pushes to
+  `kryptic-sh/scoop-bucket` on each `v*` tag, cascading from
+  `publish-github-release`. (#21)
+
 ## [0.7.1] - 2026-05-19
 
 ### Changed
