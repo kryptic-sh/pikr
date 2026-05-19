@@ -8,6 +8,17 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-05-20
+
+### Changed
+
+- The `--message` modal (`pikr -e "..."`) is now styled via CSS — three new
+  selectors `.message-modal-outer`, `.message-modal`, `.message-text` live in
+  `default.css` alongside the rest of pikr's chrome. Theming the message modal
+  via user CSS now actually works; previously bg/border/radius/padding/font were
+  hardcoded inline and silently ignored stylesheet overrides. Visual rendering
+  is identical to v0.8.3. (#43)
+
 ## [0.8.3] - 2026-05-19
 
 ### Fixed
@@ -755,6 +766,7 @@ and this project adheres to
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
 [Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.7.1...HEAD
+[0.8.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.4
 [0.8.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.3
 [0.8.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.2
 [0.8.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.1
