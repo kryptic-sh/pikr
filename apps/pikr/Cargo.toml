@@ -58,6 +58,7 @@ windows = { version = "0.58", features = [
     "Win32_Graphics_Gdi",
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
+    "Win32_System_Console",
 ] }
 # PNG encoding for the rasterised HICON bitmaps.  `image` is already a
 # transitive dep via floem; pin explicitly so the Windows icon path can

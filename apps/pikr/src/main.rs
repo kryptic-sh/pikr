@@ -16,6 +16,7 @@
 mod app;
 mod cli;
 mod config;
+mod console_attach;
 mod modes;
 mod picker;
 mod ui;
@@ -24,6 +25,12 @@ use anyhow::Result;
 use clap::Parser;
 
 fn main() -> Result<()> {
+    // Re-attach to the parent shell's console on Windows so `--version`,
+    // `--help`, dmenu emit, and panic output reach the calling process.
+    // No-op when launched from Explorer / Scoop shim (no parent console) and
+    // on all non-Windows targets. See `console_attach.rs` for the rationale.
+    console_attach::attach_parent_console();
+
     // Default filter quiets two chatty deps that emit benign WARNs on every
     // startup:
     //   - `usvg` complains about `clip-path: none` / `marker-*: none` and

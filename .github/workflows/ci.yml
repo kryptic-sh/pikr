@@ -159,19 +159,32 @@ jobs:
       - name: Smoke --version (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
+        # pikr.exe is built with `windows_subsystem = "windows"` so the `&`
+        # operator returns immediately (pwsh doesn't wait on GUI-subsystem
+        # processes and stdout isn't piped back). `Start-Process -Wait -PassThru
+        # -RedirectStandardOutput` does both: waits for exit and pipes stdout
+        # to a file we can `Get-Content`.
         run: |
-          $OUT = & ./target/release/pikr.exe --version
-          if ($LASTEXITCODE -ne 0) { Write-Error "--version exit $LASTEXITCODE"; exit 1 }
+          $proc = Start-Process -FilePath ./target/release/pikr.exe -ArgumentList '--version' -Wait -PassThru -NoNewWindow -RedirectStandardOutput version.out -RedirectStandardError version.err
+          if ($proc.ExitCode -ne 0) {
+            Write-Output "--- stderr ---"; Get-Content version.err
+            Write-Error "--version exit $($proc.ExitCode)"; exit 1
+          }
+          $OUT = (Get-Content version.out -Raw).Trim()
           Write-Output $OUT
           if ($OUT -notmatch '^pikr ') { Write-Error "--version did not start with 'pikr '"; exit 1 }
       - name: Smoke --help (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $OUT = & ./target/release/pikr.exe --help
-          if ($LASTEXITCODE -ne 0) { Write-Error "--help exit $LASTEXITCODE"; exit 1 }
-          Write-Output ($OUT | Select-Object -First 20)
-          if (($OUT -join "`n") -notmatch '--show') { Write-Error "--help missing --show flag"; exit 1 }
+          $proc = Start-Process -FilePath ./target/release/pikr.exe -ArgumentList '--help' -Wait -PassThru -NoNewWindow -RedirectStandardOutput help.out -RedirectStandardError help.err
+          if ($proc.ExitCode -ne 0) {
+            Write-Output "--- stderr ---"; Get-Content help.err
+            Write-Error "--help exit $($proc.ExitCode)"; exit 1
+          }
+          $OUT = Get-Content help.out -Raw
+          Write-Output (($OUT -split "`n") | Select-Object -First 20)
+          if ($OUT -notmatch '--show') { Write-Error "--help missing --show flag"; exit 1 }
 
   e2e:
     name: e2e keyboard
