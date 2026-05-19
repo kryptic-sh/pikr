@@ -8,12 +8,50 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-05-19
+
 ### Added
 
-- Scoop manifest for Windows install via `scoop install kryptic/pikr`. The new
+- **Windows binary build** restored — `x86_64-pc-windows-msvc` row added to the
+  release matrix. First sub-task of #9; downstream Windows decisions (drun / run
+  / clipboard / ssh behavior, packaging) still pending. (#9)
+- **Scoop manifest** for Windows install via `scoop install kryptic/pikr`. New
   `scoop-bucket` CI job renders `pkg/scoop/pikr.json.in` and pushes to
   `kryptic-sh/scoop-bucket` on each `v*` tag, cascading from
   `publish-github-release`. (#21)
+- **Deeper CSS coverage**: rows, icons, empty-state, scroll-handle, mode-chip,
+  prompt, query. Reactive bits (per-row 3-state bg, hover, mode-chip bg) stay
+  inline; geometry consts stay in Rust because chrome-height math depends on
+  them. Class definitions live in `apps/pikr/src/ui/styles/default.css`.
+- **e2e harness** widened: Esc-x2 dismiss now covered for `emoji`, `clipboard`,
+  `run`, `ssh` modes in addition to the original `drun` / `dmenu` / `calc`. Full
+  7-mode matrix asserts Insert → Normal → Cancel → exit 1.
+- `Pikr::wait_with_retry` test fixture helper — re-invokes a key sender on a
+  configurable cadence while waiting for pikr to exit. Future-proofs single-
+  keystroke tests against focus-claim jitter.
+- `aaa_warmup_absorbs_first_spawn_race` e2e test that runs first alphabetically
+  and burns the cold-spawn surface-lost race so subsequent tests see a warm wgpu
+  / EGL / Mesa stack. Helps under CI's single-process
+  `cargo test --test-threads=1` model (issue #34 has the upstream race).
+
+### Changed
+
+- **CI: package on main push, publish on tag** (#33). Build matrix and nfpm
+  packaging now gated on `github.event_name != 'pull_request'`, so cross-
+  platform compile / packaging-script bugs surface on every main push instead of
+  only at release time. Build switched from inline `action-gh-release` uploads
+  to `actions/upload-artifact@v7`; nfpm consumes via
+  `actions/download-artifact@v8` with version resolved from `Cargo.toml`. New
+  tag-only `publish-github-release` job flattens all workflow artifacts and
+  attaches them to the GH release. `aur-bin` / `brew-tap` / `scoop-bucket`
+  cascade from the publisher with no own `if:` gate.
+
+### Open
+
+- `accept_matched_candidate_with_return_emits_stdout` e2e test left
+  `#[ignore]`'d while #34 (`wgpu ERROR_SURFACE_LOST_KHR` startup race) is
+  outstanding. Other assertion-bearing tests stay green thanks to the warmup
+  test absorbing the race on first spawn.
 
 ## [0.7.1] - 2026-05-19
 
@@ -622,6 +660,7 @@ and this project adheres to
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
 [Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.7.1...HEAD
+[0.7.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.2
 [0.7.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.1
 [0.7.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.0
 [0.6.5]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.5
