@@ -34,6 +34,22 @@ impl Default for Config {
     }
 }
 
+fn default_font() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        // Cascadia Mono ships with Windows 10 2004+, Windows 11.
+        // Consolas is the legacy fallback for older Windows builds.
+        // Both render the picker text legibly even without Nerd Font
+        // glyphs; the Scoop manifest depends on nerd-fonts/Hack-NF for
+        // users who want the full glyph coverage.
+        "Cascadia Mono".into()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "Hack Nerd Font Mono".into()
+    }
+}
+
 impl Default for Theme {
     fn default() -> Self {
         // Tokyonight-night palette to match the user's rofi reference.
@@ -43,7 +59,7 @@ impl Default for Theme {
             accent: "#21D1D3".into(),
             muted: "#979FC2".into(),
             selected_bg: "#3E4153".into(),
-            font: "Hack Nerd Font Mono".into(),
+            font: default_font(),
             font_size: 14.0,
         }
     }

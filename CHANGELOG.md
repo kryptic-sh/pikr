@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows: default theme font now falls back to `Cascadia Mono` when Hack Nerd
+  Font Mono isn't installed. Scoop manifest also gains a dependency on
+  `nerd-fonts/Hack-NF` for users who want the full Nerd Font glyph coverage.
+  (#41)
+
 ## [0.8.0] - 2026-05-19
 
 ### Added
