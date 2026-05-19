@@ -1,5 +1,11 @@
 //! pikr — vim-modal picker / launcher.
 
+// On Windows release builds, link as a windowed-subsystem app so launching
+// pikr (e.g. via Scoop shim, Start Menu, or Win+R) doesn't flash a cmd /
+// conhost window first. Debug builds keep the console attached so tracing
+// logs / panics are visible during dev. The attribute is a no-op on
+// Linux / macOS.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 #![allow(dead_code)]
 // v0.1 scaffold — stubs land before consumers.
