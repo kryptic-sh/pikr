@@ -3138,6 +3138,7 @@ version = "0.7.2"
 dependencies = [
  "anyhow",
  "clap",
+ "dirs",
  "emojis",
  "evalexpr",
  "floem",

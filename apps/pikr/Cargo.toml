@@ -19,6 +19,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+dirs.workspace = true
 emojis.workspace = true
 evalexpr.workspace = true
 floem.workspace = true

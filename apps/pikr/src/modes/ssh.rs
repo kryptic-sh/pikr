@@ -1,9 +1,10 @@
-//! ssh mode — SSH host picker from `~/.ssh/config` and `/etc/ssh/ssh_config`.
+//! ssh mode — SSH host picker from `~/.ssh/config` (and `/etc/ssh/ssh_config`
+//! on Unix).
 
 use super::{Entry, Mode, Payload};
 use anyhow::Result;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::process::Command;
 
 #[derive(Default)]
 pub struct Ssh;
@@ -33,15 +34,31 @@ impl Mode for Ssh {
 
 fn config_paths() -> Vec<PathBuf> {
     let mut paths = Vec::new();
-    if let Some(home) = dirs_home() {
+    if let Some(home) = home_dir() {
         paths.push(home.join(".ssh").join("config"));
     }
+    // System-wide ssh config only exists on Unix.
+    #[cfg(unix)]
     paths.push(PathBuf::from("/etc/ssh/ssh_config"));
     paths
 }
 
-fn dirs_home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+/// Portable home-directory lookup.
+/// - Unix: `$HOME`, falling back to `dirs::home_dir()`.
+/// - Windows: `%USERPROFILE%`, falling back to `dirs::home_dir()`.
+fn home_dir() -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .or_else(dirs::home_dir)
+    }
+    #[cfg(not(unix))]
+    {
+        std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .or_else(dirs::home_dir)
+    }
 }
 
 /// Walk the ssh config text, returning one Entry per non-wildcard Host.
@@ -99,7 +116,7 @@ fn make_entry(
         (None, Some(u)) => Some(u.to_string()),
         (None, None) => None,
     };
-    let args = vec!["-e".to_string(), "ssh".to_string(), host.clone()];
+    let args = build_terminal_args(terminal, &host);
     Entry {
         label: host,
         description,
@@ -111,39 +128,86 @@ fn make_entry(
     }
 }
 
+/// Build the argv for the chosen terminal to run `ssh <host>`.
+///
+/// Each terminal has its own calling convention:
+/// - Unix terminals (`alacritty`, `kitty`, `foot`, `xterm`): `-e ssh <host>`
+/// - `wt.exe` (Windows Terminal): `-- ssh <host>`
+///   Windows Terminal forwards everything after `--` to its shell/command.
+/// - `pwsh.exe` / `powershell.exe`: `-NoExit -Command ssh <host>`
+///   `-NoExit` keeps the window open after ssh exits so the user can see
+///   error messages before the pane closes.
+/// - `cmd.exe`: `/K ssh <host>`
+///   `/K` runs the command and keeps the prompt alive afterwards.
+fn build_terminal_args(terminal: &str, host: &str) -> Vec<String> {
+    let binary = std::path::Path::new(terminal)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(terminal)
+        .to_ascii_lowercase();
+
+    match binary.as_str() {
+        "wt.exe" | "wt" => vec!["--".to_string(), "ssh".to_string(), host.to_string()],
+        "pwsh.exe" | "pwsh" | "powershell.exe" | "powershell" => vec![
+            "-NoExit".to_string(),
+            "-Command".to_string(),
+            format!("ssh {host}"),
+        ],
+        "cmd.exe" | "cmd" => vec!["/K".to_string(), format!("ssh {host}")],
+        // Unix terminals (alacritty, kitty, foot, xterm) and anything unknown.
+        _ => vec!["-e".to_string(), "ssh".to_string(), host.to_string()],
+    }
+}
+
+/// Ordered list of terminal-emulator candidates for the current OS.
+#[cfg(unix)]
+fn terminal_candidates() -> &'static [&'static str] {
+    &["alacritty", "kitty", "foot", "xterm"]
+}
+
+#[cfg(windows)]
+fn terminal_candidates() -> &'static [&'static str] {
+    &["wt.exe", "pwsh.exe", "powershell.exe", "cmd.exe"]
+}
+
+// Fallback for non-unix, non-windows targets (e.g. cross-compilation checks).
+#[cfg(not(any(unix, windows)))]
+fn terminal_candidates() -> &'static [&'static str] {
+    &["xterm"]
+}
+
 /// Find a usable terminal emulator: $TERMINAL env first, then well-known names.
 fn resolve_terminal() -> String {
     if let Ok(t) = std::env::var("TERMINAL")
         && !t.is_empty()
-        && which(&t).is_some()
+        && is_tool_installed(&t)
     {
         return t;
     }
-    for name in ["alacritty", "kitty", "foot", "xterm"] {
-        if which(name).is_some() {
+    for &name in terminal_candidates() {
+        if is_tool_installed(name) {
             return name.to_string();
         }
     }
-    // Last resort: return "xterm" even if not found; the exec will fail with a
+    // Last resort: first candidate even if not found; exec will fail with a
     // clear error rather than silently doing nothing.
-    "xterm".to_string()
+    terminal_candidates()
+        .first()
+        .copied()
+        .unwrap_or("xterm")
+        .to_string()
 }
 
-fn which(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let candidate = dir.join(name);
-        if is_executable(&candidate) {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-fn is_executable(path: &Path) -> bool {
-    path.metadata()
-        .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
+/// Probe whether a tool exists by attempting to run it with `--version`.
+/// Works cross-platform without touching unix permission bits.
+fn is_tool_installed(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok()
 }
 
 #[cfg(test)]
@@ -189,5 +253,78 @@ mod tests {
         let entries = parse_config(input, "xterm");
         assert_eq!(entries.len(), 1);
         assert!(entries[0].description.is_none());
+    }
+
+    // ── terminal arg-builder tests ─────────────────────────────────────────
+
+    #[test]
+    fn wt_args_use_double_dash() {
+        let args = build_terminal_args("wt.exe", "myserver");
+        assert_eq!(args, vec!["--", "ssh", "myserver"]);
+    }
+
+    #[test]
+    fn pwsh_args_use_noexist_command() {
+        let args = build_terminal_args("pwsh.exe", "myserver");
+        assert_eq!(args, vec!["-NoExit", "-Command", "ssh myserver"]);
+    }
+
+    #[test]
+    fn powershell_args_use_noexist_command() {
+        let args = build_terminal_args("powershell.exe", "myserver");
+        assert_eq!(args, vec!["-NoExit", "-Command", "ssh myserver"]);
+    }
+
+    #[test]
+    fn cmd_args_use_slash_k() {
+        let args = build_terminal_args("cmd.exe", "myserver");
+        assert_eq!(args, vec!["/K", "ssh myserver"]);
+    }
+
+    #[test]
+    fn unix_terminal_uses_dash_e() {
+        for terminal in ["alacritty", "kitty", "foot", "xterm"] {
+            let args = build_terminal_args(terminal, "myserver");
+            assert_eq!(
+                args,
+                vec!["-e", "ssh", "myserver"],
+                "expected -e argv for {terminal}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_candidates_include_wt() {
+        let candidates = terminal_candidates();
+        assert!(
+            candidates.contains(&"wt.exe"),
+            "wt.exe must be a Windows terminal candidate"
+        );
+        assert!(
+            candidates.contains(&"cmd.exe"),
+            "cmd.exe must be a Windows terminal candidate"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unix_candidates_include_alacritty() {
+        let candidates = terminal_candidates();
+        assert!(
+            candidates.contains(&"alacritty"),
+            "alacritty must be a unix terminal candidate"
+        );
+        assert!(
+            !candidates.iter().any(|c| c.ends_with(".exe")),
+            "unix candidates must not contain .exe names"
+        );
+    }
+
+    #[test]
+    fn home_dir_does_not_panic() {
+        // On any platform, home_dir() must not panic — it may return None if
+        // home is genuinely unset, but it must not abort the process.
+        let _ = home_dir();
     }
 }

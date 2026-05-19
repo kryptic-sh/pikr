@@ -91,13 +91,7 @@ pub fn run(cli: Cli) -> Result<()> {
             eprintln!("pikr: --show run is unix-only; pick another mode.");
             std::process::exit(2);
         }
-        #[cfg(unix)]
         Mode::Ssh => Box::new(modes::ssh::Ssh),
-        #[cfg(not(unix))]
-        Mode::Ssh => {
-            eprintln!("pikr: --show ssh is unix-only; pick another mode.");
-            std::process::exit(2);
-        }
     };
 
     let entries: Vec<Arc<modes::Entry>> = mode.collect()?.into_iter().map(Arc::new).collect();
