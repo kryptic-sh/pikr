@@ -8,6 +8,37 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-19
+
+### Added
+
+- **CSS-driven styling seed** (towards #20). Pikr's static styling now reads
+  from `apps/pikr/src/ui/styles/default.css`, parsed once at startup with theme
+  colors substituted, applied via a thin floem-Style adapter at
+  `apps/pikr/src/ui/css.rs` over the `hjkl-css = "0.25"` parser. Sites migrated:
+  panel-outer / panel / panel-stack, input-row (geometry + bg + radius +
+  margin), ex-bar (full), status-bar wrapper, mode-name label, count-chip.
+  Reactive remnants stay inline: vim-mode chip background, hover-bg blend,
+  per-row selected background, match-position color spans inside `rich_text`.
+  Visual parity verified by headless-sway screenshot diff.
+- `AppState.stylesheet: Arc<hjkl_css::Stylesheet>` built once in `app::run` from
+  `Config.theme`.
+
+### Changed
+
+- `ex_bar` and `status_bar` fn signatures now take an
+  `Arc<hjkl_css::Stylesheet>` instead of pre-blended `bg` `Color`s. Callers pass
+  `Arc::clone(&sheet)`; the blend math moved into `ui::css::build_stylesheet`.
+
+### Open
+
+- `hjkl-css-gui` is intentionally absent. Built against floem 0.2.0 stable;
+  breaks under pikr's `[patch.crates-io]` redirect to current `lapce/floem` main
+  (`Weight` → `FontWeight`, `text::Style` → `text::FontStyle`, `Color::rgba8` →
+  `Color::from_rgba8`, `column_gap` removed, `AlignItems` signature changed).
+  Swap pikr's in-tree adapter for `hjkl-css-gui` once upstream floem main
+  releases and the adapter is patched.
+
 ## [0.6.5] - 2026-05-18
 
 ### Added
@@ -571,7 +602,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.6.5...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.0
 [0.6.5]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.5
 [0.6.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.4
 [0.6.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.3
