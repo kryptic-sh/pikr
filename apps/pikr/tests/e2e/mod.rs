@@ -37,6 +37,28 @@ fn require_tools() -> bool {
     true
 }
 
+// ── Warmup ────────────────────────────────────────────────────────────────────
+
+/// Burns the first sway+pikr cold-spawn so later tests don't get hit by
+/// the `ERROR_SURFACE_LOST_KHR` race (pikr issue #34). Asserts nothing —
+/// any exit code, any output, even a hard hang is fine. Named to sort
+/// first alphabetically so it always runs before the real assertions.
+/// Cost: ~1s of test time on the assumption that whatever happens to
+/// the first pikr is sacrificed for the rest of the suite.
+#[test]
+fn aaa_warmup_absorbs_first_spawn_race() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let pikr = Pikr::spawn(&sway, &["--show", "drun"], None).unwrap();
+    // Give pikr a beat to either succeed at first paint or trip the
+    // race; either way we kill it. Length is empirical: shorter than
+    // ~750ms and the next test still occasionally hits the race.
+    std::thread::sleep(Duration::from_millis(1000));
+    drop(pikr);
+}
+
 // ── Escape-based dismiss tests ────────────────────────────────────────────────
 
 /// Two Escapes from Insert mode in `--show drun` must exit 1 (dismissed).
@@ -254,19 +276,18 @@ fn accept_typed_query_with_shift_enter_emits_stdout() {
 /// Distinguishes the `Accept` arm from `AcceptCustom` (shift-enter).
 ///
 /// Uses `--filter` to pre-seed the query so pikr runs ONE matcher pass
-/// at startup; the test then sends only Return.
+/// at startup; the test then sends Return on a retry cadence until
+/// pikr exits.
 ///
-/// Ignored on CI: this is the FIRST sway+pikr cold-spawn in the test
-/// binary and CI's pixman + zink-fallback render path can drop Return
-/// presses for >5s after window map. Bumping wtype delay (1500ms ->
-/// 3000ms) and adding `std::thread::sleep` warmup didn't make it
-/// stable across three back-to-back runs (26091303589 / 26091676204 /
-/// 26092333323). Test passes reliably locally; left runnable via
-/// `cargo test -- --ignored` for diagnosis. Tracked in TODO once an
-/// upstream-floem fix lands for the early-input drop on the layer-
-/// shell surface.
+/// Ignored: tracks pikr issue #34 — `ERROR_SURFACE_LOST_KHR` race.
+/// Even with `aaa_warmup_*` absorbing the first-spawn race, this test
+/// fails under nextest (process-per-test, warmup doesn't carry) and
+/// has been the canonical failure case on CI's pixman + zink path.
+/// Uses `Pikr::wait_with_retry` so once #34 is fixed the test should
+/// pass deterministically. Run with `cargo test -- --ignored` to
+/// repro.
 #[test]
-#[ignore = "flaky on CI's pixman+zink-fallback path; passes locally"]
+#[ignore = "wgpu ERROR_SURFACE_LOST_KHR race — see pikr#34"]
 fn accept_matched_candidate_with_return_emits_stdout() {
     if !require_tools() {
         return;
@@ -278,22 +299,11 @@ fn accept_matched_candidate_with_return_emits_stdout() {
         Some("apple\nbanana\ncherry\n"),
     )
     .unwrap();
-    // First sway+pikr spawn in the binary is the slow one on CI: zink
-    // fails (VK_ERROR_INCOMPATIBLE_DRIVER), EGL falls back to pixman,
-    // and the layer-shell surface can take >3s to map + claim focus.
-    // wtype's `-s` only spaces events between each other, not before
-    // the first, so a sleep here is the only way to guarantee Return
-    // lands after focus claim. Two mitigations:
-    //   1. 3s pre-key sleep so pikr finishes paint + focus claim.
-    //   2. Send Return twice — second is a no-op after Action::Accept
-    //      exits, but covers the dropped-first-key race.
-    std::thread::sleep(Duration::from_secs(3));
-    Wtype::new(&sway)
-        .delay(Duration::from_millis(500))
-        .keys(&[Key::Return, Key::Return])
-        .send()
+    let out = pikr
+        .wait_with_retry(Duration::from_secs(15), Duration::from_millis(1000), || {
+            let _ = Wtype::new(&sway).keys(&[Key::Return]).send();
+        })
         .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(15)).unwrap();
     assert_eq!(
         out.exit_code,
         Some(0),

@@ -53,6 +53,74 @@ impl Pikr {
         Ok(Pikr { child })
     }
 
+    /// Wait for the process to exit (up to `timeout`), invoking
+    /// `send_keys` on every `retry_every` interval until then.
+    ///
+    /// Designed for tests that act on a single keystroke: CI's pixman +
+    /// zink-fallback render path can drop the first input event if the
+    /// layer-shell surface hasn't claimed focus yet, and a static
+    /// "send keys, wait, hope" recipe flakes. Re-sending the keys on a
+    /// retry cadence covers the race without bumping the warmup delay
+    /// to absurd values. Once pikr exits the loop returns immediately.
+    pub fn wait_with_retry<F>(
+        mut self,
+        timeout: Duration,
+        retry_every: Duration,
+        mut send_keys: F,
+    ) -> Result<Outcome, String>
+    where
+        F: FnMut(),
+    {
+        let deadline = Instant::now() + timeout;
+        let mut last_send = Instant::now()
+            .checked_sub(retry_every)
+            .unwrap_or_else(Instant::now);
+
+        loop {
+            if last_send.elapsed() >= retry_every {
+                send_keys();
+                last_send = Instant::now();
+            }
+            match self
+                .child
+                .try_wait()
+                .map_err(|e| format!("try_wait: {e}"))?
+            {
+                Some(status) => {
+                    use std::io::Read;
+                    let mut stdout = String::new();
+                    let mut stderr = String::new();
+                    if let Some(mut r) = self.child.stdout.take() {
+                        let _ = r.read_to_string(&mut stdout);
+                    }
+                    if let Some(mut r) = self.child.stderr.take() {
+                        let _ = r.read_to_string(&mut stderr);
+                    }
+                    return Ok(Outcome {
+                        exit_code: status.code(),
+                        stdout,
+                        stderr,
+                    });
+                }
+                None => {
+                    if Instant::now() >= deadline {
+                        let _ = self.child.kill();
+                        let _ = self.child.wait();
+                        use std::io::Read;
+                        let mut stderr = String::new();
+                        if let Some(mut r) = self.child.stderr.take() {
+                            let _ = r.read_to_string(&mut stderr);
+                        }
+                        return Err(format!(
+                            "pikr did not exit within {timeout:?}; stderr:\n{stderr}"
+                        ));
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
+    }
+
     /// Wait for the process to exit (up to `timeout`).
     ///
     /// Returns `Err` if the timeout is reached and the process is still alive.
