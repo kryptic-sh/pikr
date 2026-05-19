@@ -8,6 +8,17 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-05-19
+
+### Fixed
+
+- Windows drun: `.lnk` targets the shell has no icon for (.bat, .cmd, .ps1,
+  .vbs, or odd paths) now fall back to the Windows generic-app icon instead of
+  leaving the picker row blank. Fallback PNG cached once at
+  `%LOCALAPPDATA%\pikr\icon-cache\__fallback__.png` so subsequent failures are
+  zero Win32 calls. Also fixes clippy::io_other_error on `drun.rs:302` (new in
+  Rust 1.95).
+
 ## [0.8.1] - 2026-05-19
 
 ### Added
@@ -725,6 +736,7 @@ and this project adheres to
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
 [Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.7.1...HEAD
+[0.8.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.2
 [0.8.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.1
 [0.8.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.0
 [0.7.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.2
