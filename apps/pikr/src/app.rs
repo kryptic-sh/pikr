@@ -84,13 +84,7 @@ pub fn run(cli: Cli) -> Result<()> {
             std::process::exit(2);
         }
         Mode::Emoji => Box::new(modes::emoji::Emoji),
-        #[cfg(unix)]
         Mode::Run => Box::new(modes::run::Run),
-        #[cfg(not(unix))]
-        Mode::Run => {
-            eprintln!("pikr: --show run is unix-only; pick another mode.");
-            std::process::exit(2);
-        }
         Mode::Ssh => Box::new(modes::ssh::Ssh),
     };
 

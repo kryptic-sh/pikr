@@ -14,10 +14,8 @@ pub mod dmenu;
 #[cfg(unix)]
 pub mod drun;
 pub mod emoji;
-// run uses `std::os::unix::fs::PermissionsExt` to detect executable bits and
-// assumes unix terminal-emulator names. Gated to unix; Windows users see a
-// "unix-only" exit at startup.
-#[cfg(unix)]
+// run walks $PATH (Unix: executable-bit filter; Windows: PATHEXT extension
+// filter). Cross-platform; internals are cfg-gated per OS.
 pub mod run;
 // ssh works cross-platform: reads ~/.ssh/config on all OSes, probes OS-native
 // terminal emulators (unix: alacritty/kitty/foot/xterm; Windows: wt/pwsh/cmd).

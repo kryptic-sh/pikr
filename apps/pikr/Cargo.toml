@@ -43,3 +43,4 @@ xdg.workspace = true
 
 [dev-dependencies]
 libc = "0.2"
+tempfile.workspace = true
