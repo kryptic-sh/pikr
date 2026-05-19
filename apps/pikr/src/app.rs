@@ -32,8 +32,8 @@ pub fn run(cli: Cli) -> Result<()> {
     // When --message is given we skip all picker logic and render a simple
     // non-interactive overlay. Esc dismisses via std::process::exit(0).
     if let Some(msg) = cli.message.clone() {
-        let theme = cfg.theme.clone();
-        let view = move || message_view(msg.clone(), theme.clone());
+        let sheet = std::sync::Arc::new(crate::ui::css::build_stylesheet(&cfg.theme));
+        let view = move || message_view(msg.clone(), std::sync::Arc::clone(&sheet));
 
         let width = cli.width.unwrap_or(720);
         let size = floem::kurbo::Size::new(width as f64, 120.0);

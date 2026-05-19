@@ -434,37 +434,20 @@ pub(crate) fn mask_password(enabled: bool, text: &str) -> String {
 /// Renders `text` inside the same panel chrome as `picker_view` — same bg,
 /// border, radius, and padding. No input row, no result list, no status bar.
 /// Pressing Escape dismisses via `std::process::exit(0)`.
-pub fn message_view(text: String, theme: crate::config::Theme) -> impl IntoView {
-    let bg = parse_color(&theme.bg);
-    let fg = parse_color(&theme.fg);
-    let accent = parse_color(&theme.accent);
-    let font_family = theme.font.clone();
-    let font_size = theme.font_size;
+pub fn message_view(text: String, sheet: Arc<hjkl_css::Stylesheet>) -> impl IntoView {
+    let sheet_text = Arc::clone(&sheet);
+    let sheet_modal = Arc::clone(&sheet);
+    let sheet_outer = Arc::clone(&sheet);
 
-    let msg_label = Label::derived(move || text.clone()).style(move |s| {
-        s.color(fg)
-            .font_family(font_family.clone())
-            .font_size(font_size)
-    });
+    let msg_label = Label::derived(move || text.clone())
+        .style(move |s| crate::ui::css::apply(s, &sheet_text, "label", &["message-text"]));
 
     Container::new(
-        Container::new(Container::new(msg_label).style(move |s| {
-            s.width_full()
-                .height_full()
-                .padding(PANEL_PAD)
-                .items_center()
-                .justify_center()
-        }))
-        .style(move |s| {
-            s.width_full()
-                .height_full()
-                .background(bg)
-                .border(BORDER_W)
-                .border_color(accent)
-                .border_radius(PANEL_RADIUS)
+        Container::new(msg_label).style(move |s| {
+            crate::ui::css::apply(s, &sheet_modal, "container", &["message-modal"])
         }),
     )
-    .style(move |s| s.width_full().height_full().background(bg))
+    .style(move |s| crate::ui::css::apply(s, &sheet_outer, "container", &["message-modal-outer"]))
     .style(|s| s.keyboard_navigable())
     .on_event(
         KeyDown,
