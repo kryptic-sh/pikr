@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Performance
+
+- Windows drun mode is faster on cold start: `.lnk` parsing now fans out via
+  rayon, and the entry list is cached at `%LOCALAPPDATA%\pikr\drun-cache.json`
+  keyed by the Start Menu dir mtimes. Subsequent runs skip the walk entirely if
+  nothing changed. (#42)
+
 ### Fixed
 
 - Windows: default theme font now falls back to `Cascadia Mono` when Hack Nerd

@@ -148,38 +148,205 @@ mod unix_impl {
 // The label is the shortcut's filename stem; the description is the parent
 // folder name (mirrors XDG Categories). The payload is Exec { target, args }.
 //
+// Performance (#42):
+// - Step 1: Walk is serial (cheap — just filesystem stat calls).
+// - Step 2: Parse is parallel via rayon::par_iter (lnk open + parse +
+//   Path::exists() are the expensive part; fans out across all hardware threads).
+// - Cache: after a successful walk+parse, results are written to
+//   %LOCALAPPDATA%\pikr\drun-cache.json keyed by the max mtime across both
+//   Start Menu roots. On the next run, if the mtime hasn't changed the walk is
+//   skipped entirely and the cached entries are returned directly.
+//
+// Note on cache staleness: the Path::exists() check happens at parse time and
+// is not repeated on cache hit. An entry that existed at cache time but has
+// since been uninstalled will show up in the list until the cache invalidates
+// (i.e. until something else modifies the Start Menu dir). This is an
+// intentional tradeoff — checking every target path on every startup defeats
+// the purpose of caching.
+//
 // TODO: icon resolution via the `lnk` icon_location field is deferred to a
 // follow-up issue (#38 phase 2). For now all entries have icon = None.
 
 #[cfg(windows)]
 mod windows_impl {
     use super::{Entry, Result};
+    use rayon::prelude::*;
+    use serde::{Deserialize, Serialize};
     use std::path::{Path, PathBuf};
+    use std::time::SystemTime;
     use walkdir::WalkDir;
 
-    pub fn collect() -> Result<Vec<Entry>> {
-        let mut entries = Vec::new();
-        for root in start_menu_roots() {
-            if !root.exists() {
-                continue;
+    // ── Cache types ───────────────────────────────────────────────────────────
+
+    /// On-disk cache for drun entries.
+    ///
+    /// Keyed by the max mtime (in Unix seconds) across both Start Menu roots.
+    /// If any root's directory mtime has advanced since the cache was written
+    /// the whole cache is considered stale and the walk is re-run.
+    #[derive(Serialize, Deserialize)]
+    struct CachedDrun {
+        /// Max of all roots' dir-mtimes at cache time.  Invalidate when any
+        /// root mtime is newer than this value.
+        roots_mtime_unix_secs: u64,
+        /// Cached entries — labels, target paths, args.  Icons not yet (#40).
+        entries: Vec<CachedEntry>,
+    }
+
+    /// A single cached entry.  Mirrors the fields we populate in [`parse_lnk`].
+    #[derive(Serialize, Deserialize)]
+    struct CachedEntry {
+        label: String,
+        description: Option<String>,
+        target: String,
+        args: Vec<String>,
+    }
+
+    impl From<CachedEntry> for Entry {
+        fn from(c: CachedEntry) -> Self {
+            let mut e = Entry::exec(c.label, c.target).with_args(c.args);
+            if let Some(d) = c.description {
+                e = e.with_description(d);
             }
-            for dir_entry in WalkDir::new(&root).follow_links(false) {
-                let Ok(dir_entry) = dir_entry else {
-                    continue;
-                };
-                let path = dir_entry.path();
-                let is_lnk = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map_or(false, |e| e.eq_ignore_ascii_case("lnk"));
-                if is_lnk {
-                    if let Some(e) = parse_lnk(path) {
-                        entries.push(e);
-                    }
+            e
+        }
+    }
+
+    impl From<&Entry> for CachedEntry {
+        fn from(e: &Entry) -> Self {
+            use super::super::Payload;
+            let (target, args) = match &e.payload {
+                Payload::Exec { program, args } => (program.clone(), args.clone()),
+                _ => (String::new(), Vec::new()),
+            };
+            CachedEntry {
+                label: e.label.clone(),
+                description: e.description.clone(),
+                target,
+                args,
+            }
+        }
+    }
+
+    // ── Cache helpers ─────────────────────────────────────────────────────────
+
+    /// Path to the drun cache file: `%LOCALAPPDATA%\pikr\drun-cache.json`.
+    ///
+    /// Uses `dirs::data_local_dir()` which resolves to `%LOCALAPPDATA%` on
+    /// Windows (e.g. `C:\Users\<user>\AppData\Local`).
+    fn cache_path() -> Option<PathBuf> {
+        dirs::data_local_dir().map(|d| d.join("pikr").join("drun-cache.json"))
+    }
+
+    /// Compute the max mtime (Unix seconds) across all existing Start Menu roots.
+    /// Returns `None` if no root exists or no mtime is readable.
+    fn roots_mtime(roots: &[PathBuf]) -> Option<u64> {
+        roots
+            .iter()
+            .filter(|r| r.exists())
+            .filter_map(|r| {
+                r.metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+            })
+            .max()
+    }
+
+    /// Try to load a valid cache. Returns `Some(entries)` on hit, `None` on miss.
+    pub fn load_cache(current_mtime: u64, path: &Path) -> Option<Vec<Entry>> {
+        let _span = tracing::debug_span!("drun_cache_load", path = %path.display()).entered();
+        let bytes = std::fs::read(path).ok()?;
+        let cached: CachedDrun = serde_json::from_slice(&bytes)
+            .map_err(|e| tracing::warn!("drun cache parse error: {e}"))
+            .ok()?;
+        if cached.roots_mtime_unix_secs != current_mtime {
+            tracing::debug!(
+                cached = cached.roots_mtime_unix_secs,
+                current = current_mtime,
+                "drun cache mtime mismatch — invalidating"
+            );
+            return None;
+        }
+        tracing::debug!(entries = cached.entries.len(), "drun cache hit");
+        Some(cached.entries.into_iter().map(Entry::from).collect())
+    }
+
+    /// Write a fresh cache to disk. Best-effort — logs a warning on any error.
+    pub fn write_cache(mtime: u64, entries: &[Entry], path: &Path) {
+        let _span = tracing::debug_span!("drun_cache_write", path = %path.display()).entered();
+        let cached = CachedDrun {
+            roots_mtime_unix_secs: mtime,
+            entries: entries.iter().map(CachedEntry::from).collect(),
+        };
+        let write = || -> std::io::Result<()> {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let json = serde_json::to_vec_pretty(&cached)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            std::fs::write(path, json)
+        };
+        if let Err(e) = write() {
+            tracing::warn!("drun cache write failed: {e}");
+        }
+    }
+
+    // ── Public collect ────────────────────────────────────────────────────────
+
+    pub fn collect() -> Result<Vec<Entry>> {
+        let _span = tracing::debug_span!("drun_collect_windows").entered();
+
+        let roots = start_menu_roots();
+        let current_mtime = roots_mtime(&roots);
+
+        // --- Cache probe ---
+        {
+            let _span = tracing::debug_span!("drun_cache_probe").entered();
+            if let (Some(mtime), Some(path)) = (current_mtime, cache_path()) {
+                if let Some(entries) = load_cache(mtime, &path) {
+                    return Ok(entries);
                 }
             }
         }
+
+        // --- Step 1: serial walk — cheap filesystem stat only ---
+        let lnk_paths: Vec<PathBuf> = {
+            let _span = tracing::debug_span!("drun_walk").entered();
+            roots
+                .iter()
+                .filter(|r| r.exists())
+                .flat_map(|root| {
+                    WalkDir::new(root)
+                        .follow_links(false)
+                        .into_iter()
+                        .filter_map(Result::ok)
+                })
+                .map(|e| e.into_path())
+                .filter(|p| {
+                    p.extension()
+                        .and_then(|e| e.to_str())
+                        .map_or(false, |e| e.eq_ignore_ascii_case("lnk"))
+                })
+                .collect()
+        };
+
+        // --- Step 2: parallel parse — lnk open + parse + Path::exists() ---
+        let mut entries: Vec<Entry> = {
+            let _span = tracing::debug_span!("drun_parse", lnk_count = lnk_paths.len()).entered();
+            lnk_paths
+                .par_iter()
+                .filter_map(|path| parse_lnk(path))
+                .collect()
+        };
+
         entries.sort_by_key(|e| e.label.to_lowercase());
+
+        // --- Cache write (best-effort) ---
+        if let (Some(mtime), Some(path)) = (current_mtime, cache_path()) {
+            write_cache(mtime, &entries, &path);
+        }
+
         Ok(entries)
     }
 
@@ -335,7 +502,7 @@ mod tests {
 
 #[cfg(all(test, windows))]
 mod windows_tests {
-    use super::windows_impl::start_menu_roots;
+    use super::windows_impl::{load_cache, start_menu_roots, write_cache};
 
     /// start_menu_roots() must return at least one path when %APPDATA% or
     /// %ProgramData% env vars are set (as they always are on real Windows).
@@ -356,5 +523,57 @@ mod windows_tests {
                 "start_menu_roots must return ≥1 entry when env vars are set"
             );
         }
+    }
+
+    /// Serialize a `CachedDrun` with a couple of entries, write to a temp file,
+    /// read back via `load_cache` with the same mtime, and assert equality.
+    #[test]
+    fn cache_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("drun-cache.json");
+
+        let mtime: u64 = 1_700_000_000;
+        let entries = vec![
+            super::super::Entry::exec("Firefox", "C:\\Program Files\\Firefox\\firefox.exe"),
+            super::super::Entry::exec("Notepad", "C:\\Windows\\notepad.exe")
+                .with_description("Windows Accessories".to_string()),
+        ];
+
+        write_cache(mtime, &entries, &path);
+        assert!(path.exists(), "cache file must be written");
+
+        let loaded = load_cache(mtime, &path).expect("cache must hit on same mtime");
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].label, "Firefox");
+        assert_eq!(loaded[1].label, "Notepad");
+        assert_eq!(
+            loaded[1].description.as_deref(),
+            Some("Windows Accessories")
+        );
+    }
+
+    /// Write a cache with mtime=100; query with current_mtime=200.
+    /// `load_cache` must return `None` (cache miss / invalidated).
+    #[test]
+    fn cache_invalidates_on_mtime_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("drun-cache.json");
+
+        let cached_mtime: u64 = 100;
+        let current_mtime: u64 = 200;
+
+        let entries = vec![super::super::Entry::exec(
+            "TestApp",
+            "C:\\Program Files\\TestApp\\app.exe",
+        )];
+
+        write_cache(cached_mtime, &entries, &path);
+        assert!(path.exists(), "cache file must be written");
+
+        let result = load_cache(current_mtime, &path);
+        assert!(
+            result.is_none(),
+            "cache must be invalidated when mtime advances"
+        );
     }
 }
