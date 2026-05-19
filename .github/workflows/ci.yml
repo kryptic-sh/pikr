@@ -134,16 +134,10 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     needs: [test]
-    # Tag-gated: the cross-platform binary matrix runs only on v*.*.* tag
-    # pushes (the release pipeline) or manual workflow_dispatch. Its
-    # consumers (aur-bin / alpine / brew-tap) are already tag-gated, so
-    # building on every main push wastes the artifacts.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    # Skipped on PRs only — runs on every main push + tag + manual
+    # dispatch so packaging-code bugs surface BEFORE a release is cut.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -182,16 +176,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-
-      - name: Verify tag matches Cargo.toml version
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: |
-          CARGO_VER=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          if [ "v$CARGO_VER" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version v$CARGO_VER"
-            exit 1
-          fi
 
       # Linux: transitive gtk-rs / glib-sys build scripts (via floem main's
       # muda gtk feature) need libgtk-3-dev. macOS: no system deps — muda
@@ -267,18 +251,176 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 $ARCHIVE).Hash.ToLower()
           "$hash  $ARCHIVE" | Out-File -Encoding ASCII "$ARCHIVE.sha256"
 
-      - name: Upload archives + sha256
-        # Tag-only: action-gh-release requires a tag to attach archives to.
-        # workflow_dispatch still runs the build (and so verifies it green)
-        # but skips upload — there's no release to publish to.
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v3
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v7
         with:
-          files: |
+          name: pikr-${{ matrix.target }}
+          path: |
             pikr-*.${{ matrix.archive }}
             pikr-*.${{ matrix.archive }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  # AUR auto-publish for `pikr-bin`. Pulls the just-uploaded tarball
+  # checksums off the release, renders pkg/aur/PKGBUILD-bin.in,
+  # generates .SRCINFO, and pushes to the AUR repo over SSH. Lives here
+  # (not a separate workflow) because GITHUB_TOKEN-created releases don't
+  # fire downstream `on: release` triggers; running as a
+  # `needs: [publish-github-release]` job sidesteps the cascade entirely.
+  #
+  # Required org/repo secret:
+  #   AUR_SSH_KEY  — ed25519 private key whose public half is registered
+  #                  on the AUR account that owns the `pikr-bin` package.
+  #                  NOTE: AUR_SSH_KEY is org-level SELECTED-scope — it
+  #                  must be explicitly granted to kryptic-sh/pikr or the
+  #                  deploy step fails with a libcrypto error that
+  #                  misdiagnoses missing access as a bad key. Grant it
+  #                  in Settings → Secrets → AUR_SSH_KEY → Repository access.
+
+  # ── .deb + .rpm via nfpm ────────────────────────────────────────────────
+  # Mirrors the aur/brew shape: skipped on PRs, depends on the per-target
+  # binary artifacts (via actions/download-artifact), renders a single
+  # nfpm.yaml manifest per (format, arch) and uploads the resulting
+  # package + sha256 as an artifact for publish-github-release to attach.
+  # Issues #11 (.deb) and #12 (.rpm).
+  nfpm:
+    name: Package ${{ matrix.format }} (${{ matrix.arch.nfpm }})
+    needs: [build]
+    # Skipped on PRs only — runs on every main push + tag + manual
+    # dispatch so packaging-code bugs surface BEFORE a release is cut.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # nfpm's normalized arch name (amd64/arm64) + the upstream rust
+        # target whose binary artifact we download. Output filename
+        # is `pikr_<ver>_<deb-arch>.deb` for deb and
+        # `pikr-<ver>-1.<rpm-arch>.rpm` for rpm — nfpm translates the arch.
+        # arm64 row removed while the build matrix is x86_64-only; restore
+        # alongside aarch64-unknown-linux-gnu in the binary matrix.
+        arch:
+          - { nfpm: amd64, target: x86_64-unknown-linux-gnu }
+        format: [deb, rpm]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install nfpm
+        run: |
+          set -euo pipefail
+          NFPM_VERSION="2.41.0"
+          curl -fsSL \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin nfpm
+          nfpm --version
+
+      - name: Resolve version
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download linux-gnu binary artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: pikr-${{ matrix.arch.target }}
+          path: .
+
+      - name: Extract tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar xzf pikr-*-${{ matrix.arch.target }}.tar.gz
+
+      - name: Render nfpm config
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed \
+            -e "s|{VERSION}|${{ steps.tag.outputs.version }}|g" \
+            -e "s|{ARCH}|${{ matrix.arch.nfpm }}|g" \
+            pkg/nfpm/nfpm.yaml.in > nfpm.yaml
+          echo "--- rendered nfpm.yaml ---"
+          cat nfpm.yaml
+
+      - name: Build package
+        shell: bash
+        run: |
+          set -euo pipefail
+          nfpm package --packager ${{ matrix.format }} --config nfpm.yaml --target .
+          # Single artifact per invocation; capture its name for the sha256.
+          PKG=$(ls pikr*.${{ matrix.format }} | head -1)
+          if [ -z "$PKG" ]; then
+            echo "::error::no .${{ matrix.format }} produced"
+            exit 1
+          fi
+          sha256sum "$PKG" > "$PKG.sha256"
+          echo "built: $PKG"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pikr-${{ matrix.format }}-${{ matrix.arch.nfpm }}
+          path: |
+            pikr*.${{ matrix.format }}
+            pikr*.${{ matrix.format }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-github-release:
+    name: Publish GitHub release
+    needs: [build, nfpm]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify tag matches Cargo.toml version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          CARGO_VER=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          if [ "v$CARGO_VER" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml version v$CARGO_VER"
+            exit 1
+          fi
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: 'pikr-*'
+          merge-multiple: true
+          path: release-artifacts/
+
+      - name: Flatten artifact tree
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find release-artifacts/ -type f | while read -r f; do
+            cp "$f" dist/
+          done
+          ls -la dist/
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/pikr-*.tar.gz
+            dist/pikr-*.tar.gz.sha256
+            dist/pikr-*.zip
+            dist/pikr-*.zip.sha256
+            dist/pikr*.deb
+            dist/pikr*.deb.sha256
+            dist/pikr*.rpm
+            dist/pikr*.rpm.sha256
           fail_on_unmatched_files: true
-          generate_release_notes: ${{ matrix.target == 'x86_64-unknown-linux-gnu' }}
+          generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -288,7 +430,7 @@ jobs:
   # generates .SRCINFO, and pushes to the AUR repo over SSH. Lives here
   # (not a separate workflow) because GITHUB_TOKEN-created releases don't
   # fire downstream `on: release` triggers; running as a
-  # `needs: [build]` job sidesteps the cascade entirely.
+  # `needs: [publish-github-release]` job sidesteps the cascade entirely.
   #
   # Required org/repo secret:
   #   AUR_SSH_KEY  — ed25519 private key whose public half is registered
@@ -300,14 +442,11 @@ jobs:
   #                  in Settings → Secrets → AUR_SSH_KEY → Repository access.
   aur-bin:
     name: Publish pikr-bin to AUR
-    needs: [build]
+    needs: [publish-github-release]
     # x86_64-only while the binary matrix is missing
     # `aarch64-unknown-linux-gnu` (#31). The PKGBUILD-bin.in template
     # mirrors that — `arch=('x86_64')`. Restore both arches when #31
     # lands.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
@@ -336,9 +475,9 @@ jobs:
           set -euo pipefail
           V="${{ steps.tag.outputs.version }}"
           BASE="https://github.com/kryptic-sh/pikr/releases/download/v${V}"
-          # Build job uploads the x86_64-linux-gnu sidecar before this
-          # one runs (we `needs: [build]`). Restore aarch64 here when
-          # #31 lands.
+          # publish-github-release uploaded the x86_64-linux-gnu sidecar
+          # before this one runs (we `needs: [publish-github-release]`).
+          # Restore aarch64 here when #31 lands.
           curl -fsSL "$BASE/pikr-v${V}-x86_64-unknown-linux-gnu.tar.gz.sha256" -o "sha.x86_64"
           # sidecar format: `<hash>  <filename>` — keep first column.
           echo "x86_64=$(awk '{print $1}' sha.x86_64)" >> "$GITHUB_OUTPUT"
@@ -405,14 +544,14 @@ jobs:
   # release, renders pkg/alpine/APKBUILD.in with version + sha512, builds
   # an unsigned package via abuild inside an alpine:latest container, and
   # uploads the .apk back to the same release. Lives here so it runs in
-  # the same `needs: [build]` cascade as aur-bin.
+  # the same `needs: [publish-github-release]` cascade as aur-bin.
   #
   # Gotchas (per kryptic-sh pattern):
   #   RFC822 maintainer field in APKBUILD.in — plain `Name <email>` format.
   #   Install throwaway pubkey to /etc/apk/keys BEFORE abuild signs the index.
   alpine:
     name: Build .apk for Alpine (x86_64)
-    needs: [build]
+    needs: [publish-github-release]
     # Disabled while the build matrix is missing
     # `x86_64-unknown-linux-musl`. Alpine pulls the musl tarball off the
     # GitHub release; no tarball, nothing to package. Flip back when musl
@@ -528,8 +667,8 @@ jobs:
   # Homebrew tap auto-publish for `pikr`. Pulls the just-uploaded macOS
   # tarball checksums off the release, renders pkg/homebrew/pikr.rb.in,
   # and pushes the formula to kryptic-sh/homebrew-tap over SSH. Mirrors
-  # the aur-bin job shape; same `needs: [build]` cascade so the macOS
-  # sidecars are guaranteed to exist by the time this runs.
+  # the aur-bin job shape; same `needs: [publish-github-release]` cascade
+  # so the macOS sidecars are guaranteed to exist by the time this runs.
   #
   # Required org/repo secret:
   #   BREW_SSH_KEY  — ed25519 private key whose public half is registered
@@ -538,10 +677,7 @@ jobs:
   #                   already granted to this repo.
   brew-tap:
     name: Publish pikr formula to homebrew-tap
-    needs: [build]
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    needs: [publish-github-release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -609,95 +745,3 @@ jobs:
           fi
           git commit -m "pikr ${{ steps.tag.outputs.version }}"
           git push origin HEAD:main
-
-  # ── .deb + .rpm via nfpm ────────────────────────────────────────────────
-  # Mirrors the alpine/aur/brew shape: gated on tag pushes, depends on
-  # the per-target binary builds, renders a single nfpm.yaml manifest per
-  # (format, arch) and uploads the resulting package + sha256 to the
-  # GitHub release. nfpm drives both deb and rpm from the same config.
-  # Issues #11 (.deb) and #12 (.rpm).
-  nfpm:
-    name: Package ${{ matrix.format }} (${{ matrix.arch.nfpm }})
-    needs: [build]
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        # nfpm's normalized arch name (amd64/arm64) + the upstream rust
-        # target whose tarball we pull off the release. Output filename
-        # is `pikr_<ver>_<deb-arch>.deb` for deb and
-        # `pikr-<ver>-1.<rpm-arch>.rpm` for rpm — nfpm translates the arch.
-        # arm64 row removed while the build matrix is x86_64-only; restore
-        # alongside aarch64-unknown-linux-gnu in the binary matrix.
-        arch:
-          - { nfpm: amd64, target: x86_64-unknown-linux-gnu }
-        format: [deb, rpm]
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install nfpm
-        run: |
-          set -euo pipefail
-          NFPM_VERSION="2.41.0"
-          curl -fsSL \
-            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin nfpm
-          nfpm --version
-
-      - name: Resolve version
-        id: tag
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Fetch binary tarball + extract
-        shell: bash
-        run: |
-          set -euo pipefail
-          V="${{ steps.tag.outputs.version }}"
-          TARBALL="pikr-v${V}-${{ matrix.arch.target }}.tar.gz"
-          BASE="https://github.com/kryptic-sh/pikr/releases/download/v${V}"
-          curl -fsSL "$BASE/$TARBALL" -o "$TARBALL"
-          tar xzf "$TARBALL"
-
-      - name: Render nfpm config
-        shell: bash
-        run: |
-          set -euo pipefail
-          sed \
-            -e "s|{VERSION}|${{ steps.tag.outputs.version }}|g" \
-            -e "s|{ARCH}|${{ matrix.arch.nfpm }}|g" \
-            pkg/nfpm/nfpm.yaml.in > nfpm.yaml
-          echo "--- rendered nfpm.yaml ---"
-          cat nfpm.yaml
-
-      - name: Build package
-        shell: bash
-        run: |
-          set -euo pipefail
-          nfpm package --packager ${{ matrix.format }} --config nfpm.yaml --target .
-          # Single artifact per invocation; capture its name for the sha256.
-          PKG=$(ls pikr*.${{ matrix.format }} | head -1)
-          if [ -z "$PKG" ]; then
-            echo "::error::no .${{ matrix.format }} produced"
-            exit 1
-          fi
-          sha256sum "$PKG" > "$PKG.sha256"
-          echo "built: $PKG"
-
-      - name: Upload package + sha256
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            pikr*.${{ matrix.format }}
-            pikr*.${{ matrix.format }}.sha256
-          fail_on_unmatched_files: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
