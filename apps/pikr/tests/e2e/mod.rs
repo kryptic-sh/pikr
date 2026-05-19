@@ -270,18 +270,18 @@ fn accept_matched_candidate_with_return_emits_stdout() {
         Some("apple\nbanana\ncherry\n"),
     )
     .unwrap();
-    // Cold-spawn pikr on CI takes longer than the usual 1500ms wtype
-    // delay: zink fails (VK_ERROR_INCOMPATIBLE_DRIVER) and the EGL
-    // fallback through pixman adds variable paint latency, so the
-    // first spawned pikr of the run can miss its focus claim before
-    // the first keystroke lands. Two mitigations:
-    //   1. 3000ms initial delay so the layer-shell surface is mapped
-    //      and focused before any key is sent.
+    // First sway+pikr spawn in the binary is the slow one on CI: zink
+    // fails (VK_ERROR_INCOMPATIBLE_DRIVER), EGL falls back to pixman,
+    // and the layer-shell surface can take >3s to map + claim focus.
+    // wtype's `-s` only spaces events between each other, not before
+    // the first, so a sleep here is the only way to guarantee Return
+    // lands after focus claim. Two mitigations:
+    //   1. 3s pre-key sleep so pikr finishes paint + focus claim.
     //   2. Send Return twice — second is a no-op after Action::Accept
-    //      exits, but covers the dropped-first-key race if it still
-    //      happens.
+    //      exits, but covers the dropped-first-key race.
+    std::thread::sleep(Duration::from_secs(3));
     Wtype::new(&sway)
-        .delay(Duration::from_millis(3000))
+        .delay(Duration::from_millis(500))
         .keys(&[Key::Return, Key::Return])
         .send()
         .unwrap();
