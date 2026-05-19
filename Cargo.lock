@@ -3308,6 +3308,7 @@ dependencies = [
  "freedesktop-desktop-entry",
  "freedesktop-icons",
  "hjkl-css",
+ "image",
  "imbl",
  "libc",
  "lnk",
@@ -3316,12 +3317,14 @@ dependencies = [
  "resvg 0.43.0",
  "serde",
  "serde_json",
+ "sha2",
  "shlex",
  "tempfile",
  "toml",
  "tracing",
  "tracing-subscriber",
  "walkdir",
+ "windows",
  "xdg 2.5.2",
 ]
 

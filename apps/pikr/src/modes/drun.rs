@@ -2,11 +2,18 @@
 //!
 //! - Unix: parses XDG `.desktop` files via `freedesktop-desktop-entry`.
 //! - Windows: walks Start Menu `.lnk` shortcuts from both the per-user and
-//!   all-users trees. Icon resolution is deferred to a follow-up issue.
+//!   all-users trees.  Icons are extracted via Win32 `SHGetFileInfoW` /
+//!   `GetDIBits`, rasterised as PNG, and cached under
+//!   `%LOCALAPPDATA%\pikr\icon-cache\`.
 //! - Other targets: returns an empty list.
 
 use super::{Entry, Mode};
 use anyhow::Result;
+
+// Win32 icon-extraction helper — only compiled and linked on Windows.
+#[cfg(windows)]
+#[path = "drun_icons_windows.rs"]
+mod icons_windows;
 
 #[derive(Default)]
 pub struct Drun;
@@ -199,6 +206,10 @@ mod windows_impl {
         description: Option<String>,
         target: String,
         args: Vec<String>,
+        /// Absolute path to the cached PNG icon, or `None` if extraction
+        /// failed or hasn't been attempted yet (old cache files).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        icon_path: Option<String>,
     }
 
     impl From<CachedEntry> for Entry {
@@ -206,6 +217,9 @@ mod windows_impl {
             let mut e = Entry::exec(c.label, c.target).with_args(c.args);
             if let Some(d) = c.description {
                 e = e.with_description(d);
+            }
+            if let Some(icon) = c.icon_path {
+                e = e.with_icon(icon);
             }
             e
         }
@@ -221,6 +235,7 @@ mod windows_impl {
             CachedEntry {
                 label: e.label.clone(),
                 description: e.description.clone(),
+                icon_path: e.icon.clone(),
                 target,
                 args,
             }
@@ -441,7 +456,7 @@ mod windows_impl {
             .and_then(|s| shlex::split(s))
             .unwrap_or_default();
 
-        let mut entry = Entry::exec(label, target).with_args(args);
+        let mut entry = Entry::exec(label, target.clone()).with_args(args);
 
         // Parent folder name as description if non-empty and not the root
         // "Programs" folder itself.
@@ -449,8 +464,14 @@ mod windows_impl {
             entry = entry.with_description(parent_name);
         }
 
-        // TODO(#38 phase 2): resolve icon from shortcut.string_data().icon_location()
-        // or shortcut.extra_data() via the freedesktop-icons equivalent on Windows.
+        // Resolve and cache the icon for the target executable.  The first
+        // call per target does a Win32 SHGetFileInfoW + GetDIBits round-trip
+        // and writes a PNG to %LOCALAPPDATA%\pikr\icon-cache\; subsequent
+        // calls return the cached path directly.  Failure is non-fatal —
+        // the entry is still shown without an icon.
+        if let Some(icon_path) = super::icons_windows::icon_for(target_path) {
+            entry = entry.with_icon(icon_path.to_string_lossy().into_owned());
+        }
 
         Some(entry)
     }

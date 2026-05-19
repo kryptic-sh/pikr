@@ -69,7 +69,10 @@ impl IconCache {
             return cached.clone();
         }
 
-        let resolved = if name_or_path.starts_with('/') {
+        let resolved = if Path::new(name_or_path).is_absolute() {
+            // Absolute path on any OS (Unix: starts with `/`;
+            // Windows: starts with a drive letter like `C:\`).
+            // Pass through verbatim — no theme lookup needed.
             Some(PathBuf::from(name_or_path))
         } else {
             // freedesktop_icons is unix-only. On macOS / Windows bare

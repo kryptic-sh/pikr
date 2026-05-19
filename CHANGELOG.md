@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Windows drun entries now render icons. Targets are queried via Win32
+  `SHGetFileInfo`, the `HICON` is dumped to RGBA via `GetDIBits`, and the result
+  is cached as PNG at `%LOCALAPPDATA%\pikr\icon-cache\<sha256>.png`. Cache hits
+  skip the Win32 round-trip entirely. (#40)
+
 ### Performance
 
 - Windows drun mode is faster on cold start: `.lnk` parsing now fans out via
