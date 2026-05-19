@@ -1,0 +1,81 @@
+/* pikr default stylesheet.
+ *
+ * Theme colour placeholders are substituted at runtime in
+ * `ui::css::build_stylesheet(&Theme)`. Only static styling lives here;
+ * reactive bits (per-row selection bg, vim-mode chip background, match
+ * highlight colours) stay inline in `ui/view.rs`.
+ */
+
+/* Outermost container — opaque framebuffer fill behind the rounded panel.
+ * Keeps the corner clipping clean so the compositor's window-corner
+ * rounding doesn't leak the transparent framebuffer past the radius. */
+.panel-outer {
+  width: 100%;
+  height: 100%;
+  background-color: {bg};
+}
+
+/* Rounded inner panel — main pikr body. */
+.panel {
+  width: 100%;
+  height: 100%;
+  background-color: {bg};
+  border: 1.5px solid {accent};
+  border-radius: 10px;
+}
+
+/* Vertical layout strip inside the panel: input → results → ex → status. */
+.panel-stack {
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+}
+
+/* Query input row sitting at the top of the panel. */
+.input-row {
+  width: 100%;
+  height: 36px;
+  padding: 0 14px;
+  background-color: {selected_bg};
+  border-radius: 6px;
+  margin: 0 0 8px 0;
+  align-items: center;
+}
+
+/* Ex-command gutter between the result list and the status bar. */
+.ex-bar {
+  width: 100%;
+  height: 22px;
+  padding: 0 14px;
+  background-color: {ex_bg};
+  border-radius: 6px;
+  margin: 8px 0 2px 0;
+  align-items: center;
+}
+
+/* Status bar wrapper at the bottom of the panel. */
+.status-bar {
+  width: 100%;
+  height: 28px;
+  padding: 3px 14px;
+  background-color: {status_bg};
+  border-radius: 6px;
+  align-items: center;
+}
+
+/* Mode-name label sitting after the mode chip (e.g. "dmenu" / "drun"). */
+.mode-name {
+  color: {muted};
+  font-family: {font_family};
+  font-size: {font_size}px;
+}
+
+/* Match-count pill on the right of the status bar (e.g. "1/3"). */
+.count-chip {
+  color: {accent};
+  background-color: {count_bg};
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: {font_family};
+  font-size: {font_size}px;
+}

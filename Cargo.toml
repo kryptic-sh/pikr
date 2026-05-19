@@ -25,6 +25,12 @@ evalexpr = "11"
 floem = "0.2"
 freedesktop-desktop-entry = "0.7"
 freedesktop-icons = "0.4"
+# CSS parser used for pikr's stylesheet driving floem's view styling.
+# `hjkl-css-gui` is intentionally skipped: it's built against floem 0.2.0
+# stable and breaks under pikr's `[patch.crates-io]` redirect to current
+# `lapce/floem` main. Pikr ships its own thin floem-Style adapter against
+# the parsed `Stylesheet` for the small subset of CSS properties used here.
+hjkl-css = "0.25"
 # resvg + tiny-skia for server-side SVG rasterisation (icon-only). Floem's
 # `svg` view goes through vello which silently drops unsupported features
 # (markers, complex clip-paths) and renders the icon's black background

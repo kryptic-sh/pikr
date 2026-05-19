@@ -22,6 +22,7 @@ clap.workspace = true
 emojis.workspace = true
 evalexpr.workspace = true
 floem.workspace = true
+hjkl-css.workspace = true
 resvg.workspace = true
 imbl.workspace = true
 nucleo.workspace = true

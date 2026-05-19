@@ -483,7 +483,7 @@ fn ex_bar(
     ex_buf: RwSignal<Option<String>>,
     blink_on: RwSignal<bool>,
     fg: Color,
-    bg: Color,
+    sheet: Arc<hjkl_css::Stylesheet>,
 ) -> impl IntoView {
     // Always render — even when no ex command is active. Toggling the bar
     // visibility would otherwise re-flow the v_stack and bump the status
@@ -503,16 +503,7 @@ fn ex_bar(
         None => String::new(),
     })
     .style(move |s| s.color(fg)),))
-    .style(move |s| {
-        s.width_full()
-            .height(22.0)
-            .padding_horiz(HORIZ_PAD)
-            .items_center()
-            .background(bg)
-            .border_radius(ROW_RADIUS)
-            .margin_top(8.0)
-            .margin_bottom(2.0)
-    })
+    .style(move |s| crate::ui::css::apply(s, &sheet, "stack", &["ex-bar"]))
 }
 
 // ─── Status bar ──────────────────────────────────────────────────────────────
@@ -547,10 +538,9 @@ fn status_bar(
     selected_bg: Color,
     font_family: String,
     font_size: f32,
+    sheet: Arc<hjkl_css::Stylesheet>,
 ) -> impl IntoView {
     let _ = fg;
-    let status_bg = blend(muted, selected_bg, 0.15);
-    let count_bg = blend(accent, selected_bg, 0.25);
 
     let ff_mode = font_family.clone();
     let mode_label = Label::derived(move || match vim_mode_sig.get() {
@@ -559,6 +549,9 @@ fn status_bar(
         VimMode::Visual => "VISUAL".to_string(),
     })
     .style(move |s| {
+        // Mode chip's background is reactive on `vim_mode_sig`, so it stays
+        // inline. The rest of the pill geometry could move to CSS later, but
+        // keep it co-located here while the bg is hand-blended.
         let bg = match vim_mode_sig.get() {
             VimMode::Insert => accent,
             VimMode::Normal => muted,
@@ -575,22 +568,19 @@ fn status_bar(
             .border_radius(4.0)
     });
 
-    let ff_mode_name = font_family.clone();
     let state_mode = Arc::clone(&state);
+    let sheet_mode_name = Arc::clone(&sheet);
     let mode_name_label = Label::derived(move || {
         let _ = rev.get();
         let s = state_mode.lock().unwrap();
         format!("{:?}", s.cli_mode).to_lowercase()
     })
     .style(move |s| {
-        s.color(muted)
-            .font_family(ff_mode_name.clone())
-            .font_size(font_size)
-            .margin_left(10.0)
+        crate::ui::css::apply(s, &sheet_mode_name, "label", &["mode-name"]).margin_left(10.0)
     });
 
-    let ff_count = font_family.clone();
     let state_count = Arc::clone(&state);
+    let sheet_count = Arc::clone(&sheet);
     let count_label = Label::derived(move || {
         let _ = rev.get();
         let sel = selected_sig.get();
@@ -601,16 +591,9 @@ fn status_bar(
             format!("{}/{}", sel + 1, total)
         }
     })
-    .style(move |s| {
-        s.color(accent)
-            .background(count_bg)
-            .font_family(ff_count.clone())
-            .font_size(font_size)
-            .padding_horiz(8.0)
-            .padding_vert(2.0)
-            .border_radius(4.0)
-    });
+    .style(move |s| crate::ui::css::apply(s, &sheet_count, "label", &["count-chip"]));
 
+    let sheet_bar = Arc::clone(&sheet);
     Stack::horizontal((
         mode_label,
         mode_name_label,
@@ -618,17 +601,14 @@ fn status_bar(
         count_label,
     ))
     .style(move |s| {
-        s.width_full()
-            .height(STATUS_BAR_HEIGHT + STATUS_BAR_VPAD * 2.0)
+        // Geometry / bg / radius from `.status-bar` in default.css.
+        // Inline tail: `min_height` + `flex_shrink` (no CSS analogues)
+        // and the const margins exposed for chrome math.
+        crate::ui::css::apply(s, &sheet_bar, "stack", &["status-bar"])
             .min_height(STATUS_BAR_HEIGHT + STATUS_BAR_VPAD * 2.0)
             .flex_shrink(0.0)
-            .padding_horiz(HORIZ_PAD)
-            .padding_vert(STATUS_BAR_VPAD)
-            .items_center()
             .margin_top(STATUS_BAR_MARGIN_TOP)
             .margin_bottom(STATUS_BAR_MARGIN_BOTTOM)
-            .background(status_bg)
-            .border_radius(ROW_RADIUS)
     })
 }
 
@@ -657,6 +637,10 @@ pub struct AppState {
     /// XDG icon-theme lookup cache. Populated lazily as rows scroll into
     /// view; icons are picker-only (message_view doesn't use it).
     pub icons: Arc<Mutex<crate::picker::icons::IconCache>>,
+    /// Parsed default stylesheet with theme colours substituted. Migrated
+    /// `.style(...)` sites use `ui::css::apply` against this sheet to pick
+    /// up declarative rules; reactive sites still chain inline.
+    pub stylesheet: Arc<hjkl_css::Stylesheet>,
 }
 
 impl AppState {
@@ -847,7 +831,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         )
     };
 
-    let (bg, fg, accent, muted, selected_bg, font_family, font_size) = {
+    let (_bg, fg, accent, muted, selected_bg, font_family, font_size) = {
         let s = state.lock().unwrap();
         let t = &s.theme;
         (
@@ -862,6 +846,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     };
     let prompt_str = state.lock().unwrap().prompt.clone();
     let password = state.lock().unwrap().password;
+    let sheet = Arc::clone(&state.lock().unwrap().stylesheet);
 
     let rev: RwSignal<u64> = RwSignal::new(0);
 
@@ -963,16 +948,14 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     });
 
     let hover_bg = blend(accent, selected_bg, 0.18);
+    let sheet_input = Arc::clone(&sheet);
     let input_row = Stack::horizontal((prompt_label, query_label)).style(move |s| {
-        s.width_full()
-            .height(INPUT_ROW_HEIGHT)
+        // Geometry + bg + radius from `.input-row` in default.css. Inline
+        // bits stay: `min_height` and `flex_shrink` (no CSS equivalents in
+        // hjkl-css-gui), plus the reactive `:hover` blend.
+        crate::ui::css::apply(s, &sheet_input, "stack", &["input-row"])
             .min_height(INPUT_ROW_HEIGHT)
             .flex_shrink(0.0)
-            .padding_horiz(HORIZ_PAD)
-            .items_center()
-            .background(selected_bg)
-            .border_radius(ROW_RADIUS)
-            .margin_bottom(INPUT_MARGIN_BOTTOM)
             .hover(|s| s.background(hover_bg))
     });
 
@@ -1101,8 +1084,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 })
         });
 
-    let ex_bg = blend(muted, selected_bg, 0.15);
-    let ex = ex_bar(ex_buf_sig, blink_on, fg, ex_bg);
+    let ex = ex_bar(ex_buf_sig, blink_on, fg, Arc::clone(&sheet));
     let status = status_bar(
         vim_mode_sig,
         selected_sig,
@@ -1114,6 +1096,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         selected_bg,
         font_family.clone(),
         font_size,
+        Arc::clone(&sheet),
     );
 
     // ── Outer panel ────────────────────────────────────────────────────────
@@ -1121,22 +1104,19 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // transparency doesn't leak outside the rounded corners or border ring),
     // and the rounded inner panel that holds the actual content.
     let state_key = Arc::clone(&state);
+    let sheet_stack = Arc::clone(&sheet);
+    let sheet_panel = Arc::clone(&sheet);
+    let sheet_outer = Arc::clone(&sheet);
     Container::with_id(
         root_id,
         Container::new(
-            Stack::vertical((input_row, scrollable, ex.into_any(), status.into_any()))
-                .style(move |s| s.width_full().height_full().padding(PANEL_PAD)),
+            Stack::vertical((input_row, scrollable, ex.into_any(), status.into_any())).style(
+                move |s| crate::ui::css::apply(s, &sheet_stack, "container", &["panel-stack"]),
+            ),
         )
-        .style(move |s| {
-            s.width_full()
-                .height_full()
-                .background(bg)
-                .border(BORDER_W)
-                .border_color(accent)
-                .border_radius(PANEL_RADIUS)
-        }),
+        .style(move |s| crate::ui::css::apply(s, &sheet_panel, "container", &["panel"])),
     )
-    .style(move |s| s.width_full().height_full().background(bg))
+    .style(move |s| crate::ui::css::apply(s, &sheet_outer, "container", &["panel-outer"]))
     .style(|s| s.keyboard_navigable())
     .on_event(WindowGainedFocus, move |_cx: &mut EventCx, _ev: &()| {
         // Compositor handed our surface keyboard focus — claim view focus
