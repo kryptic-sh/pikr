@@ -190,14 +190,16 @@ fn entry_row(
     selected_bg: Color,
     font_family: String,
     font_size: f32,
+    sheet: Arc<hjkl_css::Stylesheet>,
 ) -> impl IntoView {
     // ── Icon view ─────────────────────────────────────────────────────────
-    let icon_style = |s: floem::style::Style| {
-        s.width(ICON_SIZE)
-            .height(ICON_SIZE)
+    let sheet_icon = Arc::clone(&sheet);
+    let icon_style = move |s: floem::style::Style| {
+        // CSS owns width/height/margin. min_width/min_height/flex_shrink have
+        // no CSS analogues in the pikr adapter yet — stay inline.
+        crate::ui::css::apply(s, &sheet_icon, "div", &["icon"])
             .min_width(ICON_SIZE)
             .min_height(ICON_SIZE)
-            .margin_right(ICON_GAP)
             .flex_shrink(0.0)
     };
     // Resolve the entry's icon, falling back through a chain of
@@ -269,6 +271,7 @@ fn entry_row(
             // emits the same per-char spans the title uses (matched = accent,
             // unmatched = muted via the default color we set on the wrapper).
             let wrapped = format!("({body})");
+            let sheet_desc = Arc::clone(&sheet);
             highlighted_label(
                 wrapped,
                 shifted,
@@ -277,7 +280,7 @@ fn entry_row(
                 font_family.clone(),
                 font_size,
             )
-            .style(move |s| s.margin_left(DESC_GAP))
+            .style(move |s| crate::ui::css::apply(s, &sheet_desc, "div", &["desc"]))
             .into_any()
         }
         None => Empty::new().into_any(),
@@ -290,6 +293,7 @@ fn entry_row(
     // stays distinct from the cursor row (which keeps the deeper selected_bg
     // and the accent border).
     let visual_bg = blend(accent, selected_bg, 0.35);
+    let sheet_row = Arc::clone(&sheet);
     Stack::horizontal((icon_view, label_view.into_any(), desc_view))
         .style(move |s| {
             let cursor_row = selected_sig.get() == mi;
@@ -316,14 +320,12 @@ fn entry_row(
                 Color::TRANSPARENT
             };
             let highlighted = cursor_row || in_visual_range;
-            s.width_full()
-                .height(ROW_HEIGHT)
-                .padding_horiz(HORIZ_PAD)
-                .items_center()
+            // CSS owns width/height/padding/border-radius/align-items.
+            // Reactive bg, border width+color, cursor, and hover stay inline.
+            crate::ui::css::apply(s, &sheet_row, "stack", &["row"])
                 .background(bg)
                 .border(BORDER_W)
                 .border_color(border)
-                .border_radius(ROW_RADIUS)
                 .cursor(floem::style::CursorStyle::Pointer)
                 // Mouse hover: bg only, no border. The accent ring is reserved
                 // for keyboard / programmatic selection (j/k/arrows).
@@ -535,23 +537,22 @@ fn status_bar(
     fg: Color,
     accent: Color,
     muted: Color,
-    selected_bg: Color,
-    font_family: String,
-    font_size: f32,
+    _selected_bg: Color,
+    _font_family: String,
+    _font_size: f32,
     sheet: Arc<hjkl_css::Stylesheet>,
 ) -> impl IntoView {
     let _ = fg;
 
-    let ff_mode = font_family.clone();
+    let sheet_chip = Arc::clone(&sheet);
     let mode_label = Label::derived(move || match vim_mode_sig.get() {
         VimMode::Insert => "INSERT".to_string(),
         VimMode::Normal => "NORMAL".to_string(),
         VimMode::Visual => "VISUAL".to_string(),
     })
     .style(move |s| {
-        // Mode chip's background is reactive on `vim_mode_sig`, so it stays
-        // inline. The rest of the pill geometry could move to CSS later, but
-        // keep it co-located here while the bg is hand-blended.
+        // Mode chip's background is reactive on `vim_mode_sig` — stays inline.
+        // CSS owns color, font, padding, border-radius.
         let bg = match vim_mode_sig.get() {
             VimMode::Insert => accent,
             VimMode::Normal => muted,
@@ -559,13 +560,7 @@ fn status_bar(
             // pill that signals "selection active" without screaming insert.
             VimMode::Visual => blend(accent, muted, 0.5),
         };
-        s.background(bg)
-            .color(selected_bg)
-            .font_family(ff_mode.clone())
-            .font_size(font_size)
-            .padding_horiz(8.0)
-            .padding_vert(2.0)
-            .border_radius(4.0)
+        crate::ui::css::apply(s, &sheet_chip, "label", &["mode-chip"]).background(bg)
     });
 
     let state_mode = Arc::clone(&state);
@@ -861,24 +856,20 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // Use floem's `text_input` widget so cursor / selection / editing all
     // come for free. Prompt sits inline on the left as a label, input fills
     // the remaining row width via flex_grow.
-    let input_font_size = font_size;
     let prompt_text = if prompt_str.is_empty() {
         ">".to_string()
     } else {
         format!("{}:", prompt_str)
     };
-    let ff_prompt = font_family.clone();
-    let prompt_label = Label::derived(move || prompt_text.clone()).style(move |s| {
-        s.color(accent)
-            .font_family(ff_prompt.clone())
-            .font_size(input_font_size)
-    });
+    let sheet_prompt = Arc::clone(&sheet);
+    let prompt_label = Label::derived(move || prompt_text.clone())
+        .style(move |s| crate::ui::css::apply(s, &sheet_prompt, "label", &["prompt"]));
 
     // Hand-rolled input: a label that renders the query plus a vim-style
     // cursor glyph (thin in Insert, block in Normal). All editing flows
     // through the outer keydown handler — InsertChar / Backspace mutate
     // query_sig directly. Avoids floem text_input's focus-stealing Esc.
-    let ff_q = font_family.clone();
+    let sheet_query = Arc::clone(&sheet);
     let blink_on: RwSignal<bool> = RwSignal::new(true);
     {
         let (tx, rx) = std::sync::mpsc::channel::<()>();
@@ -915,11 +906,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         )
     })
     .style(move |s| {
-        s.color(fg)
-            .font_family(ff_q.clone())
-            .font_size(input_font_size)
-            .flex_grow(1.0)
-            .margin_left(8.0)
+        // CSS owns color, font, margin-left. flex_grow has no CSS analogue — stays inline.
+        crate::ui::css::apply(s, &sheet_query, "label", &["query"]).flex_grow(1.0)
     });
 
     // Rerank whenever the query mutates. Bump `rev` so the dyn_stack rebuilds
@@ -966,6 +954,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     let state_list = Arc::clone(&state);
     let state_row = Arc::clone(&state);
     let ff_list = font_family.clone();
+    let sheet_row_list = Arc::clone(&sheet);
     let result_list = virtual_stack(
         move || {
             let _r = rev.get();
@@ -1012,6 +1001,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 selected_bg,
                 ff_list.clone(),
                 font_size,
+                Arc::clone(&sheet_row_list),
             )
             .style(move |s| s.margin_top(ROW_GAP))
         },
@@ -1025,7 +1015,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     // any space when results are present.
     let state_empty = Arc::clone(&state);
     let state_empty_style = Arc::clone(&state);
-    let ff_empty = font_family.clone();
+    let sheet_empty_text = Arc::clone(&sheet);
+    let sheet_empty_row = Arc::clone(&sheet);
     let empty_msg = Stack::horizontal((Label::derived(move || {
         let _ = rev.get();
         let s = state_empty.lock().unwrap();
@@ -1035,18 +1026,12 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             format!("No results for \u{201C}{}\u{201D}", s.picker.query.get())
         }
     })
-    .style(move |s| {
-        s.color(muted)
-            .font_family(ff_empty.clone())
-            .font_size(font_size)
-    }),))
+    .style(move |s| crate::ui::css::apply(s, &sheet_empty_text, "label", &["empty-row-text"])),))
     .style(move |s| {
         let _ = rev.get();
         let visible = state_empty_style.lock().unwrap().matches.is_empty();
-        s.width_full()
-            .height(ROW_HEIGHT)
-            .padding_horiz(HORIZ_PAD)
-            .items_center()
+        // CSS owns width/height/padding/align-items. Visibility toggle stays inline.
+        crate::ui::css::apply(s, &sheet_empty_row, "stack", &["empty-row"])
             .apply_if(!visible, |s| s.display(floem::style::Display::None))
     });
 
@@ -1054,6 +1039,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         .style(|s| s.width_full().flex_direction(FlexDirection::Column));
 
     let state_ensure = Arc::clone(&state);
+    let sheet_handle = Arc::clone(&sheet);
     let scrollable = floem::views::Scroll::new(result_area)
         .ensure_visible(move || {
             let _r = rev.get(); // re-evaluate whenever the match list churns
@@ -1075,12 +1061,13 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
             // below its intrinsic content height. Without it, flex respects
             // the scroll's natural size (= every row stacked) and pushes the
             // ex / status bars off the bottom of the panel.
+            let sh = Arc::clone(&sheet_handle);
             s.width_full()
                 .flex_grow(1.0)
                 .flex_basis(0.0)
                 .min_height(0.0)
                 .class(floem::views::scroll::Handle, move |h| {
-                    h.background(muted).border_radius(3.0)
+                    crate::ui::css::apply(h, &sh, "div", &["scroll-handle"])
                 })
         });
 

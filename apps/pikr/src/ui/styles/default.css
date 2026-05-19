@@ -79,3 +79,69 @@
   font-family: {font_family};
   font-size: {font_size}px;
 }
+
+/* App-icon slot — 24x24 px, right-gap 8 px before the label. */
+.icon {
+  width: 24px;
+  height: 24px;
+  margin: 0 8px 0 0;
+}
+
+/* Description text appended after the entry label. */
+.desc {
+  margin: 0 0 0 10px;
+}
+
+/* Result-list row container. Border and bg are reactive and stay inline. */
+.row {
+  width: 100%;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 6px;
+  align-items: center;
+}
+
+/* Empty-state row wrapper shown when there are no matches. */
+.empty-row {
+  width: 100%;
+  height: 36px;
+  padding: 0 14px;
+  align-items: center;
+}
+
+/* Text label inside the empty-state row. */
+.empty-row-text {
+  color: {muted};
+  font-family: {font_family};
+  font-size: {font_size}px;
+}
+
+/* Scroll-bar handle pill. */
+.scroll-handle {
+  background-color: {muted};
+  border-radius: 3px;
+}
+
+/* Vim-mode pill in the status bar. bg is reactive and stays inline. */
+.mode-chip {
+  color: {selected_bg};
+  font-family: {font_family};
+  font-size: {font_size}px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* Prompt prefix label (e.g. ">" or "name:") in the input row. */
+.prompt {
+  color: {accent};
+  font-family: {font_family};
+  font-size: {font_size}px;
+}
+
+/* Query text label in the input row. Margin-left separates it from prompt. */
+.query {
+  color: {fg};
+  font-family: {font_family};
+  font-size: {font_size}px;
+  margin: 0 0 0 8px;
+}
