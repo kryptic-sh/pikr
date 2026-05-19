@@ -270,9 +270,14 @@ fn accept_matched_candidate_with_return_emits_stdout() {
         Some("apple\nbanana\ncherry\n"),
     )
     .unwrap();
+    // Send Return twice. CI's pixman + broken-Vulkan render path has been
+    // observed to drop the first keystroke if the layer-shell surface
+    // hasn't gained focus yet (zink VK_ERROR_INCOMPATIBLE_DRIVER fallback
+    // adds variable paint latency). The second Return is a no-op once
+    // Action::Accept fires and pikr exits.
     Wtype::new(&sway)
         .delay(Duration::from_millis(1500))
-        .keys(&[Key::Return])
+        .keys(&[Key::Return, Key::Return])
         .send()
         .unwrap();
     let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
