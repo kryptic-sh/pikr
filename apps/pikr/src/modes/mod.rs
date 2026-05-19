@@ -82,6 +82,8 @@ pub enum Payload {
     Stdout(String),
     /// Spawn `program` with `args` detached from pikr.
     Exec { program: String, args: Vec<String> },
+    /// Write a string directly to the system clipboard (no subprocess).
+    SetClipboard(String),
 }
 
 pub trait Mode {
@@ -98,6 +100,35 @@ pub fn execute(payload: &Payload) -> Result<()> {
             Ok(())
         }
         Payload::Exec { program, args } => spawn_detached(program, args),
+        Payload::SetClipboard(text) => set_clipboard(text),
+    }
+}
+
+/// Write `text` to the system clipboard.
+///
+/// On Unix the clipboard write is a no-op here: the unix clipboard mode
+/// shells out to `cliphist decode | wl-copy` via `Payload::Exec`, so
+/// `Payload::SetClipboard` is never emitted on that platform. The body
+/// below is only reachable on Windows (and other non-unix targets) where
+/// `arboard` provides the implementation.
+fn set_clipboard(text: &str) -> Result<()> {
+    #[cfg(unix)]
+    {
+        // Unreachable on Unix; unix clipboard mode uses Payload::Exec.
+        let _ = text;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        let mut cb = arboard::Clipboard::new().with_context(|| "open system clipboard")?;
+        cb.set_text(text)
+            .with_context(|| "write to system clipboard")?;
+        Ok(())
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = text;
+        Ok(())
     }
 }
 

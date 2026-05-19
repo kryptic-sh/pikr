@@ -41,6 +41,11 @@ freedesktop-desktop-entry.workspace = true
 freedesktop-icons.workspace = true
 xdg.workspace = true
 
+# arboard provides clipboard read/write on Windows (current text only).
+# Full clipboard history requires the WinRT ClipboardHistory API (issue #37).
+[target.'cfg(windows)'.dependencies]
+arboard = { version = "3", default-features = false }
+
 [dev-dependencies]
 libc = "0.2"
 tempfile.workspace = true

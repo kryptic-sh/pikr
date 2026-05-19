@@ -127,6 +127,7 @@ fn payload_key(payload: &Payload) -> String {
                 format!("{} {}", program, args.join(" "))
             }
         }
+        Payload::SetClipboard(text) => text.clone(),
     }
 }
 
