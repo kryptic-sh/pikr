@@ -268,9 +268,10 @@ jobs:
           "$hash  $ARCHIVE" | Out-File -Encoding ASCII "$ARCHIVE.sha256"
 
       - name: Upload archives + sha256
-        if: >-
-          github.event_name == 'workflow_dispatch' ||
-          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+        # Tag-only: action-gh-release requires a tag to attach archives to.
+        # workflow_dispatch still runs the build (and so verifies it green)
+        # but skips upload — there's no release to publish to.
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
           files: |
