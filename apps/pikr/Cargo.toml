@@ -45,6 +45,8 @@ xdg.workspace = true
 # Full clipboard history requires the WinRT ClipboardHistory API (issue #37).
 [target.'cfg(windows)'.dependencies]
 arboard = { version = "3", default-features = false }
+lnk = "0.6"      # pure-Rust .lnk parser for drun Start Menu walk (issue #38)
+walkdir = "2"     # recursive directory walker for Start Menu trees (issue #38)
 
 [dev-dependencies]
 libc = "0.2"

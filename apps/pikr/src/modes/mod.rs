@@ -10,8 +10,7 @@ use std::process::{Command, Stdio};
 pub mod calc;
 pub mod clipboard;
 pub mod dmenu;
-// drun reads `.desktop` files via freedesktop-desktop-entry — Linux/BSD only.
-#[cfg(unix)]
+// drun: XDG `.desktop` launcher on Unix; Start Menu `.lnk` walker on Windows.
 pub mod drun;
 pub mod emoji;
 // run walks $PATH (Unix: executable-bit filter; Windows: PATHEXT extension
