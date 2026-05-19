@@ -298,8 +298,7 @@ mod windows_impl {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let json = serde_json::to_vec_pretty(&cached)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let json = serde_json::to_vec_pretty(&cached).map_err(std::io::Error::other)?;
             std::fs::write(path, json)
         };
         if let Err(e) = write() {
