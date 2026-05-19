@@ -8,6 +8,18 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-19
+
+### Changed
+
+- **Track `main` / `master` on the floem + winit forks** instead of per-PR topic
+  branches. The layer-shell work (`mxaddict/floem:layer-shell-port`,
+  `mxaddict/winit:layer-shell-port`) and the lapce/floem#1077 PR branch
+  (`feat/menus-feature`) are now merged into the forks' default branches. Pikr's
+  `[patch.crates-io]` block flips from `branch = "layer-shell-port"` →
+  `branch = "main"` (floem) / `branch = "master"` (winit). Future fixes on those
+  forks reach pikr on the next `cargo update`; topic branches are deleted.
+
 ## [0.7.0] - 2026-05-19
 
 ### Added
@@ -602,7 +614,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.1
 [0.7.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.0
 [0.6.5]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.5
 [0.6.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.6.4

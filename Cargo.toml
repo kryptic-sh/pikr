@@ -7,7 +7,7 @@ members = [
 default-members = ["apps/pikr"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT"
@@ -51,9 +51,12 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 
-# Epic 4 — Wayland layer-shell support. New port branches sit on top of
-# current lapce/{floem,winit} main (not the old 0.2.0 / 0.29.5 snapshots).
-# Drop these patches once layer-shell lands upstream.
+# Epic 4 — Wayland layer-shell support. The fork branches that previously
+# carried the layer-shell work (`layer-shell-port` on both forks plus
+# `feat/menus-feature` on floem, the upstream lapce/floem#1077 PR branch)
+# have been merged into each fork's default branch — winit's `master`,
+# floem's `main`. Drop these patches once layer-shell + the `menus` feature
+# land upstream and crates.io ships them.
 [patch.crates-io]
-floem       = { git = "https://github.com/mxaddict/floem.git", branch = "layer-shell-port" }
-floem-winit = { git = "https://github.com/mxaddict/winit.git", branch = "layer-shell-port", package = "floem-winit" }
+floem       = { git = "https://github.com/mxaddict/floem.git", branch = "main" }
+floem-winit = { git = "https://github.com/mxaddict/winit.git", branch = "master", package = "floem-winit" }

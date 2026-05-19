@@ -786,7 +786,7 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 [[package]]
 name = "dpi"
 version = "0.1.2"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "serde",
 ]
@@ -986,7 +986,7 @@ checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 [[package]]
 name = "floem"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell-port#8683b18963ce74d5d15f22f45d602534be61663d"
+source = "git+https://github.com/mxaddict/floem.git?branch=main#8c52a328c21b25d117bca6ce20f95a4a4c586b03"
 dependencies = [
  "bitflags 2.11.1",
  "clipboard-win",
@@ -1040,7 +1040,7 @@ dependencies = [
 [[package]]
 name = "floem-editor-core"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell-port#8683b18963ce74d5d15f22f45d602534be61663d"
+source = "git+https://github.com/mxaddict/floem.git?branch=main#8c52a328c21b25d117bca6ce20f95a4a4c586b03"
 dependencies = [
  "bitflags 2.11.1",
  "itertools",
@@ -1067,12 +1067,12 @@ dependencies = [
 [[package]]
 name = "floem-winit"
 version = "25.10.0"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "bitflags 2.11.1",
  "cfg_aliases",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=layer-shell-port)",
+ "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=master)",
  "floem-winit-android",
  "floem-winit-appkit",
  "floem-winit-common",
@@ -1094,11 +1094,11 @@ dependencies = [
 [[package]]
 name = "floem-winit-android"
 version = "25.10.0"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "android-activity",
  "bitflags 2.11.1",
- "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=layer-shell-port)",
+ "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=master)",
  "floem-winit-core",
  "ndk",
  "raw-window-handle",
@@ -1109,12 +1109,12 @@ dependencies = [
 [[package]]
 name = "floem-winit-appkit"
 version = "25.10.0"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "bitflags 2.11.1",
  "block2 0.6.2",
  "dispatch2",
- "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=layer-shell-port)",
+ "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=master)",
  "floem-winit-common",
  "floem-winit-core",
  "objc2 0.6.4",
@@ -1131,7 +1131,7 @@ dependencies = [
 [[package]]
 name = "floem-winit-common"
 version = "25.10.0"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "floem-winit-core",
  "memmap2",
@@ -1146,11 +1146,11 @@ dependencies = [
 [[package]]
 name = "floem-winit-core"
 version = "25.10.0"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "bitflags 2.11.1",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=layer-shell-port)",
+ "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=master)",
  "keyboard-types 0.8.3",
  "raw-window-handle",
  "serde",
@@ -1161,10 +1161,10 @@ dependencies = [
 [[package]]
 name = "floem-winit-orbital"
 version = "25.10.0"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "bitflags 2.11.1",
- "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=layer-shell-port)",
+ "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=master)",
  "floem-winit-core",
  "orbclient",
  "raw-window-handle",
@@ -1176,12 +1176,12 @@ dependencies = [
 [[package]]
 name = "floem-winit-uikit"
 version = "25.10.0"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "bitflags 2.11.1",
  "block2 0.6.2",
  "dispatch2",
- "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=layer-shell-port)",
+ "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=master)",
  "floem-winit-common",
  "floem-winit-core",
  "objc2 0.6.4",
@@ -1197,13 +1197,13 @@ dependencies = [
 [[package]]
 name = "floem-winit-wayland"
 version = "25.10.0"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "ahash",
  "bitflags 2.11.1",
  "calloop",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=layer-shell-port)",
+ "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=master)",
  "floem-winit-common",
  "floem-winit-core",
  "libc",
@@ -1223,13 +1223,13 @@ dependencies = [
 [[package]]
 name = "floem-winit-web"
 version = "25.10.0"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "atomic-waker",
  "bitflags 2.11.1",
  "concurrent-queue",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=layer-shell-port)",
+ "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=master)",
  "floem-winit-core",
  "js-sys",
  "pin-project",
@@ -1245,11 +1245,11 @@ dependencies = [
 [[package]]
 name = "floem-winit-win32"
 version = "25.10.0"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "bitflags 2.11.1",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=layer-shell-port)",
+ "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=master)",
  "floem-winit-core",
  "raw-window-handle",
  "smol_str",
@@ -1261,13 +1261,13 @@ dependencies = [
 [[package]]
 name = "floem-winit-x11"
 version = "25.10.0"
-source = "git+https://github.com/mxaddict/winit.git?branch=layer-shell-port#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
+source = "git+https://github.com/mxaddict/winit.git?branch=master#eab5ce591db6513b0f91c6f49a71addebeb1b8da"
 dependencies = [
  "bitflags 2.11.1",
  "bytemuck",
  "calloop",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=layer-shell-port)",
+ "dpi 0.1.2 (git+https://github.com/mxaddict/winit.git?branch=master)",
  "floem-winit-common",
  "floem-winit-core",
  "libc",
@@ -1284,7 +1284,7 @@ dependencies = [
 [[package]]
 name = "floem_reactive"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell-port#8683b18963ce74d5d15f22f45d602534be61663d"
+source = "git+https://github.com/mxaddict/floem.git?branch=main#8c52a328c21b25d117bca6ce20f95a4a4c586b03"
 dependencies = [
  "parking_lot",
  "smallvec",
@@ -1293,7 +1293,7 @@ dependencies = [
 [[package]]
 name = "floem_renderer"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell-port#8683b18963ce74d5d15f22f45d602534be61663d"
+source = "git+https://github.com/mxaddict/floem.git?branch=main#8c52a328c21b25d117bca6ce20f95a4a4c586b03"
 dependencies = [
  "floem-winit",
  "fontique",
@@ -1309,7 +1309,7 @@ dependencies = [
 [[package]]
 name = "floem_tiny_skia_renderer"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell-port#8683b18963ce74d5d15f22f45d602534be61663d"
+source = "git+https://github.com/mxaddict/floem.git?branch=main#8c52a328c21b25d117bca6ce20f95a4a4c586b03"
 dependencies = [
  "anyhow",
  "floem_renderer",
@@ -1325,7 +1325,7 @@ dependencies = [
 [[package]]
 name = "floem_vger_renderer"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell-port#8683b18963ce74d5d15f22f45d602534be61663d"
+source = "git+https://github.com/mxaddict/floem.git?branch=main#8c52a328c21b25d117bca6ce20f95a4a4c586b03"
 dependencies = [
  "anyhow",
  "floem-vger",
@@ -4445,7 +4445,7 @@ dependencies = [
 [[package]]
 name = "ui-events-floem-winit"
 version = "0.2.0"
-source = "git+https://github.com/mxaddict/floem.git?branch=layer-shell-port#8683b18963ce74d5d15f22f45d602534be61663d"
+source = "git+https://github.com/mxaddict/floem.git?branch=main#8c52a328c21b25d117bca6ce20f95a4a4c586b03"
 dependencies = [
  "dpi 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "floem-winit",
