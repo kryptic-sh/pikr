@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-05-19
+
 ### Added
 
 - Windows drun entries now render icons. Targets are queried via Win32
@@ -24,6 +26,9 @@ and this project adheres to
 
 ### Fixed
 
+- Windows: release binary is now linked as a windowed-subsystem app, so Scoop /
+  Start Menu launches no longer flash a cmd / conhost window. Debug builds keep
+  the console attached so `cargo run` still shows tracing logs. (#39)
 - Windows: default theme font now falls back to `Cascadia Mono` when Hack Nerd
   Font Mono isn't installed. Scoop manifest also gains a dependency on
   `nerd-fonts/Hack-NF` for users who want the full Nerd Font glyph coverage.
@@ -720,6 +725,7 @@ and this project adheres to
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
 [Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.7.1...HEAD
+[0.8.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.1
 [0.8.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.0
 [0.7.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.2
 [0.7.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.1
