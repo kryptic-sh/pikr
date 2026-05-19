@@ -8,6 +8,25 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-05-19
+
+### Fixed
+
+- Windows: CLI surfaces (`--version`, `--help`, `--dmenu` selection emit, panic
+  output) now reach the calling shell. Release builds link as
+  `windows_subsystem = "windows"` (v0.8.1, cmd-flash fix) which detaches stdout
+  at process start, so every `println!` / `eprintln!` was silently dropped.
+  `AttachConsole(ATTACH_PARENT_PROCESS)` is called at the very first line of
+  `main()` to re-attach to the parent console when one exists; the GUI path
+  (Explorer / Scoop shim / Start Menu) is unchanged.
+
+### Added
+
+- CI: cross-platform smoke job (linux/macos/windows) builds pikr in release and
+  asserts `--version` + `--help` exit 0 with expected output. Catches link
+  errors, missing runtime libs (VCRUNTIME / dyld / libgtk), and panic-on-init
+  bugs on PR review before they reach a real user.
+
 ## [0.8.2] - 2026-05-19
 
 ### Fixed
@@ -736,6 +755,7 @@ and this project adheres to
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
 [Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.7.1...HEAD
+[0.8.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.3
 [0.8.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.2
 [0.8.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.1
 [0.8.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.0
