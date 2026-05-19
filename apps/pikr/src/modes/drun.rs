@@ -317,10 +317,10 @@ mod windows_impl {
         // --- Cache probe ---
         {
             let _span = tracing::debug_span!("drun_cache_probe").entered();
-            if let (Some(mtime), Some(path)) = (current_mtime, cache_path()) {
-                if let Some(entries) = load_cache(mtime, &path) {
-                    return Ok(entries);
-                }
+            if let (Some(mtime), Some(path)) = (current_mtime, cache_path())
+                && let Some(entries) = load_cache(mtime, &path)
+            {
+                return Ok(entries);
             }
         }
 
@@ -340,7 +340,7 @@ mod windows_impl {
                 .filter(|p| {
                     p.extension()
                         .and_then(|e| e.to_str())
-                        .map_or(false, |e| e.eq_ignore_ascii_case("lnk"))
+                        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
                 })
                 .collect()
         };
@@ -425,10 +425,10 @@ mod windows_impl {
         // Skip non-program shortcuts by target extension.
         let skip_exts = ["txt", "url", "pdf", "html", "htm"];
         let target_path = Path::new(&target);
-        if let Some(ext) = target_path.extension().and_then(|e| e.to_str()) {
-            if skip_exts.iter().any(|&skip| ext.eq_ignore_ascii_case(skip)) {
-                return None;
-            }
+        if let Some(ext) = target_path.extension().and_then(|e| e.to_str())
+            && skip_exts.iter().any(|&skip| ext.eq_ignore_ascii_case(skip))
+        {
+            return None;
         }
 
         // Skip broken shortcuts — target must exist on disk.
@@ -452,7 +452,7 @@ mod windows_impl {
             .string_data()
             .command_line_arguments()
             .as_deref()
-            .and_then(|s| shlex::split(s))
+            .and_then(shlex::split)
             .unwrap_or_default();
 
         let mut entry = Entry::exec(label, target.clone()).with_args(args);
