@@ -169,6 +169,13 @@ jobs:
             macos_min: "10.15"
             suffix: ""
             archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            zigbuild_target: ""
+            zig: "false"
+            macos_min: ""
+            suffix: ".exe"
+            archive: zip
           # `aarch64-unknown-linux-gnu` and `x86_64-unknown-linux-musl`
           # are still out — cross-compile plumbing for muda+gtk-rs after
           # the layer-shell-port migration. Tracked in #31 and #32.
