@@ -44,10 +44,21 @@ fn is_executable(path: &Path) -> bool {
 }
 
 #[cfg(windows)]
+const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
+
+#[cfg(windows)]
 fn is_executable(path: &Path) -> bool {
     // PATHEXT-aware. Default to the canonical Windows extension set when the
     // env var is missing (some shells strip it).
-    let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| DEFAULT_PATHEXT.to_string());
+    is_executable_with_pathext(path, &pathext)
+}
+
+/// Pure helper extracted from `is_executable` so tests can probe matching
+/// behavior without mutating the global `PATHEXT` env var (which `forbid(
+/// unsafe_code)` blocks in test builds).
+#[cfg(windows)]
+fn is_executable_with_pathext(path: &Path, pathext: &str) -> bool {
     match path.extension().and_then(|e| e.to_str()) {
         Some(ext) => pathext
             .split(';')
@@ -158,57 +169,42 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn is_executable_windows_pathext() {
-        // Override PATHEXT for this test so it is deterministic.
-        std::env::set_var("PATHEXT", ".COM;.EXE;.BAT;.CMD");
-
-        let exe_path = Path::new("some_tool.exe");
-        let txt_path = Path::new("readme.txt");
-
+        let pathext = ".COM;.EXE;.BAT;.CMD";
         assert!(
-            is_executable(exe_path),
-            ".exe must match PATHEXT .COM;.EXE;.BAT;.CMD"
+            is_executable_with_pathext(Path::new("some_tool.exe"), pathext),
+            ".exe must match PATHEXT"
         );
         assert!(
-            !is_executable(txt_path),
-            ".txt must not match PATHEXT .COM;.EXE;.BAT;.CMD"
+            !is_executable_with_pathext(Path::new("readme.txt"), pathext),
+            ".txt must not match PATHEXT"
         );
     }
 
     #[test]
     #[cfg(windows)]
     fn pathext_case_insensitive() {
-        std::env::set_var("PATHEXT", ".COM;.EXE;.BAT;.CMD");
-
-        // Extension in upper-case must still match.
-        let upper = Path::new("tool.EXE");
-        let lower = Path::new("tool.exe");
-
-        assert!(is_executable(upper), ".EXE (upper) must match");
-        assert!(is_executable(lower), ".exe (lower) must match");
+        let pathext = ".COM;.EXE;.BAT;.CMD";
+        assert!(
+            is_executable_with_pathext(Path::new("tool.EXE"), pathext),
+            ".EXE (upper) must match"
+        );
+        assert!(
+            is_executable_with_pathext(Path::new("tool.exe"), pathext),
+            ".exe (lower) must match"
+        );
     }
 
     #[test]
     #[cfg(windows)]
-    fn pathext_default_when_unset() {
-        // Remove PATHEXT entirely so the default is used.
-        std::env::remove_var("PATHEXT");
-
-        assert!(
-            is_executable(Path::new("thing.exe")),
-            ".exe must match default PATHEXT"
-        );
-        assert!(
-            is_executable(Path::new("thing.cmd")),
-            ".cmd must match default PATHEXT"
-        );
-        assert!(
-            is_executable(Path::new("thing.bat")),
-            ".bat must match default PATHEXT"
-        );
-        assert!(
-            !is_executable(Path::new("thing.dll")),
-            ".dll must not match default PATHEXT"
-        );
+    fn pathext_default_matches_common_extensions() {
+        // Probe the canonical default set the runtime falls back to when
+        // PATHEXT is unset. Avoids mutating the live env (forbidden by
+        // `#![forbid(unsafe_code)]`).
+        let pathext = DEFAULT_PATHEXT;
+        assert!(is_executable_with_pathext(Path::new("thing.exe"), pathext));
+        assert!(is_executable_with_pathext(Path::new("thing.cmd"), pathext));
+        assert!(is_executable_with_pathext(Path::new("thing.bat"), pathext));
+        assert!(!is_executable_with_pathext(Path::new("thing.dll"), pathext));
     }
 
     #[test]
