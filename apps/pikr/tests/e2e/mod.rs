@@ -105,6 +105,94 @@ fn esc_x2_from_insert_exits_1_calc() {
     );
 }
 
+/// Two Escapes in `--show emoji` mode must exit 1.
+#[test]
+fn esc_x2_from_insert_exits_1_emoji() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let pikr = Pikr::spawn(&sway, &["--show", "emoji"], None).unwrap();
+    Wtype::new(&sway)
+        .delay(Duration::from_millis(1500))
+        .keys(&[Key::Escape, Key::Escape])
+        .send()
+        .unwrap();
+    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(
+        out.exit_code,
+        Some(1),
+        "Esc Esc from emoji must exit 1; stderr:\n{}",
+        out.stderr
+    );
+}
+
+/// Two Escapes in `--show clipboard` mode must exit 1.
+#[test]
+fn esc_x2_from_insert_exits_1_clipboard() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let pikr = Pikr::spawn(&sway, &["--show", "clipboard"], None).unwrap();
+    Wtype::new(&sway)
+        .delay(Duration::from_millis(1500))
+        .keys(&[Key::Escape, Key::Escape])
+        .send()
+        .unwrap();
+    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(
+        out.exit_code,
+        Some(1),
+        "Esc Esc from clipboard must exit 1; stderr:\n{}",
+        out.stderr
+    );
+}
+
+/// Two Escapes in `--show run` mode must exit 1.
+#[test]
+fn esc_x2_from_insert_exits_1_run() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let pikr = Pikr::spawn(&sway, &["--show", "run"], None).unwrap();
+    Wtype::new(&sway)
+        .delay(Duration::from_millis(1500))
+        .keys(&[Key::Escape, Key::Escape])
+        .send()
+        .unwrap();
+    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(
+        out.exit_code,
+        Some(1),
+        "Esc Esc from run must exit 1; stderr:\n{}",
+        out.stderr
+    );
+}
+
+/// Two Escapes in `--show ssh` mode must exit 1.
+#[test]
+fn esc_x2_from_insert_exits_1_ssh() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let pikr = Pikr::spawn(&sway, &["--show", "ssh"], None).unwrap();
+    Wtype::new(&sway)
+        .delay(Duration::from_millis(1500))
+        .keys(&[Key::Escape, Key::Escape])
+        .send()
+        .unwrap();
+    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(
+        out.exit_code,
+        Some(1),
+        "Esc Esc from ssh must exit 1; stderr:\n{}",
+        out.stderr
+    );
+}
+
 // ── Message modal ─────────────────────────────────────────────────────────────
 
 /// `--message` mode dismisses on a single Escape and exits 0.
