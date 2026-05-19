@@ -8,6 +8,45 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-19
+
+### Added
+
+- **Windows: `--show ssh`** (#35). Reads known_hosts from
+  `%USERPROFILE%\.ssh\known_hosts` via `dirs::home_dir()`; system-wide
+  `/etc/ssh/ssh_config` skipped (no Windows analogue). Terminal probe order on
+  Windows: `wt.exe`, `pwsh.exe`, `powershell.exe`, `cmd.exe`, each with a
+  tailored argv (`wt -- ssh <host>`, `pwsh -NoExit -Command "ssh <host>"`,
+  `cmd /K "ssh <host>"`). Linux probe order (alacritty/kitty/foot/xterm +
+  `-e ssh <host>`) unchanged.
+- **Windows: `--show run`** (#36). `is_executable` now branches per OS: Unix
+  keeps the `PermissionsExt::mode() & 0o111` check; Windows splits `%PATHEXT%`
+  on `;` and matches `path.extension()` case-insensitively, defaulting to
+  `.COM;.EXE;.BAT;.CMD` when the env var is unset. Labels drop the extension on
+  Windows so users type `firefox` not `firefox.exe`; `Command::new("firefox")`
+  does its own PATHEXT lookup at spawn time.
+- **Windows: `--show clipboard`** (#37). New `Payload::SetClipboard` variant +
+  per-OS `set_clipboard` helper. On Windows: `arboard` reads the current
+  clipboard text and shows it as a single entry; accept writes back via
+  `arboard::Clipboard::set_text`. Limitation (current item only, not full
+  history) logged via tracing on startup. Linux branch keeps the existing
+  `cliphist list` + `cliphist decode | wl-copy` shell-out verbatim.
+- **Windows: `--show drun`** (#38). `walkdir` traverses
+  `%APPDATA%\Microsoft\Windows\Start Menu\Programs` and
+  `%ProgramData%\...\Programs`. Each `.lnk` parsed via `lnk` 0.6:
+  `link_target()` for the resolved exe path, `command_line_arguments()` split
+  via shlex. Filters: skip targets that don't exist, skip extensions in
+  `{txt,url,pdf,html,htm}`, skip parent folders containing "uninstall". Icons
+  skipped in phase 1 (future follow-up). XDG `.desktop` pipeline on Linux
+  verbatim.
+
+### Changed
+
+- **Cross-platform mode dispatch**: `modes::drun / run / ssh / clipboard` no
+  longer cfg(unix)-gated; each ships per-OS internals through `unix_impl` /
+  `windows_impl` submodules. The `app::run` mode arms for `Drun / Run / Ssh` are
+  unconditional now.
+
 ## [0.7.2] - 2026-05-19
 
 ### Added
@@ -660,6 +699,7 @@ and this project adheres to
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
 [Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.7.1...HEAD
+[0.8.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.0
 [0.7.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.2
 [0.7.1]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.1
 [0.7.0]: https://github.com/kryptic-sh/pikr/releases/tag/v0.7.0
