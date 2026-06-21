@@ -279,15 +279,15 @@ fn accept_typed_query_with_shift_enter_emits_stdout() {
 /// at startup; the test then sends Return on a retry cadence until
 /// pikr exits.
 ///
-/// Ignored: tracks pikr issue #34 — `ERROR_SURFACE_LOST_KHR` race.
-/// Even with `aaa_warmup_*` absorbing the first-spawn race, this test
-/// fails under nextest (process-per-test, warmup doesn't carry) and
-/// has been the canonical failure case on CI's pixman + zink path.
-/// Uses `Pikr::wait_with_retry` so once #34 is fixed the test should
-/// pass deterministically. Run with `cargo test -- --ignored` to
-/// repro.
+/// Ignored: tracks pikr issue #34. The harness now forces software GL
+/// (`WGPU_BACKEND=gl` + `LIBGL_ALWAYS_SOFTWARE`, see `Pikr::spawn`), which
+/// removed the original `ERROR_SURFACE_LOST_KHR` / zink-Vulkan render failure
+/// (stderr is now clean). But a separate input/accept race remains: the Return
+/// keystroke intermittently doesn't land, so pikr never exits and the test
+/// times out (~1 in 2 runs locally). Keeps `Pikr::wait_with_retry`; un-ignore
+/// once the accept race is fixed. Run with `cargo test -- --ignored` to repro.
 #[test]
-#[ignore = "wgpu ERROR_SURFACE_LOST_KHR race — see pikr#34"]
+#[ignore = "input/accept race — see pikr#34 (render race fixed via software GL)"]
 fn accept_matched_candidate_with_return_emits_stdout() {
     if !require_tools() {
         return;
