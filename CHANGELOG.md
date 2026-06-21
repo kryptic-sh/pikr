@@ -8,6 +8,20 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-06-21
+
+### Fixed
+
+- Query-bar cursor in the wrong spot in Normal/Visual mode: the block cursor
+  (`█`) was inserted _before_ the character at the caret, growing the line by a
+  cell and pushing the covered character one position right. It now overlays
+  (covers) the character at the caret like vim, and reveals the underlying
+  character on the blink-off phase so nothing vanishes or shifts. The Insert
+  thin-bar caret is unchanged (it correctly sits between characters).
+- Normal mode could not move the query caret: `h`/`l` and `←`/`→` were no-ops
+  (only `j`/`k` moved the result list). They now move the caret left/right over
+  the query, matching vim; `j`/`k`/`↑`/`↓`/Home/End remain list navigation.
+
 ## [0.8.4] - 2026-05-20
 
 ### Changed
@@ -766,6 +780,7 @@ and this project adheres to
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
 [Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.7.1...HEAD
+[0.8.5]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.5
 [0.8.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.4
 [0.8.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.3
 [0.8.2]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.2
