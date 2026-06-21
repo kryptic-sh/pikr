@@ -118,6 +118,24 @@ pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool, shift: bool) ->
                 state.count.set(None);
                 Some(Action::Cancel)
             }
+            // Query-caret movement in Normal mode (vim `h`/`l` + arrows). `j`/`k`
+            // and Up/Down/Home/End stay list navigation in `normal_or_visual_key`.
+            Key::Named(NamedKey::ArrowLeft) => {
+                state.count.set(None);
+                Some(Action::CursorLeft)
+            }
+            Key::Named(NamedKey::ArrowRight) => {
+                state.count.set(None);
+                Some(Action::CursorRight)
+            }
+            Key::Character(s) if s.as_str() == "h" => {
+                state.count.set(None);
+                Some(Action::CursorLeft)
+            }
+            Key::Character(s) if s.as_str() == "l" => {
+                state.count.set(None);
+                Some(Action::CursorRight)
+            }
             _ => normal_or_visual_key(state, key, ctrl),
         },
     }
@@ -421,6 +439,28 @@ mod tests {
         s.vim_mode.set(VimMode::Visual);
         let a = key_to_action(&s, &Key::Named(NamedKey::Escape), false, false);
         assert_eq!(a, Some(Action::EnterNormal));
+    }
+
+    // ── Normal-mode query-caret movement (#cursor-bugs) ──────────────────────
+    // BUG: Normal mode bound no caret movement — h/l and Left/Right were
+    // no-ops, so the cursor couldn't be moved over the query in Normal mode.
+
+    #[test]
+    fn normal_h_l_move_caret() {
+        let s = make_state();
+        let h = key_to_action(&s, &Key::Character("h".into()), false, false);
+        assert_eq!(h, Some(Action::CursorLeft));
+        let l = key_to_action(&s, &Key::Character("l".into()), false, false);
+        assert_eq!(l, Some(Action::CursorRight));
+    }
+
+    #[test]
+    fn normal_left_right_arrows_move_caret() {
+        let s = make_state();
+        let left = key_to_action(&s, &Key::Named(NamedKey::ArrowLeft), false, false);
+        assert_eq!(left, Some(Action::CursorLeft));
+        let right = key_to_action(&s, &Key::Named(NamedKey::ArrowRight), false, false);
+        assert_eq!(right, Some(Action::CursorRight));
     }
 
     #[test]

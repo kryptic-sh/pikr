@@ -396,16 +396,35 @@ fn cursor_glyph(mode: VimMode, blink_on: bool) -> char {
     }
 }
 
-/// Insert a vim cursor glyph at codepoint position `cursor` in `text`. The
-/// cursor is clamped to `0..=text.chars().count()`. Used by both the query
-/// bar (cursor moves with Left/Right/Home/End) and the ex bar (always at end).
+/// Render `text` with a vim cursor at codepoint position `cursor` (clamped to
+/// `0..=text.chars().count()`).
+///
+/// - **Insert** (thin bar `▏`): the caret sits BETWEEN characters — it's
+///   inserted at `pos` and does not cover a glyph.
+/// - **Normal / Visual** (block `█`): the block sits ON the character at `pos`,
+///   replacing it (vim-faithful) rather than being inserted before it. Inserting
+///   before grew the line and pushed the covered char one cell right, so the
+///   block rendered in the wrong spot. On the blink-off phase the underlying
+///   character is revealed instead of the block, so it never vanishes or shifts.
+///
+/// A caret at or past the end of `text` (and the empty-query case) appends the
+/// glyph. Used by both the query bar and the ex bar.
 fn with_cursor(text: &str, cursor: usize, mode: VimMode, blink_on: bool) -> String {
     let glyph = cursor_glyph(mode, blink_on);
     let total = text.chars().count();
     let pos = cursor.min(total);
+    let block = matches!(mode, VimMode::Normal | VimMode::Visual);
     let mut out = String::with_capacity(text.len() + 4);
     for (i, ch) in text.chars().enumerate() {
+        if i == pos && block {
+            // Block cursor covers this char: show the block (blink on) or the
+            // char itself (blink off). Either way the following text is not
+            // displaced.
+            out.push(if blink_on { glyph } else { ch });
+            continue;
+        }
         if i == pos {
+            // Insert caret: thin bar between chars (space keeps width on blink-off).
             out.push(glyph);
         }
         out.push(ch);
@@ -1469,7 +1488,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::{char_idx_to_byte, mask_password, row_key, word_boundary_back};
+    use super::{char_idx_to_byte, mask_password, row_key, with_cursor, word_boundary_back};
+    use crate::picker::state::VimMode;
 
     /// Regression for the empty-query → first-char highlight stuck bug.
     /// Empty match `positions=[]` MUST hash differently from `positions=[0]`,
@@ -1545,6 +1565,93 @@ mod tests {
         assert_ne!(
             row_key(0, 0, 0xdead, &[], &[]),
             row_key(0, 0, 0xbeef, &[], &[])
+        );
+    }
+
+    // ── with_cursor: caret rendering (#cursor-bugs) ──────────────────────────
+
+    /// Insert-mode caret is a thin bar sitting BETWEEN characters at the caret
+    /// index — it does not cover a character. (Regression guard; this was already
+    /// correct.)
+    #[test]
+    fn with_cursor_insert_bar_between_chars() {
+        assert_eq!(
+            with_cursor("hello", 0, VimMode::Insert, true),
+            "\u{258F}hello"
+        );
+        assert_eq!(
+            with_cursor("hello", 2, VimMode::Insert, true),
+            "he\u{258F}llo"
+        );
+        assert_eq!(
+            with_cursor("hello", 5, VimMode::Insert, true),
+            "hello\u{258F}"
+        );
+        // All six char positions keep the text length at 5 + 1 caret cell.
+        for c in 0..=5 {
+            assert_eq!(
+                with_cursor("hello", c, VimMode::Insert, true)
+                    .chars()
+                    .count(),
+                6
+            );
+        }
+    }
+
+    /// BUG: the Normal-mode block cursor must sit ON the character at the caret
+    /// (cover it), NOT be inserted before it. Inserting grew the line by a cell
+    /// and pushed the covered char one position right, so the block rendered in
+    /// the wrong spot.
+    #[test]
+    fn with_cursor_normal_block_overlays_char() {
+        assert_eq!(
+            with_cursor("hello", 0, VimMode::Normal, true),
+            "\u{2588}ello"
+        );
+        assert_eq!(
+            with_cursor("hello", 2, VimMode::Normal, true),
+            "he\u{2588}lo"
+        );
+        assert_eq!(
+            with_cursor("hello", 4, VimMode::Normal, true),
+            "hell\u{2588}"
+        );
+        // Overlay keeps the visible length equal to the text length.
+        assert_eq!(
+            with_cursor("hello", 2, VimMode::Normal, true)
+                .chars()
+                .count(),
+            5
+        );
+    }
+
+    /// Caret past the last char (e.g. cursor at end) appends the block; an empty
+    /// query renders just the block.
+    #[test]
+    fn with_cursor_normal_block_at_or_past_end() {
+        assert_eq!(
+            with_cursor("hello", 5, VimMode::Normal, true),
+            "hello\u{2588}"
+        );
+        assert_eq!(with_cursor("", 0, VimMode::Normal, true), "\u{2588}");
+    }
+
+    /// Visual mode shares the Normal block-overlay behavior.
+    #[test]
+    fn with_cursor_visual_block_overlays_char() {
+        assert_eq!(with_cursor("hi", 1, VimMode::Visual, true), "h\u{2588}");
+    }
+
+    /// On the blink-off phase the block reveals the character underneath (so the
+    /// covered char doesn't vanish each blink) and never displaces the text.
+    #[test]
+    fn with_cursor_block_blink_off_reveals_char() {
+        assert_eq!(with_cursor("hello", 2, VimMode::Normal, false), "hello");
+        assert_eq!(
+            with_cursor("hello", 2, VimMode::Normal, false)
+                .chars()
+                .count(),
+            5
         );
     }
 
