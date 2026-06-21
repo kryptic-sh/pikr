@@ -8,6 +8,12 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Normal-mode insert-entry motions on the query bar: `a` (append after cursor),
+  `A` (append at end of query), and `I` (insert at start of query), matching
+  vim. `i` (insert before cursor) was already supported.
+
 ### Fixed
 
 - Query-bar cursor is now an overlay: the text is a single fixed label and the

@@ -1299,6 +1299,26 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 visual_anchor_sig.set(None);
                 vim_mode_sig.set(VimMode::Insert);
             }
+            Action::AppendAfter => {
+                // vim `a`: caret one cell right (clamped), then Insert.
+                let len = query_sig.get().chars().count();
+                let cur = query_cursor_sig.get();
+                query_cursor_sig.set((cur + 1).min(len));
+                visual_anchor_sig.set(None);
+                vim_mode_sig.set(VimMode::Insert);
+            }
+            Action::AppendEnd => {
+                // vim `A`: caret to end, then Insert.
+                query_cursor_sig.set(query_sig.get().chars().count());
+                visual_anchor_sig.set(None);
+                vim_mode_sig.set(VimMode::Insert);
+            }
+            Action::InsertStart => {
+                // vim `I`: caret to start, then Insert.
+                query_cursor_sig.set(0);
+                visual_anchor_sig.set(None);
+                vim_mode_sig.set(VimMode::Insert);
+            }
             Action::EnterNormal => {
                 visual_anchor_sig.set(None);
                 vim_mode_sig.set(VimMode::Normal);

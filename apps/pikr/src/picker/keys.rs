@@ -14,6 +14,12 @@ pub enum Action {
     Top,
     Bottom,
     EnterInsert,
+    /// `a` — move the caret one cell right, then enter Insert (vim append).
+    AppendAfter,
+    /// `A` — move the caret to end of the query, then enter Insert.
+    AppendEnd,
+    /// `I` — move the caret to the start of the query, then enter Insert.
+    InsertStart,
     EnterNormal,
     EnterVisual,
     StartSearch,
@@ -135,6 +141,21 @@ pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool, shift: bool) ->
             Key::Character(s) if s.as_str() == "l" => {
                 state.count.set(None);
                 Some(Action::CursorRight)
+            }
+            // Insert-entry motions (vim): `a` append, `A` append-end, `I`
+            // insert-start. `i` (insert before cursor) lives in the shared
+            // motion table below.
+            Key::Character(s) if s.as_str() == "a" => {
+                state.count.set(None);
+                Some(Action::AppendAfter)
+            }
+            Key::Character(s) if s.as_str() == "A" => {
+                state.count.set(None);
+                Some(Action::AppendEnd)
+            }
+            Key::Character(s) if s.as_str() == "I" => {
+                state.count.set(None);
+                Some(Action::InsertStart)
             }
             _ => normal_or_visual_key(state, key, ctrl),
         },
@@ -461,6 +482,33 @@ mod tests {
         assert_eq!(left, Some(Action::CursorLeft));
         let right = key_to_action(&s, &Key::Named(NamedKey::ArrowRight), false, false);
         assert_eq!(right, Some(Action::CursorRight));
+    }
+
+    #[test]
+    fn normal_a_appends() {
+        let s = make_state();
+        assert_eq!(
+            key_to_action(&s, &Key::Character("a".into()), false, false),
+            Some(Action::AppendAfter)
+        );
+    }
+
+    #[test]
+    fn normal_caps_a_appends_end() {
+        let s = make_state();
+        assert_eq!(
+            key_to_action(&s, &Key::Character("A".into()), false, false),
+            Some(Action::AppendEnd)
+        );
+    }
+
+    #[test]
+    fn normal_caps_i_inserts_start() {
+        let s = make_state();
+        assert_eq!(
+            key_to_action(&s, &Key::Character("I".into()), false, false),
+            Some(Action::InsertStart)
+        );
     }
 
     #[test]
