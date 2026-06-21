@@ -779,7 +779,7 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.5...main
 [0.8.5]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.5
 [0.8.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.4
 [0.8.3]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.3
