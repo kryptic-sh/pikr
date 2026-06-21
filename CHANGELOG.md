@@ -10,13 +10,13 @@ and this project adheres to
 
 ### Fixed
 
-- Query-bar cursor is now drawn as a real view _on top of_ the text instead of
-  being spliced into the string as a glyph. The text is split into
-  before/cursor/after segments (Insert = a thin bar between segments;
-  Normal/Visual = a reverse-video block over the caret character), so glyph
-  advances stay stable — the text no longer reflows as the caret moves or
-  blinks, and rendering is font-independent. The ex (`:`) prompt keeps its
-  simple caret-at-end.
+- Query-bar cursor is now an overlay: the text is a single fixed label and the
+  cursor is a separate rect drawn on top, absolutely positioned at the caret's
+  measured x-offset (Insert = thin bar; Normal/Visual = block over the caret
+  cell). Only the cursor moves as the caret moves — the input text no longer
+  shifts/reflows on caret movement, blink, or mode switch, and positioning is
+  font-independent (measured with the same font the label renders). The ex (`:`)
+  prompt keeps its simple caret-at-end.
 
 - CI: the e2e keyboard harness now forces GPU-independent software rendering
   (`WGPU_BACKEND=gl` + `LIBGL_ALWAYS_SOFTWARE` + llvmpipe, with
