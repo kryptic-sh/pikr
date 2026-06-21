@@ -934,18 +934,19 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         } else {
             2.0
         };
-        let cell_h = f64::from(font_size) * 1.4;
-
         let ff_t = ff.clone();
         let text_label = Label::new(displayed)
             .style(move |s| s.color(fg).font_family(ff_t.clone()).font_size(font_size));
         let cursor = Empty::new().style(move |s| {
+            // Stretch vertically to the text's line box (inset top+bottom 0)
+            // instead of guessing a pixel height, so the cursor aligns with the
+            // text regardless of font metrics.
             let s = s
                 .absolute()
                 .inset_left(caret_x)
                 .inset_top(0.0)
-                .width(cell_w)
-                .height(cell_h);
+                .inset_bottom(0.0)
+                .width(cell_w);
             // Hidden on the blink-off phase.
             if on { s.background(accent) } else { s }
         });
