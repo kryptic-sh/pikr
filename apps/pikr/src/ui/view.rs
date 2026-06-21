@@ -13,7 +13,7 @@ use floem::{
     receiver_signal::ChannelSignal,
     style::FlexDirection,
     text::{Attrs, AttrsList, FamilyOwned},
-    views::{Container, Decorators, Empty, Label, Stack, img, rich_text, virtual_stack},
+    views::{Container, Decorators, Empty, Label, Stack, dyn_view, img, rich_text, virtual_stack},
 };
 
 use crate::cli::Mode as CliMode;
@@ -435,9 +435,55 @@ fn with_cursor(text: &str, cursor: usize, mode: VimMode, blink_on: bool) -> Stri
     out
 }
 
+/// The cursor element for the query bar, chosen by vim mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CursorSeg {
+    /// Insert mode: a thin bar drawn *between* `before` and `after`.
+    Bar,
+    /// Normal/Visual mode: a block drawn *over* the character at the caret
+    /// (carried here; `" "` when the caret is at end-of-line). The `after`
+    /// segment excludes this character.
+    Block(String),
+}
+
+/// Split `text` into `(before, cursor, after)` for the query bar, where the
+/// cursor is rendered as a separate styled view ON TOP of the text rather than
+/// spliced in as a glyph. This keeps glyph advances stable (no reflow as the
+/// caret moves or blinks) and is font-independent.
+///
+/// - Insert → [`CursorSeg::Bar`]; `after` starts at the caret (bar sits between
+///   characters).
+/// - Normal/Visual → [`CursorSeg::Block`] carrying the character at the caret;
+///   `after` starts *after* it so the block overlays exactly that cell.
+pub(crate) fn cursor_segments(
+    text: &str,
+    caret: usize,
+    mode: VimMode,
+) -> (String, CursorSeg, String) {
+    let chars: Vec<char> = text.chars().collect();
+    let n = chars.len();
+    let caret = caret.min(n);
+    let before: String = chars[..caret].iter().collect();
+    match mode {
+        VimMode::Normal | VimMode::Visual => {
+            let cur = chars.get(caret).copied().unwrap_or(' ').to_string();
+            let after: String = if caret < n {
+                chars[caret + 1..].iter().collect()
+            } else {
+                String::new()
+            };
+            (before, CursorSeg::Block(cur), after)
+        }
+        VimMode::Insert => {
+            let after: String = chars[caret..].iter().collect();
+            (before, CursorSeg::Bar, after)
+        }
+    }
+}
+
 /// Replace every character in `text` with ● (U+25CF) when `enabled` is true.
 /// The returned `String` has the same codepoint count as `text` so cursor
-/// positioning in `with_cursor` remains correct.
+/// positioning stays correct.
 pub(crate) fn mask_password(enabled: bool, text: &str) -> String {
     if enabled {
         "\u{25CF}".repeat(text.chars().count())
@@ -828,7 +874,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         )
     };
 
-    let (_bg, fg, accent, muted, selected_bg, font_family, font_size) = {
+    let (bg, fg, accent, muted, selected_bg, font_family, font_size) = {
         let s = state.lock().unwrap();
         let t = &s.theme;
         (
@@ -897,15 +943,52 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
         let _ = ex_buf_sig.get();
         blink_on.set(true);
     });
-    let query_label = Label::derived(move || {
-        let q = query_sig.get();
-        let displayed = mask_password(password, &q);
-        with_cursor(
-            &displayed,
-            query_cursor_sig.get(),
-            vim_mode_sig.get(),
-            blink_on.get(),
-        )
+    // Query bar with a cursor drawn as a real view ON TOP of the text, not
+    // spliced in as a glyph char. The text is split into before / cursor / after
+    // segments (see `cursor_segments`): Insert renders a thin bar between the
+    // segments; Normal/Visual renders a reverse-video block over the caret
+    // character. This keeps glyph advances stable (no reflow as the caret moves
+    // or blinks) and is font-independent — far more reliable than the old splice.
+    let qfont = font_family.clone();
+    let query_view = dyn_view(move || {
+        let displayed = mask_password(password, &query_sig.get());
+        let (before, seg, after) =
+            cursor_segments(&displayed, query_cursor_sig.get(), vim_mode_sig.get());
+        let on = blink_on.get();
+        let ff = qfont.clone();
+        let ff_b = ff.clone();
+        let ff_a = ff.clone();
+        let before_lbl = Label::new(before)
+            .style(move |s| s.color(fg).font_family(ff_b.clone()).font_size(font_size));
+        let after_lbl = Label::new(after)
+            .style(move |s| s.color(fg).font_family(ff_a.clone()).font_size(font_size));
+        match seg {
+            CursorSeg::Block(ch) => {
+                let cur = Label::new(ch).style(move |s| {
+                    let s = s.font_family(ff.clone()).font_size(font_size);
+                    // Reverse-video block while blinked on; plain char when off so
+                    // the character under the cursor never vanishes.
+                    if on {
+                        s.background(accent).color(bg)
+                    } else {
+                        s.color(fg)
+                    }
+                });
+                Stack::horizontal((before_lbl, cur, after_lbl))
+                    .style(|s| s.items_center())
+                    .into_any()
+            }
+            CursorSeg::Bar => {
+                let bar_h = f64::from(font_size) * 1.3;
+                let bar = Empty::new().style(move |s| {
+                    let s = s.width(2.0).height(bar_h);
+                    if on { s.background(accent) } else { s }
+                });
+                Stack::horizontal((before_lbl, bar, after_lbl))
+                    .style(|s| s.items_center())
+                    .into_any()
+            }
+        }
     })
     .style(move |s| {
         // CSS owns color, font, margin-left. flex_grow has no CSS analogue — stays inline.
@@ -939,7 +1022,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
 
     let hover_bg = blend(accent, selected_bg, 0.18);
     let sheet_input = Arc::clone(&sheet);
-    let input_row = Stack::horizontal((prompt_label, query_label)).style(move |s| {
+    let input_row = Stack::horizontal((prompt_label, query_view)).style(move |s| {
         // Geometry + bg + radius from `.input-row` in default.css. Inline
         // bits stay: `min_height` and `flex_shrink` (no CSS equivalents in
         // hjkl-css-gui), plus the reactive `:hover` blend.
@@ -1488,7 +1571,10 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::{char_idx_to_byte, mask_password, row_key, with_cursor, word_boundary_back};
+    use super::{
+        CursorSeg, char_idx_to_byte, cursor_segments, mask_password, row_key, with_cursor,
+        word_boundary_back,
+    };
     use crate::picker::state::VimMode;
 
     /// Regression for the empty-query → first-char highlight stuck bug.
@@ -1568,7 +1654,71 @@ mod tests {
         );
     }
 
-    // ── with_cursor: caret rendering (#cursor-bugs) ──────────────────────────
+    // ── cursor_segments: cursor-as-overlay split (query bar) ─────────────────
+
+    #[test]
+    fn cursor_segments_insert_bar_between_chars() {
+        // Insert: bar sits between before/after; the caret char stays in `after`.
+        let (before, seg, after) = cursor_segments("hello", 2, VimMode::Insert);
+        assert_eq!(before, "he");
+        assert_eq!(seg, CursorSeg::Bar);
+        assert_eq!(after, "llo");
+    }
+
+    #[test]
+    fn cursor_segments_insert_at_start_and_end() {
+        assert_eq!(
+            cursor_segments("hi", 0, VimMode::Insert),
+            ("".into(), CursorSeg::Bar, "hi".into())
+        );
+        assert_eq!(
+            cursor_segments("hi", 2, VimMode::Insert),
+            ("hi".into(), CursorSeg::Bar, "".into())
+        );
+    }
+
+    #[test]
+    fn cursor_segments_normal_block_covers_caret_char() {
+        // Block carries the caret char; `after` starts AFTER it (no duplication,
+        // no reflow — the block overlays exactly that cell).
+        let (before, seg, after) = cursor_segments("hello", 2, VimMode::Normal);
+        assert_eq!(before, "he");
+        assert_eq!(seg, CursorSeg::Block("l".into()));
+        assert_eq!(after, "lo");
+    }
+
+    #[test]
+    fn cursor_segments_block_at_end_uses_space() {
+        // Caret past the last char → block over a synthetic space; empty after.
+        assert_eq!(
+            cursor_segments("hello", 5, VimMode::Normal),
+            ("hello".into(), CursorSeg::Block(" ".into()), "".into())
+        );
+        // Empty query.
+        assert_eq!(
+            cursor_segments("", 0, VimMode::Normal),
+            ("".into(), CursorSeg::Block(" ".into()), "".into())
+        );
+    }
+
+    #[test]
+    fn cursor_segments_visual_uses_block_like_normal() {
+        assert_eq!(
+            cursor_segments("hi", 1, VimMode::Visual),
+            ("h".into(), CursorSeg::Block("i".into()), "".into())
+        );
+    }
+
+    #[test]
+    fn cursor_segments_multibyte_splits_on_char_boundaries() {
+        // "héllo": caret 2 is after 'é' (a 2-byte char). Block covers 'l'.
+        let (before, seg, after) = cursor_segments("héllo", 2, VimMode::Normal);
+        assert_eq!(before, "hé");
+        assert_eq!(seg, CursorSeg::Block("l".into()));
+        assert_eq!(after, "lo");
+    }
+
+    // ── with_cursor: ex-bar caret splice (still used for the `:` prompt) ──────
 
     /// Insert-mode caret is a thin bar sitting BETWEEN characters at the caret
     /// index — it does not cover a character. (Regression guard; this was already

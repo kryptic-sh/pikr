@@ -10,6 +10,14 @@ and this project adheres to
 
 ### Fixed
 
+- Query-bar cursor is now drawn as a real view _on top of_ the text instead of
+  being spliced into the string as a glyph. The text is split into
+  before/cursor/after segments (Insert = a thin bar between segments;
+  Normal/Visual = a reverse-video block over the caret character), so glyph
+  advances stay stable — the text no longer reflows as the caret moves or
+  blinks, and rendering is font-independent. The ex (`:`) prompt keeps its
+  simple caret-at-end.
+
 - CI: the e2e keyboard harness now forces GPU-independent software rendering
   (`WGPU_BACKEND=gl` + `LIBGL_ALWAYS_SOFTWARE` + llvmpipe, with
   `libgl1-mesa-dri` installed in CI), so the headless suite no longer hard-fails
