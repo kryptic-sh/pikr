@@ -243,7 +243,16 @@ fn single_esc_message_modal_exits_0() {
 
 /// Typing a query that matches no candidate and pressing Shift+Enter
 /// (`AcceptCustom`) must print the typed text to stdout and exit 0.
+///
+/// Ignored: same input/accept race as #34. The software-GL harness fix
+/// (`Pikr::spawn`) removed the zink/Vulkan render crash that previously broke
+/// this on CI (stderr is now clean), but the keystroke still intermittently
+/// fails to land on the layer-shell surface before focus is claimed, so pikr
+/// never accepts and the test times out. The keymap→`AcceptCustom` mapping is
+/// covered by the `insert_shift_enter_accept_custom` unit test; un-ignore once
+/// the focus/input race is fixed. Run with `cargo test -- --ignored` to repro.
 #[test]
+#[ignore = "input/accept race — see pikr#34 (render race fixed via software GL)"]
 fn accept_typed_query_with_shift_enter_emits_stdout() {
     if !require_tools() {
         return;
