@@ -454,6 +454,12 @@ pub(crate) fn mask_password(enabled: bool, text: &str) -> String {
 /// border, radius, and padding. No input row, no result list, no status bar.
 /// Pressing Escape dismisses via `std::process::exit(0)`.
 pub fn message_view(text: String, sheet: Arc<hjkl_css::Stylesheet>) -> impl IntoView {
+    // Same focus story as picker_view: floem routes key events only to the
+    // focused view, and the Esc registry-fallback alone is racy — if the
+    // compositor grants keyboard focus before the view tree settles, the
+    // keystroke lands nowhere and the modal never dismisses. Claim view
+    // focus the moment the window gains it.
+    let root_id = ViewId::new();
     let sheet_text = Arc::clone(&sheet);
     let sheet_modal = Arc::clone(&sheet);
     let sheet_outer = Arc::clone(&sheet);
@@ -461,18 +467,21 @@ pub fn message_view(text: String, sheet: Arc<hjkl_css::Stylesheet>) -> impl Into
     let msg_label = Label::derived(move || text.clone())
         .style(move |s| crate::ui::css::apply(s, &sheet_text, "label", &["message-text"]));
 
-    Container::new(
+    Container::with_id(
+        root_id,
         Container::new(msg_label).style(move |s| {
             crate::ui::css::apply(s, &sheet_modal, "container", &["message-modal"])
         }),
     )
     .style(move |s| crate::ui::css::apply(s, &sheet_outer, "container", &["message-modal-outer"]))
     .style(|s| s.keyboard_navigable())
+    .on_event(WindowGainedFocus, move |_cx: &mut EventCx, _ev: &()| {
+        root_id.request_focus();
+        EventPropagation::Continue
+    })
     .on_event(
         KeyDown,
         move |_cx: &mut EventCx, kb_event: &KeyboardEvent| {
-            // Esc is shortcut-like → reaches us via the registry fallback,
-            // no focus required.
             if matches!(kb_event.key, Key::Named(NamedKey::Escape)) {
                 std::process::exit(0);
             }

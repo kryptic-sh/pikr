@@ -29,6 +29,15 @@ ignore = [
     "RUSTSEC-2024-0420",
     # proc-macro-error — unmaintained, pulled transitively. No CVE.
     "RUSTSEC-2024-0370",
+    # quick-xml < 0.41 — pulled only by wayland-scanner (^0.39), a
+    # build-time codegen tool parsing the trusted Wayland protocol XML
+    # shipped in the crate; no attacker-controlled input reaches it.
+    # Drop when wayland-scanner moves to quick-xml >= 0.41.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+    # ttf-parser — unmaintained, pulled transitively via the floem font
+    # stack. No CVE, no safe upgrade published. Revisit with floem.
+    "RUSTSEC-2026-0192",
 ]
 
 [licenses]

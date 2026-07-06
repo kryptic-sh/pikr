@@ -37,6 +37,23 @@ fn require_tools() -> bool {
     true
 }
 
+/// Drives a dismiss-style test to completion: re-sends `keys` on a 1s
+/// cadence until pikr exits (or 15s), then asserts the exit code.
+///
+/// The old recipe — fixed 1500ms warmup, send once, wait — flaked on slow
+/// CI runners: the layer-shell surface can claim focus late and the only
+/// keystroke burst gets dropped (same race `wait_with_retry` documents).
+/// Re-sending is safe here: once the first burst lands the process exits
+/// and later sends hit nothing.
+fn assert_keys_exit(sway: &Sway, pikr: Pikr, keys: &[Key], want: i32, what: &str) {
+    let out = pikr
+        .wait_with_retry(Duration::from_secs(15), Duration::from_millis(1000), || {
+            let _ = Wtype::new(sway).keys(keys).send();
+        })
+        .unwrap();
+    assert_eq!(out.exit_code, Some(want), "{what}; stderr:\n{}", out.stderr);
+}
+
 // ── Warmup ────────────────────────────────────────────────────────────────────
 
 /// Burns the first sway+pikr cold-spawn so later tests don't get hit by
@@ -69,17 +86,12 @@ fn esc_x2_from_insert_exits_1_drun() {
     }
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--show", "drun"], None).unwrap();
-    Wtype::new(&sway)
-        .delay(Duration::from_millis(1500))
-        .keys(&[Key::Escape, Key::Escape])
-        .send()
-        .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
-    assert_eq!(
-        out.exit_code,
-        Some(1),
-        "Esc Esc from drun must exit 1; stderr:\n{}",
-        out.stderr
+    assert_keys_exit(
+        &sway,
+        pikr,
+        &[Key::Escape, Key::Escape],
+        1,
+        "Esc Esc from drun must exit 1",
     );
 }
 
@@ -91,17 +103,12 @@ fn esc_x2_from_insert_exits_1_dmenu() {
     }
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--dmenu"], Some("alpha\nbeta\ngamma\n")).unwrap();
-    Wtype::new(&sway)
-        .delay(Duration::from_millis(1500))
-        .keys(&[Key::Escape, Key::Escape])
-        .send()
-        .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
-    assert_eq!(
-        out.exit_code,
-        Some(1),
-        "Esc Esc from dmenu must exit 1; stderr:\n{}",
-        out.stderr
+    assert_keys_exit(
+        &sway,
+        pikr,
+        &[Key::Escape, Key::Escape],
+        1,
+        "Esc Esc from dmenu must exit 1",
     );
 }
 
@@ -113,17 +120,12 @@ fn esc_x2_from_insert_exits_1_calc() {
     }
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--show", "calc"], None).unwrap();
-    Wtype::new(&sway)
-        .delay(Duration::from_millis(1500))
-        .keys(&[Key::Escape, Key::Escape])
-        .send()
-        .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
-    assert_eq!(
-        out.exit_code,
-        Some(1),
-        "Esc Esc from calc must exit 1; stderr:\n{}",
-        out.stderr
+    assert_keys_exit(
+        &sway,
+        pikr,
+        &[Key::Escape, Key::Escape],
+        1,
+        "Esc Esc from calc must exit 1",
     );
 }
 
@@ -135,17 +137,12 @@ fn esc_x2_from_insert_exits_1_emoji() {
     }
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--show", "emoji"], None).unwrap();
-    Wtype::new(&sway)
-        .delay(Duration::from_millis(1500))
-        .keys(&[Key::Escape, Key::Escape])
-        .send()
-        .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
-    assert_eq!(
-        out.exit_code,
-        Some(1),
-        "Esc Esc from emoji must exit 1; stderr:\n{}",
-        out.stderr
+    assert_keys_exit(
+        &sway,
+        pikr,
+        &[Key::Escape, Key::Escape],
+        1,
+        "Esc Esc from emoji must exit 1",
     );
 }
 
@@ -157,17 +154,12 @@ fn esc_x2_from_insert_exits_1_clipboard() {
     }
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--show", "clipboard"], None).unwrap();
-    Wtype::new(&sway)
-        .delay(Duration::from_millis(1500))
-        .keys(&[Key::Escape, Key::Escape])
-        .send()
-        .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
-    assert_eq!(
-        out.exit_code,
-        Some(1),
-        "Esc Esc from clipboard must exit 1; stderr:\n{}",
-        out.stderr
+    assert_keys_exit(
+        &sway,
+        pikr,
+        &[Key::Escape, Key::Escape],
+        1,
+        "Esc Esc from clipboard must exit 1",
     );
 }
 
@@ -179,17 +171,12 @@ fn esc_x2_from_insert_exits_1_run() {
     }
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--show", "run"], None).unwrap();
-    Wtype::new(&sway)
-        .delay(Duration::from_millis(1500))
-        .keys(&[Key::Escape, Key::Escape])
-        .send()
-        .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
-    assert_eq!(
-        out.exit_code,
-        Some(1),
-        "Esc Esc from run must exit 1; stderr:\n{}",
-        out.stderr
+    assert_keys_exit(
+        &sway,
+        pikr,
+        &[Key::Escape, Key::Escape],
+        1,
+        "Esc Esc from run must exit 1",
     );
 }
 
@@ -201,17 +188,12 @@ fn esc_x2_from_insert_exits_1_ssh() {
     }
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--show", "ssh"], None).unwrap();
-    Wtype::new(&sway)
-        .delay(Duration::from_millis(1500))
-        .keys(&[Key::Escape, Key::Escape])
-        .send()
-        .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
-    assert_eq!(
-        out.exit_code,
-        Some(1),
-        "Esc Esc from ssh must exit 1; stderr:\n{}",
-        out.stderr
+    assert_keys_exit(
+        &sway,
+        pikr,
+        &[Key::Escape, Key::Escape],
+        1,
+        "Esc Esc from ssh must exit 1",
     );
 }
 
@@ -225,12 +207,19 @@ fn single_esc_message_modal_exits_0() {
     }
     let sway = Sway::headless();
     let pikr = Pikr::spawn(&sway, &["--message", "hello"], None).unwrap();
-    Wtype::new(&sway)
-        .delay(Duration::from_millis(1500))
-        .keys(&[Key::Escape])
-        .send()
+    let out = pikr
+        .wait_with_retry(Duration::from_secs(15), Duration::from_millis(1000), || {
+            // The first event of every fresh wtype virtual-keyboard
+            // connection is reliably swallowed while the compositor
+            // installs its keymap — a bare single-Esc burst never lands
+            // no matter how often it's retried (the esc_x2 tests dodge
+            // this only because they send two). Lead with a sacrificial
+            // 'a' the modal ignores so the Esc is never the first event;
+            // the single-Esc-dismisses semantic stays honest because
+            // only the Esc can exit.
+            let _ = Wtype::new(&sway).text("a").keys(&[Key::Escape]).send();
+        })
         .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(
         out.exit_code,
         Some(0),
