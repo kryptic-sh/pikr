@@ -12,14 +12,19 @@ use std::{
 };
 
 /// Per-process XDG icon-theme cache. Stores both hits and misses so that the
-/// same name is never looked up twice, and caches rasterised SVG bytes so
-/// resvg's render pass doesn't repeat on every virtual_stack frame.
+/// same name is never looked up twice, and caches icon file bytes — SVG
+/// rasterised to PNG once so resvg's render pass doesn't repeat, raw
+/// PNG / JPEG bytes read once so the disk isn't touched on every
+/// virtual_stack frame.
 pub struct IconCache {
     /// name-or-path → resolved file path (or `None` for misses).
     cache: HashMap<String, Option<PathBuf>>,
-    /// SVG file path → PNG bytes, rasterised once. PNGs / JPEGs aren't
-    /// cached here — they go straight to floem's `img()` as file bytes.
+    /// SVG file path → PNG bytes, rasterised once via resvg.
     raster_cache: HashMap<PathBuf, Arc<Vec<u8>>>,
+    /// Raw file path → file bytes, read once. PNGs / JPEGs go straight to
+    /// floem's `img()` from here instead of being re-read on each row
+    /// rebuild.
+    file_cache: HashMap<PathBuf, Arc<Vec<u8>>>,
 }
 
 /// Conventional generic-application icon names tried in order when an
@@ -48,6 +53,7 @@ impl IconCache {
         Self {
             cache: HashMap::new(),
             raster_cache: HashMap::new(),
+            file_cache: HashMap::new(),
         }
     }
 
@@ -149,6 +155,20 @@ impl IconCache {
         Some(arc)
     }
 
+    /// Read `path`'s bytes once, cached per path for subsequent calls. PNG /
+    /// JPEG files go straight to floem's `img()`; caching the bytes avoids a
+    /// disk read on every row rebuild (the virtual_stack rebuilds visible rows
+    /// on each rerank and scroll).
+    pub fn file_bytes(&mut self, path: &Path) -> Option<Arc<Vec<u8>>> {
+        if let Some(cached) = self.file_cache.get(path) {
+            return Some(cached.clone());
+        }
+        let bytes = std::fs::read(path).ok()?;
+        let arc = Arc::new(bytes);
+        self.file_cache.insert(path.to_path_buf(), arc.clone());
+        Some(arc)
+    }
+
     /// Number of entries currently in the cache. Used in tests.
     #[cfg(test)]
     pub fn cache_len(&self) -> usize {
@@ -159,6 +179,12 @@ impl IconCache {
     #[cfg(test)]
     pub fn raster_cache_len(&self) -> usize {
         self.raster_cache.len()
+    }
+
+    /// Number of raw file-byte entries cached. Used in tests.
+    #[cfg(test)]
+    pub fn file_cache_len(&self) -> usize {
+        self.file_cache.len()
     }
 }
 
@@ -323,6 +349,29 @@ mod tests {
         let result = render_svg_to_png(&path, 24);
         assert!(result.is_none());
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn file_bytes_caches_and_dedupes() {
+        // The cache doesn't parse the bytes, so any content works.
+        let dir = std::env::temp_dir();
+        let path = dir.join("pikr-test-icon.png");
+        std::fs::write(&path, b"\x89PNG not-really-a-png").unwrap();
+        let mut cache = IconCache::new();
+        let bytes = cache.file_bytes(&path).expect("read");
+        // Second call must hit the cache (no re-read) — same Arc.
+        let bytes2 = cache.file_bytes(&path).expect("cache hit");
+        assert!(Arc::ptr_eq(&bytes, &bytes2));
+        assert_eq!(cache.file_cache_len(), 1);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn file_bytes_missing_file_is_none() {
+        let mut cache = IconCache::new();
+        let result = cache.file_bytes(Path::new("/tmp/does-not-exist.png"));
+        assert!(result.is_none());
+        assert_eq!(cache.file_cache_len(), 0);
     }
 
     #[test]

@@ -250,12 +250,16 @@ fn entry_row(
                 None => Empty::new().style(icon_style).into_any(),
             }
         }
-        Some(path) => {
-            // Raster: PNG / JPEG. floem's `img()` takes `Fn() -> Vec<u8>`,
-            // and the `image` crate sniffs the format from magic bytes.
-            img(move || std::fs::read(&path).unwrap_or_default())
-                .style(icon_style)
-                .into_any()
+        Some(ref path) => {
+            // Raster: PNG / JPEG. Bytes are cached per path in IconCache so
+            // the virtual_stack row rebuilds don't re-read the file from disk
+            // every frame (floem's `img()` sniffs the format from magic
+            // bytes).
+            let bytes = state.lock().unwrap().icons.lock().unwrap().file_bytes(path);
+            match bytes {
+                Some(arc) => img(move || (*arc).clone()).style(icon_style).into_any(),
+                None => Empty::new().style(icon_style).into_any(),
+            }
         }
         None => Empty::new().style(icon_style).into_any(),
     };
