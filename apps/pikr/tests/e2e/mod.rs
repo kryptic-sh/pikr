@@ -412,3 +412,70 @@ fn accept_matched_candidate_with_return_emits_stdout() {
         out.stdout
     );
 }
+
+/// `--password` (-P) masks the query bar glyphs, but a plaintext leak of the
+/// typed value defeats the whole point: the review found Shift+Enter still
+/// wrote the secret to `$XDG_STATE_HOME/pikr/history.toml` (and bumped usage
+/// frecency) on accept. Isolated state/config dirs under the sway runtime dir
+/// keep this from reading the developer's real config or writing their real
+/// history. F12 is the unhandled sacrificial first event, matching the other
+/// accept tests; `text` types the literal secret.
+#[test]
+fn password_accept_never_persists_typed_query() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let state_dir = sway.runtime_dir.join("state");
+    let config_dir = sway.runtime_dir.join("config");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let pikr = Pikr::spawn_with_env(
+        &sway,
+        &["--dmenu", "-P"],
+        Some("a\nb\n"),
+        &[
+            ("XDG_STATE_HOME", state_dir.to_str().unwrap()),
+            ("XDG_CONFIG_HOME", config_dir.to_str().unwrap()),
+        ],
+    )
+    .unwrap();
+    let out = pikr
+        .wait_with_retry(Duration::from_secs(15), Duration::from_millis(1000), || {
+            // F12 first: the fresh wtype connection's first event is swallowed
+            // while the compositor installs its keymap, so lead with the
+            // sacrificial key before the secret text (single_esc_message_modal
+            // convention) — a swallowed 'S' would accept the wrong query.
+            let _ = Wtype::new(&sway)
+                .keys(&[Key::F12])
+                .text("S3cr3t")
+                .keys(&[Key::ShiftReturn])
+                .send();
+        })
+        .unwrap();
+    assert_eq!(
+        out.exit_code,
+        Some(0),
+        "ShiftReturn with -P must exit 0; stderr:\n{}",
+        out.stderr
+    );
+    assert_eq!(
+        out.stdout.trim(),
+        "S3cr3t",
+        "-P must still emit the typed query to stdout; got {:?}",
+        out.stdout
+    );
+    // The secret must never land on disk: neither the history nor the usage
+    // file may exist after a -P accept (the empty `state/pikr/` dir itself is
+    // pre-created by the xdg crate during load on every launch, so assert on
+    // the files that would hold the secret).
+    let pikr_state = sway.runtime_dir.join("state/pikr");
+    assert!(
+        !pikr_state.join("history.toml").exists(),
+        "-P accept must not persist the typed query to history.toml"
+    );
+    assert!(
+        !pikr_state.join("usage.toml").exists(),
+        "-P accept must not write usage.toml"
+    );
+}

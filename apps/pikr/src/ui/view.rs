@@ -339,14 +339,17 @@ fn entry_row(
             // Mirror the keyboard Accept path: bump frecency + push history.
             {
                 let mut s = state.lock().unwrap();
-                let cli_mode = s.cli_mode;
-                s.usage.record(cli_mode, &click_payload);
-                s.usage.save();
-                // We don't have the query signal here, so query_sig isn't
-                // tracked. The query is on s.picker.query — fine to read.
-                let q = s.picker.query.get_untracked();
-                s.history.push(cli_mode, &q);
-                s.history.save();
+                // -P: sensitive input — never persisted.
+                if !s.password {
+                    let cli_mode = s.cli_mode;
+                    s.usage.record(cli_mode, &click_payload);
+                    s.usage.save();
+                    // We don't have the query signal here, so query_sig isn't
+                    // tracked. The query is on s.picker.query — fine to read.
+                    let q = s.picker.query.get_untracked();
+                    s.history.push(cli_mode, &q);
+                    s.history.save();
+                }
             }
             if let Err(e) = crate::modes::execute(&click_payload) {
                 eprintln!("pikr: execute error: {e}");
@@ -1432,20 +1435,23 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
                     // in record() per entry) keeps a Visual-mode multi-launch
                     // to a single fsync.
                     let cli_mode = s.cli_mode;
-                    for payload in &payloads {
-                        s.usage.record(cli_mode, payload);
-                    }
-                    if !payloads.is_empty() {
-                        s.usage.save();
-                    }
-                    // History: record the live query for Ctrl-P/Ctrl-N recall.
-                    // Push the buffer the user actually accepted with — not
-                    // whatever they might still be recalling — so reusing a
-                    // recalled query just dedupes to the front of history.
-                    let query_text = query_sig.get_untracked();
-                    if !payloads.is_empty() {
-                        s.history.push(cli_mode, &query_text);
-                        s.history.save();
+                    // -P: sensitive input — never persisted.
+                    if !s.password {
+                        for payload in &payloads {
+                            s.usage.record(cli_mode, payload);
+                        }
+                        if !payloads.is_empty() {
+                            s.usage.save();
+                        }
+                        // History: record the live query for Ctrl-P/Ctrl-N recall.
+                        // Push the buffer the user actually accepted with — not
+                        // whatever they might still be recalling — so reusing a
+                        // recalled query just dedupes to the front of history.
+                        let query_text = query_sig.get_untracked();
+                        if !payloads.is_empty() {
+                            s.history.push(cli_mode, &query_text);
+                            s.history.save();
+                        }
                     }
                     (payloads, cli_mode)
                 };
@@ -1458,7 +1464,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
                     {
                         let mut s = state_key.lock().unwrap();
                         let q = query_text.trim();
-                        if !q.is_empty() {
+                        // -P: sensitive input — never persisted.
+                        if !s.password && !q.is_empty() {
                             s.history.push(cli_mode, q);
                             s.history.save();
                         }
@@ -1485,7 +1492,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
                     let mut s = state_key.lock().unwrap();
                     let cli_mode = s.cli_mode;
                     let q = query_text.trim();
-                    if !q.is_empty() {
+                    // -P: sensitive input — never persisted.
+                    if !s.password && !q.is_empty() {
                         s.history.push(cli_mode, q);
                         s.history.save();
                     }
