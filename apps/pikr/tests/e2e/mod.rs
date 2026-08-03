@@ -416,30 +416,18 @@ fn accept_matched_candidate_with_return_emits_stdout() {
 /// `--password` (-P) masks the query bar glyphs, but a plaintext leak of the
 /// typed value defeats the whole point: the review found Shift+Enter still
 /// wrote the secret to `$XDG_STATE_HOME/pikr/history.toml` (and bumped usage
-/// frecency) on accept. Isolated state/config dirs under the sway runtime dir
-/// keep this from reading the developer's real config or writing their real
-/// history. F12 is the unhandled sacrificial first event, matching the other
-/// accept tests; `text` types the literal secret.
+/// frecency) on accept. The harness gives every pikr an isolated
+/// config/state dir under the sway runtime dir, so this test never reads the
+/// developer's real config or writes their real history. F12 is the
+/// unhandled sacrificial first event, matching the other accept tests;
+/// `text` types the literal secret.
 #[test]
 fn password_accept_never_persists_typed_query() {
     if !require_tools() {
         return;
     }
     let sway = Sway::headless();
-    let state_dir = sway.runtime_dir.join("state");
-    let config_dir = sway.runtime_dir.join("config");
-    std::fs::create_dir_all(&state_dir).unwrap();
-    std::fs::create_dir_all(&config_dir).unwrap();
-    let pikr = Pikr::spawn_with_env(
-        &sway,
-        &["--dmenu", "-P"],
-        Some("a\nb\n"),
-        &[
-            ("XDG_STATE_HOME", state_dir.to_str().unwrap()),
-            ("XDG_CONFIG_HOME", config_dir.to_str().unwrap()),
-        ],
-    )
-    .unwrap();
+    let pikr = Pikr::spawn(&sway, &["--dmenu", "-P"], Some("a\nb\n")).unwrap();
     let out = pikr
         .wait_with_retry(Duration::from_secs(15), Duration::from_millis(1000), || {
             // F12 first: the fresh wtype connection's first event is swallowed

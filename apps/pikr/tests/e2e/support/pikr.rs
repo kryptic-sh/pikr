@@ -29,6 +29,12 @@ impl Pikr {
     }
 
     /// Spawn pikr with additional environment variables.
+    ///
+    /// Every pikr runs with isolated `XDG_CONFIG_HOME`/`XDG_STATE_HOME`
+    /// pointing into the sway fixture's tempdir, so tests never read the
+    /// developer's real `~/.config/pikr/config.toml` nor write their real
+    /// `~/.local/state/pikr/history.toml`/`usage.toml`. Env vars in `env`
+    /// override these defaults.
     pub fn spawn_with_env(
         sway: &Sway,
         args: &[&str],
@@ -39,6 +45,8 @@ impl Pikr {
         let mut cmd = Command::new(&bin);
         cmd.args(args)
             .envs(sway.env_vars())
+            .env("XDG_CONFIG_HOME", sway.config_dir.to_str().unwrap())
+            .env("XDG_STATE_HOME", sway.state_dir.to_str().unwrap())
             .envs(env.iter().copied())
             // Force deterministic software rendering. CI runners have no usable
             // GPU; without this, Mesa falls back to ZINK (GL-on-Vulkan) and

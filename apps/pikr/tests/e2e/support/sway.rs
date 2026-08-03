@@ -11,6 +11,12 @@ pub struct Sway {
     child: Child,
     /// `XDG_RUNTIME_DIR` for this session (a per-test tempdir).
     pub runtime_dir: PathBuf,
+    /// `XDG_CONFIG_HOME` for pikr under test (isolated from the developer's
+    /// real `~/.config`).
+    pub config_dir: PathBuf,
+    /// `XDG_STATE_HOME` for pikr under test (isolated from the developer's
+    /// real `~/.local/state`).
+    pub state_dir: PathBuf,
     /// `WAYLAND_DISPLAY` socket name (e.g. `"wayland-1"`).
     pub display: String,
 }
@@ -20,6 +26,10 @@ impl Sway {
     /// ready (up to 10 s) or panics.
     pub fn headless() -> Self {
         let runtime_dir = tempdir();
+        let config_dir = runtime_dir.join("config");
+        let state_dir = runtime_dir.join("state");
+        std::fs::create_dir_all(&config_dir).expect("create config dir");
+        std::fs::create_dir_all(&state_dir).expect("create state dir");
         let config_path = write_config(&runtime_dir);
 
         let child = Command::new("sway")
@@ -45,6 +55,8 @@ impl Sway {
         Sway {
             child,
             runtime_dir,
+            config_dir,
+            state_dir,
             display,
         }
     }
