@@ -8,6 +8,46 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- `:mode` ex commands (e.g. `:run`) no longer deadlock the UI thread: the mode
+  switch is batched so floem's synchronous signal subscribers re-lock the
+  `AppState` mutex only after its guard is dropped. On non-Unix targets,
+  switching to an unsupported mode (`:drun`/`:run`/`:ssh`) clears the result
+  list instead of showing the previous mode's entries under the new label, and
+  history-recall state (Ctrl-P/Ctrl-N cursor and draft) resets on mode switch.
+- `--password` (`-P`) no longer persists the typed query: history and usage
+  frecency are skipped on accept, so the sensitive value never lands in
+  `history.toml`/`usage.toml`. Stdout/execution behaviour is unchanged.
+- drun dedupes `.desktop` files keep-first per app id, so a user-local
+  `~/.local/share/applications` override now wins over the system copy instead
+  of being silently discarded.
+- Windows drun cache is keyed on the max mtime across the whole Start Menu tree
+  (every dir and file) rather than just the roots, so shortcuts added or removed
+  inside existing subfolders now invalidate it.
+- Frecency keys for `Exec` payloads join arguments with the ASCII unit
+  separator, so a program containing a space can no longer collide with a
+  program-plus-argument split (previously both keyed identically).
+- Theme colors must be exactly 6 hex digits; short, 8-digit, or malformed values
+  render deterministic black instead of silently-wrong colors.
+
+### Security
+
+- Zero-size or NaN SVG icon dimensions bail out before the `size_px / 0`
+  infinite-scale division into tiny-skia, and count-prefix digits saturate at
+  `usize::MAX` instead of wrapping.
+
+### Performance
+
+- PNG/JPEG icon files are now cached per path in the icon cache, avoiding a disk
+  read on every result-row rebuild (each rerank and scroll).
+
+### Changed
+
+- The e2e harness gives every pikr under test isolated `XDG_CONFIG_HOME` /
+  `XDG_STATE_HOME` under the sway tempdir, so tests never read the developer's
+  real config nor write real history/usage files.
+
 ## [0.8.7] - 2026-08-04
 
 ### Added
