@@ -9,5 +9,7 @@
 - Diagnose local headless Sway connection resets in the keyboard end-to-end
   harness. `cargo nextest run --workspace --locked --no-fail-fast` failed eight
   keyboard tests after Sway reset each Wayland connection; serial execution via
-  `NEXTEST_TEST_THREADS=1` failed identically. Format, clippy, release build,
-  and non-E2E unit tests passed.
+  `NEXTEST_TEST_THREADS=1` failed identically. The same command at pre-startup-
+  optimization commit `ce74071` produced the same eight failures, confirming the
+  startup changes did not cause them. Format, clippy, release build, and non-E2E
+  unit tests passed.
