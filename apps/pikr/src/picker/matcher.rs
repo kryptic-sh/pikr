@@ -21,6 +21,7 @@ pub struct Match {
 
 pub struct Matcher {
     inner: NucleoMatcher,
+    config: Config,
     poisoned: bool,
 }
 
@@ -32,8 +33,15 @@ impl Default for Matcher {
 
 impl Matcher {
     pub fn new() -> Self {
+        Self::with_case_sensitive(false)
+    }
+
+    pub fn with_case_sensitive(case_sensitive: bool) -> Self {
+        let mut config = Config::DEFAULT;
+        config.ignore_case = !case_sensitive;
         Self {
-            inner: NucleoMatcher::new(Config::DEFAULT),
+            inner: NucleoMatcher::new(config.clone()),
+            config,
             poisoned: false,
         }
     }
@@ -50,7 +58,7 @@ impl Matcher {
         // here rather than inside the catch_unwind avoids dropping the
         // corrupted matcher while its slab allocator is mid-mutation.
         if self.poisoned {
-            self.inner = NucleoMatcher::new(Config::DEFAULT);
+            self.inner = NucleoMatcher::new(self.config.clone());
             self.poisoned = false;
         }
         if query.is_empty() {
@@ -134,7 +142,7 @@ impl Matcher {
         field: &'static str,
     ) -> Option<(u16, Vec<u32>)> {
         if *nucleo_dead {
-            return substring_match(haystack, query);
+            return substring_match(haystack, query, self.config.ignore_case);
         }
         let mut panicked = false;
         let hit = self.try_match(haystack, needle, &mut panicked);
@@ -150,7 +158,7 @@ impl Matcher {
             // nucleo had a chance and gave up — try substring instead. For
             // queries like \"Thunder\" against \"Thunderbird\" this still
             // yields the obvious match the user expects.
-            return substring_match(haystack, query);
+            return substring_match(haystack, query, self.config.ignore_case);
         }
         hit
     }
@@ -186,19 +194,23 @@ impl Matcher {
     }
 }
 
-/// Case-insensitive substring scan used as a fallback when nucleo panics
-/// inside its prefilter. Emits codepoint positions covering the matched
-/// span; arbitrary score is high enough to outrank typical fuzzy hits so
-/// that direct-substring queries surface near the top.
-fn substring_match(haystack: &str, query: &str) -> Option<(u16, Vec<u32>)> {
+/// Substring scan used as a fallback when nucleo panics inside its prefilter.
+/// Emits codepoint positions covering the matched span; arbitrary score is high
+/// enough to outrank typical fuzzy hits so direct-substring queries surface near
+/// the top.
+fn substring_match(haystack: &str, query: &str, ignore_case: bool) -> Option<(u16, Vec<u32>)> {
     if haystack.is_empty() || query.is_empty() {
         return None;
     }
-    let h_lower = haystack.to_lowercase();
-    let q_lower = query.to_lowercase();
-    let byte_idx = h_lower.find(&q_lower)?;
-    let cp_start = h_lower[..byte_idx].chars().count();
-    let cp_count = q_lower.chars().count();
+    let (cp_start, cp_count) = if ignore_case {
+        let h_lower = haystack.to_lowercase();
+        let q_lower = query.to_lowercase();
+        let byte_idx = h_lower.find(&q_lower)?;
+        (h_lower[..byte_idx].chars().count(), q_lower.chars().count())
+    } else {
+        let byte_idx = haystack.find(query)?;
+        (haystack[..byte_idx].chars().count(), query.chars().count())
+    };
     let positions: Vec<u32> = (cp_start..cp_start + cp_count).map(|i| i as u32).collect();
     // 200 is comfortably above typical nucleo scores (~100-180 range for
     // short queries). Substring matches are high-quality by definition.
@@ -211,6 +223,54 @@ mod tests {
 
     fn no_desc<'a>(labels: &'a [&'a str]) -> Vec<(&'a str, Option<&'a str>)> {
         labels.iter().map(|l| (*l, None)).collect()
+    }
+
+    #[test]
+    fn case_insensitive_matcher_matches_different_case() {
+        let mut matcher = Matcher::with_case_sensitive(false);
+        let pairs = no_desc(&["Foo"]);
+
+        assert_eq!(matcher.rank(&pairs, "foo").len(), 1);
+    }
+
+    #[test]
+    fn case_sensitive_matcher_rejects_different_case() {
+        let mut matcher = Matcher::with_case_sensitive(true);
+        let pairs = no_desc(&["Foo"]);
+
+        assert!(matcher.rank(&pairs, "foo").is_empty());
+        assert_eq!(matcher.rank(&pairs, "Foo").len(), 1);
+    }
+
+    #[test]
+    fn case_sensitive_fallback_rejects_different_case() {
+        let mut matcher = Matcher::with_case_sensitive(true);
+        let mut needle_buf = Vec::new();
+        let needle = Utf32Str::new("Thunder", &mut needle_buf);
+        let mut nucleo_dead = true;
+
+        assert!(
+            matcher
+                .match_field(
+                    "thunderbird",
+                    needle,
+                    "Thunder",
+                    &mut nucleo_dead,
+                    0,
+                    "label",
+                )
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn poisoned_case_sensitive_matcher_preserves_configuration() {
+        let mut matcher = Matcher::with_case_sensitive(true);
+        matcher.poisoned = true;
+        let pairs = no_desc(&["Foo"]);
+
+        assert!(matcher.rank(&pairs, "foo").is_empty());
+        assert!(!matcher.poisoned);
     }
 
     #[test]

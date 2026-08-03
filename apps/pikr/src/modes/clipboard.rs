@@ -11,6 +11,15 @@ use anyhow::Result;
 #[derive(Default)]
 pub struct Clipboard;
 
+const PREVIEW_MAX: usize = 80;
+
+fn preview_label(text: &str) -> String {
+    match text.char_indices().nth(PREVIEW_MAX) {
+        Some((boundary, _)) => format!("{}…", &text[..boundary]),
+        None => text.to_string(),
+    }
+}
+
 impl Mode for Clipboard {
     fn name(&self) -> &'static str {
         "clipboard"
@@ -30,7 +39,7 @@ impl Mode for Clipboard {
 
 #[cfg(unix)]
 mod unix_impl {
-    use super::{Entry, Payload, Result};
+    use super::{Entry, Payload, Result, preview_label};
 
     pub fn collect() -> Result<Vec<Entry>> {
         let output = match std::process::Command::new("cliphist").arg("list").output() {
@@ -56,16 +65,9 @@ mod unix_impl {
         Some((id, preview.to_string()))
     }
 
-    pub const PREVIEW_MAX: usize = 80;
-
     pub fn make_entry(id: u64, preview: String) -> Entry {
-        let label = if preview.len() > PREVIEW_MAX {
-            format!("{}…", &preview[..PREVIEW_MAX])
-        } else {
-            preview
-        };
         Entry {
-            label,
+            label: preview_label(&preview),
             description: None,
             icon: None,
             payload: Payload::Exec {
@@ -87,7 +89,7 @@ mod unix_impl {
 
 #[cfg(windows)]
 mod windows_impl {
-    use super::{Entry, Payload, Result};
+    use super::{Entry, Payload, Result, preview_label};
 
     pub fn collect() -> Result<Vec<Entry>> {
         let mut cb = match arboard::Clipboard::new() {
@@ -114,14 +116,8 @@ mod windows_impl {
         }
     }
 
-    const PREVIEW_MAX: usize = 80;
-
     fn make_entry(text: String) -> Entry {
-        let label = if text.len() > PREVIEW_MAX {
-            format!("{}…", &text[..PREVIEW_MAX])
-        } else {
-            text.clone()
-        };
+        let label = preview_label(&text);
         Entry {
             label,
             description: None,
@@ -135,7 +131,8 @@ mod windows_impl {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::unix_impl::{PREVIEW_MAX, make_entry, parse_line};
+    use super::PREVIEW_MAX;
+    use super::unix_impl::{make_entry, parse_line};
     use crate::modes::Payload;
 
     #[test]
@@ -175,6 +172,22 @@ mod tests {
             entry.label.len()
         );
         assert!(entry.label.ends_with('…'));
+    }
+
+    #[test]
+    fn unicode_preview_truncates_on_character_boundary() {
+        let preview = format!("{}éz", "a".repeat(PREVIEW_MAX - 1));
+        let entry = make_entry(42, preview);
+
+        assert_eq!(entry.label, format!("{}é…", "a".repeat(PREVIEW_MAX - 1)));
+        assert_eq!(entry.label.chars().count(), PREVIEW_MAX + 1);
+        match entry.payload {
+            Payload::Exec { program, args } => {
+                assert_eq!(program, "sh");
+                assert_eq!(args, ["-c", "cliphist decode 42 | wl-copy"]);
+            }
+            payload => panic!("expected Exec payload, got {payload:?}"),
+        }
     }
 
     #[test]

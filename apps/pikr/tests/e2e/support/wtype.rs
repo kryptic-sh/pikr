@@ -3,7 +3,6 @@
 
 use super::sway::Sway;
 use std::process::Command;
-use std::time::Duration;
 
 /// Named keys for `wtype -k`. Extend the enum as new tests need additional
 /// keys; the args() match arm is the only place that needs to know about
@@ -11,6 +10,7 @@ use std::time::Duration;
 #[derive(Debug, Clone)]
 pub enum Key {
     Escape,
+    F12,
     Return,
     /// Shift+Return (AcceptCustom in pikr dmenu).
     ShiftReturn,
@@ -24,6 +24,7 @@ impl Key {
     fn args(&self) -> Vec<&'static str> {
         match self {
             Key::Escape => vec!["-k", "Escape"],
+            Key::F12 => vec!["-k", "F12"],
             Key::Return => vec!["-k", "Return"],
             Key::ShiftReturn => vec!["-M", "shift", "-k", "Return", "-m", "shift"],
         }
@@ -42,13 +43,6 @@ impl<'a> Wtype<'a> {
             sway,
             args: Vec::new(),
         }
-    }
-
-    /// Insert a sleep (milliseconds) before the following events.
-    pub fn delay(mut self, d: Duration) -> Self {
-        self.args.push("-s".to_owned());
-        self.args.push(d.as_millis().to_string());
-        self
     }
 
     /// Type a literal text string.

@@ -141,55 +141,6 @@ impl Pikr {
             }
         }
     }
-
-    /// Wait for the process to exit (up to `timeout`).
-    ///
-    /// Returns `Err` if the timeout is reached and the process is still alive.
-    pub fn wait_timeout(mut self, timeout: Duration) -> Result<Outcome, String> {
-        let deadline = Instant::now() + timeout;
-
-        loop {
-            match self
-                .child
-                .try_wait()
-                .map_err(|e| format!("try_wait: {e}"))?
-            {
-                Some(status) => {
-                    // Drain stdout + stderr.
-                    use std::io::Read;
-                    let mut stdout = String::new();
-                    let mut stderr = String::new();
-                    if let Some(mut r) = self.child.stdout.take() {
-                        let _ = r.read_to_string(&mut stdout);
-                    }
-                    if let Some(mut r) = self.child.stderr.take() {
-                        let _ = r.read_to_string(&mut stderr);
-                    }
-                    return Ok(Outcome {
-                        exit_code: status.code(),
-                        stdout,
-                        stderr,
-                    });
-                }
-                None => {
-                    if Instant::now() >= deadline {
-                        let _ = self.child.kill();
-                        let _ = self.child.wait();
-                        use std::io::Read;
-                        let mut stderr = String::new();
-                        if let Some(mut r) = self.child.stderr.take() {
-                            let _ = r.read_to_string(&mut stderr);
-                        }
-                        return Err(format!(
-                            "pikr did not exit within {:?}; stderr:\n{}",
-                            timeout, stderr
-                        ));
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-            }
-        }
-    }
 }
 
 impl Drop for Pikr {

@@ -109,7 +109,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         picker.query_cursor.set(text.chars().count());
     }
 
-    let matcher = crate::picker::matcher::Matcher::new();
+    let matcher = crate::picker::matcher::Matcher::with_case_sensitive(cfg.case_sensitive);
     let matches = Vec::new();
 
     let usage = crate::picker::frecency::Usage::load();

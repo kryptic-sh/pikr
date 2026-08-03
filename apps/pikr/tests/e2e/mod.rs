@@ -140,6 +140,27 @@ fn esc_x2_from_insert_exits_1_dmenu() {
     );
 }
 
+#[test]
+fn initial_no_results_remains_dismissible() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let pikr = Pikr::spawn(
+        &sway,
+        &["--dmenu", "--filter", "zzz"],
+        Some("alpha\nbeta\ngamma\n"),
+    )
+    .unwrap();
+    assert_keys_exit(
+        &sway,
+        pikr,
+        &[Key::Escape, Key::Escape],
+        1,
+        "initial no-results picker must remain dismissible",
+    );
+}
+
 /// Two Escapes in `--show calc` mode must exit 1.
 #[test]
 fn esc_x2_from_insert_exits_1_calc() {
@@ -258,31 +279,56 @@ fn single_esc_message_modal_exits_0() {
 
 // ── dmenu accept-custom ───────────────────────────────────────────────────────
 
-/// Typing a query that matches no candidate and pressing Shift+Enter
-/// (`AcceptCustom`) must print the typed text to stdout and exit 0.
-///
-/// Ignored: same input/accept race as #34. The software-GL harness fix
-/// (`Pikr::spawn`) removed the zink/Vulkan render crash that previously broke
-/// this on CI (stderr is now clean), but the keystroke still intermittently
-/// fails to land on the layer-shell surface before focus is claimed, so pikr
-/// never accepts and the test times out. The keymap→`AcceptCustom` mapping is
-/// covered by the `insert_shift_enter_accept_custom` unit test; un-ignore once
-/// the focus/input race is fixed. Run with `cargo test -- --ignored` to repro.
 #[test]
-#[ignore = "input/accept race — see pikr#34 (render race fixed via software GL)"]
+fn case_sensitive_config_controls_startup_matcher() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let config = sway.runtime_dir.join("pikr-config.toml");
+    std::fs::write(&config, "case_sensitive = true\n").unwrap();
+    let config = config.to_str().unwrap();
+    let pikr = Pikr::spawn(
+        &sway,
+        &["--dmenu", "--filter", "ban", "--config", config],
+        Some("apple\nBanana\ncherry\n"),
+    )
+    .unwrap();
+    let out = pikr
+        .wait_with_retry(Duration::from_secs(15), Duration::from_millis(100), || {
+            let _ = Wtype::new(&sway).keys(&[Key::F12, Key::Return]).send();
+        })
+        .unwrap();
+
+    assert_eq!(out.exit_code, Some(0), "stderr:\n{}", out.stderr);
+    assert_eq!(
+        out.stdout.trim(),
+        "ban",
+        "case-sensitive query must not select differently-cased candidate"
+    );
+}
+
+/// With a matching candidate, Shift+Enter (`AcceptCustom`) must print the
+/// query rather than the selected candidate. F12 is an unhandled sacrificial
+/// event on the same virtual-keyboard connection, so Shift+Enter is not lost
+/// while the compositor installs that connection's keymap.
+#[test]
 fn accept_typed_query_with_shift_enter_emits_stdout() {
     if !require_tools() {
         return;
     }
     let sway = Sway::headless();
-    let pikr = Pikr::spawn(&sway, &["--dmenu"], Some("apple\nbanana\ncherry\n")).unwrap();
-    Wtype::new(&sway)
-        .delay(Duration::from_millis(1500))
-        .text("xyz") // no match → query stays as-is
-        .keys(&[Key::ShiftReturn]) // Shift-Enter = AcceptCustom → exit 0 + stdout
-        .send()
+    let pikr = Pikr::spawn(
+        &sway,
+        &["--dmenu", "--filter", "ban"],
+        Some("apple\nbanana\ncherry\n"),
+    )
+    .unwrap();
+    let out = pikr
+        .wait_with_retry(Duration::from_secs(15), Duration::from_millis(100), || {
+            let _ = Wtype::new(&sway).keys(&[Key::F12, Key::ShiftReturn]).send();
+        })
         .unwrap();
-    let out = pikr.wait_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(
         out.exit_code,
         Some(0),
@@ -291,8 +337,8 @@ fn accept_typed_query_with_shift_enter_emits_stdout() {
     );
     assert_eq!(
         out.stdout.trim(),
-        "xyz",
-        "stdout must be the typed query; got {:?}",
+        "ban",
+        "stdout must be the typed query, not the matched candidate; got {:?}",
         out.stdout
     );
 }
@@ -301,19 +347,10 @@ fn accept_typed_query_with_shift_enter_emits_stdout() {
 /// (`Accept`) must print the matched candidate to stdout and exit 0.
 /// Distinguishes the `Accept` arm from `AcceptCustom` (shift-enter).
 ///
-/// Uses `--filter` to pre-seed the query so pikr runs ONE matcher pass
-/// at startup; the test then sends Return on a retry cadence until
-/// pikr exits.
-///
-/// Ignored: tracks pikr issue #34. The harness now forces software GL
-/// (`WGPU_BACKEND=gl` + `LIBGL_ALWAYS_SOFTWARE`, see `Pikr::spawn`), which
-/// removed the original `ERROR_SURFACE_LOST_KHR` / zink-Vulkan render failure
-/// (stderr is now clean). But a separate input/accept race remains: the Return
-/// keystroke intermittently doesn't land, so pikr never exits and the test
-/// times out (~1 in 2 runs locally). Keeps `Pikr::wait_with_retry`; un-ignore
-/// once the accept race is fixed. Run with `cargo test -- --ignored` to repro.
+/// Uses `--filter` to pre-seed the query. F12 is an unhandled sacrificial
+/// event on the same virtual-keyboard connection, so Return is not lost while
+/// the compositor installs that connection's keymap.
 #[test]
-#[ignore = "input/accept race — see pikr#34 (render race fixed via software GL)"]
 fn accept_matched_candidate_with_return_emits_stdout() {
     if !require_tools() {
         return;
@@ -326,8 +363,8 @@ fn accept_matched_candidate_with_return_emits_stdout() {
     )
     .unwrap();
     let out = pikr
-        .wait_with_retry(Duration::from_secs(15), Duration::from_millis(1000), || {
-            let _ = Wtype::new(&sway).keys(&[Key::Return]).send();
+        .wait_with_retry(Duration::from_secs(15), Duration::from_millis(100), || {
+            let _ = Wtype::new(&sway).keys(&[Key::F12, Key::Return]).send();
         })
         .unwrap();
     assert_eq!(

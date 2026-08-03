@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- `case_sensitive` configuration now controls picker matching and remains active
+  after matcher panic recovery.
+- Clipboard previews now truncate at Unicode character boundaries instead of
+  panicking when a multibyte character crosses the preview limit.
+
 ### Performance
 
 - Startup now ranks picker entries once instead of performing extra discarded
