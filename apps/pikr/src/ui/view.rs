@@ -785,30 +785,37 @@ impl AppState {
 
     pub fn switch_mode(&mut self, mode: CliMode) {
         self.cli_mode = mode;
-        let mut m: Box<dyn crate::modes::Mode> = match mode {
-            CliMode::Calc => Box::new(crate::modes::calc::Calc),
-            CliMode::Clipboard => Box::new(crate::modes::clipboard::Clipboard),
-            CliMode::Dmenu => Box::new(crate::modes::dmenu::Dmenu),
+        // Unsupported-on-this-platform modes resolve to `None`: the mode
+        // label switches but the list is cleared rather than showing the
+        // previous mode's entries under the new label. Unix behavior is
+        // unchanged — every mode constructs its real Mode.
+        let m: Option<Box<dyn crate::modes::Mode>> = match mode {
+            CliMode::Calc => Some(Box::new(crate::modes::calc::Calc)),
+            CliMode::Clipboard => Some(Box::new(crate::modes::clipboard::Clipboard)),
+            CliMode::Dmenu => Some(Box::new(crate::modes::dmenu::Dmenu)),
             #[cfg(unix)]
-            CliMode::Drun => Box::new(crate::modes::drun::Drun),
+            CliMode::Drun => Some(Box::new(crate::modes::drun::Drun)),
             #[cfg(not(unix))]
-            CliMode::Drun => return,
-            CliMode::Emoji => Box::new(crate::modes::emoji::Emoji),
+            CliMode::Drun => None,
+            CliMode::Emoji => Some(Box::new(crate::modes::emoji::Emoji)),
             #[cfg(unix)]
-            CliMode::Run => Box::new(crate::modes::run::Run),
+            CliMode::Run => Some(Box::new(crate::modes::run::Run)),
             #[cfg(not(unix))]
-            CliMode::Run => return,
+            CliMode::Run => None,
             #[cfg(unix)]
-            CliMode::Ssh => Box::new(crate::modes::ssh::Ssh),
+            CliMode::Ssh => Some(Box::new(crate::modes::ssh::Ssh)),
             #[cfg(not(unix))]
-            CliMode::Ssh => return,
+            CliMode::Ssh => None,
         };
-        self.entries = m
-            .collect()
-            .unwrap_or_default()
-            .into_iter()
-            .map(Arc::new)
-            .collect();
+        self.entries = match m {
+            Some(mut m) => m
+                .collect()
+                .unwrap_or_default()
+                .into_iter()
+                .map(Arc::new)
+                .collect(),
+            None => Vec::new(),
+        };
         self.picker.query.set(String::new());
         self.picker.query_cursor.set(0);
         self.picker.selected.set(0);
@@ -1272,7 +1279,26 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
                         _ => None,
                     };
                     if let Some(m) = mode_switch {
-                        state_key.lock().unwrap().switch_mode(m);
+                        // `switch_mode` sets the `query`/`selected`/… signals.
+                        // floem fires subscribers synchronously inside `set`
+                        // unless batched; those subscribers (the rerank
+                        // effect, status-bar count) re-lock the same AppState
+                        // mutex this handler already holds, and std Mutex is
+                        // non-reentrant → permanent deadlock. The guard must
+                        // be created INSIDE the batch closure so it drops
+                        // before floem runs the queued subscriber effects —
+                        // see `signal_set_inside_held_mutex_does_not_deadlock_when_batched`
+                        // in picker/state.rs. Batching only the sets inside
+                        // `switch_mode` would not help: the queued effects
+                        // would still run while this guard is held.
+                        Effect::batch(|| {
+                            state_key.lock().unwrap().switch_mode(m);
+                            // History recall is picker_view-local: reset it so
+                            // the new mode starts with a clean draft/cursor
+                            // instead of the previous mode's recall state.
+                            history_cursor.set(None);
+                            history_draft.set(String::new());
+                        });
                         rev.update(|r| *r += 1);
                     }
                 }

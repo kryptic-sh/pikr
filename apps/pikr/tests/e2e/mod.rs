@@ -246,6 +246,38 @@ fn esc_x2_from_insert_exits_1_ssh() {
     );
 }
 
+// ── `:mode` ex command ─────────────────────────────────────────────────────────
+
+/// Regression for the `:mode` deadlock (2026-08-04): the keydown handler
+/// called `switch_mode` while holding the AppState mutex, and the signal
+/// subscribers `switch_mode` triggers (rerank effect, status-bar count)
+/// re-locked that same mutex synchronously inside `set` → permanent hang.
+/// Before the fix this test times out (pikr never exits); after the fix
+/// (batch the switch, guard created inside the batch closure) it exits 1.
+#[test]
+fn ex_mode_switch_run_then_esc_exits_1() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let pikr = Pikr::spawn(&sway, &["--show", "drun"], None).unwrap();
+    let out = pikr
+        .wait_with_retry(Duration::from_secs(15), Duration::from_millis(1000), || {
+            let _ = Wtype::new(&sway)
+                .keys(&[Key::Escape])
+                .text(":run")
+                .keys(&[Key::Return, Key::Escape, Key::Escape])
+                .send();
+        })
+        .unwrap();
+    assert_eq!(
+        out.exit_code,
+        Some(1),
+        "Esc, :run, Return Esc Esc must exit 1; stderr:\n{}",
+        out.stderr
+    );
+}
+
 // ── Message modal ─────────────────────────────────────────────────────────────
 
 /// `--message` mode dismisses on a single Escape and exits 0.
