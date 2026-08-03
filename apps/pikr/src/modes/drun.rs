@@ -168,9 +168,13 @@ mod unix_impl {
 // - Step 2: Parse is parallel via rayon::par_iter (lnk open + parse +
 //   Path::exists() are the expensive part; fans out across all hardware threads).
 // - Cache: after a successful walk+parse, results are written to
-//   %LOCALAPPDATA%\pikr\drun-cache.json keyed by the max mtime across both
-//   Start Menu roots. On the next run, if the mtime hasn't changed the walk is
-//   skipped entirely and the cached entries are returned directly.
+//   %LOCALAPPDATA%\pikr\drun-cache.json keyed by the max mtime across every
+//   dir and file under both Start Menu roots. On the next run, if the mtime
+//   hasn't changed the walk is skipped entirely and the cached entries are
+//   returned directly. Keying on the whole tree rather than just the root
+//   dirs means a shortcut added or removed anywhere — including inside an
+//   existing subfolder, whose change never touches the root's own mtime —
+//   invalidates the cache.
 //
 // Note on cache staleness: the Path::exists() check happens at parse time and
 // is not repeated on cache hit. An entry that existed at cache time but has
@@ -195,13 +199,16 @@ mod windows_impl {
 
     /// On-disk cache for drun entries.
     ///
-    /// Keyed by the max mtime (in Unix seconds) across both Start Menu roots.
-    /// If any root's directory mtime has advanced since the cache was written
-    /// the whole cache is considered stale and the walk is re-run.
+    /// Keyed by the max mtime (in Unix seconds) across every dir and file
+    /// under both Start Menu roots.  If any entry's mtime has advanced since
+    /// the cache was written the whole cache is considered stale and the walk
+    /// is re-run.
     #[derive(Serialize, Deserialize)]
     struct CachedDrun {
-        /// Max of all roots' dir-mtimes at cache time.  Invalidate when any
-        /// root mtime is newer than this value.
+        /// Max mtime across the whole Start Menu tree — every dir and file —
+        /// at cache time.  Invalidate when any tree entry is newer than this
+        /// value.  (Field name kept from the roots-only key for on-disk
+        /// compatibility with existing cache files.)
         roots_mtime_unix_secs: u64,
         /// Cached entries — labels, target paths, args.  Icons not yet (#40).
         entries: Vec<CachedEntry>,
@@ -260,14 +267,25 @@ mod windows_impl {
         dirs::data_local_dir().map(|d| d.join("pikr").join("drun-cache.json"))
     }
 
-    /// Compute the max mtime (Unix seconds) across all existing Start Menu roots.
-    /// Returns `None` if no root exists or no mtime is readable.
-    fn roots_mtime(roots: &[PathBuf]) -> Option<u64> {
+    /// Compute the max mtime (Unix seconds) across every dir and file under
+    /// the existing Start Menu roots.  A root's own mtime only changes when
+    /// its *direct* children change, so a shortcut added inside an existing
+    /// subfolder would be invisible to a roots-only key; taking the max over
+    /// the whole tree covers both new `.lnk` files anywhere and structural
+    /// changes.  Returns `None` if no root exists or no entry's mtime is
+    /// readable.
+    fn tree_mtime(roots: &[PathBuf]) -> Option<u64> {
         roots
             .iter()
             .filter(|r| r.exists())
-            .filter_map(|r| {
-                r.metadata()
+            .flat_map(|root| {
+                WalkDir::new(root)
+                    .follow_links(false)
+                    .into_iter()
+                    .filter_map(Result::ok)
+            })
+            .filter_map(|e| {
+                e.metadata()
                     .ok()
                     .and_then(|m| m.modified().ok())
                     .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
@@ -320,7 +338,7 @@ mod windows_impl {
         let _span = tracing::debug_span!("drun_collect_windows").entered();
 
         let roots = start_menu_roots();
-        let current_mtime = roots_mtime(&roots);
+        let current_mtime = tree_mtime(&roots);
 
         // --- Cache probe ---
         {
@@ -567,7 +585,7 @@ mod tests {
 
 #[cfg(all(test, windows))]
 mod windows_tests {
-    use super::windows_impl::{load_cache, start_menu_roots, write_cache};
+    use super::windows_impl::{load_cache, start_menu_roots, tree_mtime, write_cache};
 
     /// start_menu_roots() must return at least one path when %APPDATA% or
     /// %ProgramData% env vars are set (as they always are on real Windows).
@@ -639,6 +657,51 @@ mod windows_tests {
         assert!(
             result.is_none(),
             "cache must be invalidated when mtime advances"
+        );
+    }
+
+    /// The cache key must advance when a shortcut is added inside an EXISTING
+    /// subfolder.  A root's own mtime only changes when its direct children
+    /// change, so the old roots-only key would stay put here — this is the
+    /// add-in-subfolder staleness finding.
+    #[test]
+    fn tree_mtime_advances_on_add_inside_existing_subfolder() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("Programs");
+        let vendor = root.join("Vendor");
+        std::fs::create_dir_all(&vendor).unwrap();
+
+        let root_mtime = |p: &std::path::Path| {
+            p.metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::SystemTime::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+        };
+
+        std::fs::write(vendor.join("App.lnk"), b"shortcut bytes").unwrap();
+        let root_mtime_before = root_mtime(&root);
+        let t1 = tree_mtime(&[root.clone()]).expect("tree mtime must be readable");
+
+        // Coarse mtime granularity (FAT, 1s) can leave two writes within the
+        // same second with equal mtimes, so wait past a full second before
+        // adding the second file to make t2 > t1 robust.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+
+        // New shortcut inside the existing `Vendor` folder — the exact repro
+        // from the finding.  `root`'s own mtime must NOT change here.
+        std::fs::write(vendor.join("App2.lnk"), b"shortcut bytes").unwrap();
+
+        assert_eq!(
+            root_mtime_before,
+            root_mtime(&root),
+            "the root dir's mtime must be unchanged — the roots-only key would miss this add"
+        );
+
+        let t2 = tree_mtime(&[root]).expect("tree mtime must be readable");
+        assert!(
+            t2 > t1,
+            "adding a shortcut inside an existing subfolder must advance the tree mtime (t1={t1}, t2={t2})"
         );
     }
 }
