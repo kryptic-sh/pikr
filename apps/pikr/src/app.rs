@@ -1,8 +1,9 @@
 //! App wiring — turns CLI + config into a running floem picker.
 
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
-use floem::reactive::{SignalGet, SignalUpdate};
+use floem::reactive::SignalUpdate;
 
 use crate::cli::{Cli, Mode};
 use crate::config::Config;
@@ -11,8 +12,14 @@ use crate::picker::state::PickerState;
 use crate::ui::view::{AppState, message_view, picker_view};
 use anyhow::Result;
 
-pub fn run(cli: Cli) -> Result<()> {
+pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
+    let phase_started = Instant::now();
     let cfg = Config::load(cli.config.as_deref())?;
+    tracing::debug!(
+        phase_us = phase_started.elapsed().as_micros(),
+        elapsed_us = startup_started.elapsed().as_micros(),
+        "startup config loaded"
+    );
     tracing::debug!(?cfg, "config loaded");
 
     // Wayland-capable unix: require a compositor at startup. Other OSes
@@ -82,7 +89,14 @@ pub fn run(cli: Cli) -> Result<()> {
         Mode::Ssh => Box::new(modes::ssh::Ssh),
     };
 
+    let phase_started = Instant::now();
     let entries: Vec<Arc<modes::Entry>> = mode.collect()?.into_iter().map(Arc::new).collect();
+    tracing::debug!(
+        phase_us = phase_started.elapsed().as_micros(),
+        elapsed_us = startup_started.elapsed().as_micros(),
+        count = entries.len(),
+        "startup entries collected"
+    );
     tracing::debug!(count = entries.len(), "entries collected");
 
     let picker = PickerState::new();
@@ -95,18 +109,8 @@ pub fn run(cli: Cli) -> Result<()> {
         picker.query_cursor.set(text.chars().count());
     }
 
-    let mut matcher = crate::picker::matcher::Matcher::new();
-    // (label, description) — matcher ranks each field separately so a label
-    // hit can outweigh a description hit even at equal nucleo score.
-    let pairs: Vec<(&str, Option<&str>)> = entries
-        .iter()
-        .map(|e| (e.label.as_str(), e.description.as_deref()))
-        .collect();
-    // Use the prefill query (if any) for the initial rank so the list reflects
-    // the filter text on first paint instead of being an empty-query rank.
-    let initial_query = picker.query.get_untracked();
-    let mut matches = matcher.rank(&pairs, &initial_query);
-    matches.truncate(cfg.max_results);
+    let matcher = crate::picker::matcher::Matcher::new();
+    let matches = Vec::new();
 
     let usage = crate::picker::frecency::Usage::load();
     let history = crate::picker::history::History::load();
@@ -128,13 +132,8 @@ pub fn run(cli: Cli) -> Result<()> {
         icons,
         stylesheet,
     }));
-    // Apply frecency bonus to the initial empty-query rank so a fresh
-    // launch already shows favourites at the top instead of XDG order.
-    if let Ok(mut s) = app_state.lock() {
-        s.rerank();
-    }
 
-    let view = move || picker_view(Arc::clone(&app_state));
+    let view = move || picker_view(Arc::clone(&app_state), startup_started);
 
     // Window height = scrollable viewport + chrome. chrome must precisely
     // sum every non-scrollable element in the v_stack so flex_grow on the

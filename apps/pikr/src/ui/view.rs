@@ -1,11 +1,14 @@
 //! Floem view tree for pikr — tokyonight/rofi-style layout.
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use floem::ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
 use floem::{
     IntoView, ViewId,
-    event::listener::{Click, KeyDown, WindowGainedFocus},
+    event::listener::{Click, KeyDown, UpdatePhasePaintPresent, WindowGainedFocus},
     event::{EventCx, EventPropagation},
     kurbo::{Rect, Size as KurboSize},
     peniko::Color,
@@ -810,7 +813,7 @@ impl AppState {
 
 // ─── Picker view ─────────────────────────────────────────────────────────────
 
-pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
+pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> impl IntoView {
     // Typing-key events in floem main route only to the focused view. We
     // construct the outer container with a stable `root_id` so two
     // listeners below (WindowGainedFocus + per-KeyDown) can pin focus to
@@ -994,6 +997,12 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
                 }
                 rev.update(|r| *r += 1);
             });
+            if prev.is_none() {
+                tracing::debug!(
+                    elapsed_us = startup_started.elapsed().as_micros(),
+                    "startup state ranked"
+                );
+            }
         }
         cur
     });
@@ -1157,6 +1166,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     let sheet_stack = Arc::clone(&sheet);
     let sheet_panel = Arc::clone(&sheet);
     let sheet_outer = Arc::clone(&sheet);
+    let first_focus_logged = Rc::new(Cell::new(false));
+    let first_paint_logged = Rc::new(Cell::new(false));
     Container::with_id(
         root_id,
         Container::new(
@@ -1168,7 +1179,25 @@ pub fn picker_view(state: Arc<Mutex<AppState>>) -> impl IntoView {
     )
     .style(move |s| crate::ui::css::apply(s, &sheet_outer, "container", &["panel-outer"]))
     .style(|s| s.keyboard_navigable())
+    .on_event(
+        UpdatePhasePaintPresent,
+        move |_cx: &mut EventCx, _ev: &()| {
+            if !first_paint_logged.replace(true) {
+                tracing::debug!(
+                    elapsed_us = startup_started.elapsed().as_micros(),
+                    "startup first paint pass reached"
+                );
+            }
+            EventPropagation::Continue
+        },
+    )
     .on_event(WindowGainedFocus, move |_cx: &mut EventCx, _ev: &()| {
+        if !first_focus_logged.replace(true) {
+            tracing::debug!(
+                elapsed_us = startup_started.elapsed().as_micros(),
+                "startup first focus received"
+            );
+        }
         // Compositor handed our surface keyboard focus — claim view focus
         // immediately so the very first keystroke is delivered. Without
         // this pikr drops keys until Esc→i: the Esc registry-fallback

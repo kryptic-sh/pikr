@@ -8,6 +8,14 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Performance
+
+- Startup now ranks picker entries once instead of performing extra discarded
+  ranks before applying frecency, and `run` mode reuses directory-entry metadata
+  when checking Unix executable permissions. Debug logs now expose config,
+  collection, initial-rank, first-paint-pass, and first-focus timings for
+  machine-specific startup profiling with `RUST_LOG=pikr=debug`.
+
 ## [0.8.6] - 2026-06-21
 
 ### Added

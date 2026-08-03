@@ -25,6 +25,8 @@ use anyhow::Result;
 use clap::Parser;
 
 fn main() -> Result<()> {
+    let startup_started = std::time::Instant::now();
+
     // Re-attach to the parent shell's console on Windows so `--version`,
     // `--help`, dmenu emit, and panic output reach the calling process.
     // No-op when launched from Explorer / Scoop shim (no parent console) and
@@ -51,5 +53,5 @@ fn main() -> Result<()> {
         .init();
 
     let cli = cli::Cli::parse();
-    app::run(cli)
+    app::run(cli, startup_started)
 }

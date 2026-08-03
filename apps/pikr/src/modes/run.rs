@@ -14,6 +14,7 @@
 use super::{Entry, Mode};
 use anyhow::Result;
 use std::collections::BTreeSet;
+use std::fs::Metadata;
 use std::path::Path;
 
 #[derive(Default)]
@@ -36,18 +37,16 @@ impl Mode for Run {
 // ── per-OS executable predicate ───────────────────────────────────────────────
 
 #[cfg(unix)]
-fn is_executable(path: &Path) -> bool {
+fn is_executable(_path: &Path, metadata: &Metadata) -> bool {
     use std::os::unix::fs::PermissionsExt;
-    path.metadata()
-        .map(|m| m.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
+    metadata.permissions().mode() & 0o111 != 0
 }
 
 #[cfg(windows)]
 const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
 
 #[cfg(windows)]
-fn is_executable(path: &Path) -> bool {
+fn is_executable(path: &Path, _metadata: &Metadata) -> bool {
     // PATHEXT-aware. Default to the canonical Windows extension set when the
     // env var is missing (some shells strip it).
     let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| DEFAULT_PATHEXT.to_string());
@@ -69,7 +68,7 @@ fn is_executable_with_pathext(path: &Path, pathext: &str) -> bool {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn is_executable(_path: &Path) -> bool {
+fn is_executable(_path: &Path, _metadata: &Metadata) -> bool {
     false
 }
 
@@ -120,7 +119,7 @@ fn scan_dir(dir: &Path, names: &mut BTreeSet<String>) {
             continue;
         }
         let entry_path = entry.path();
-        if !is_executable(&entry_path) {
+        if !is_executable(&entry_path, &meta) {
             continue;
         }
         if let Some(label) = entry_label(&entry_path) {
@@ -156,12 +155,14 @@ mod tests {
         perms2.set_mode(0o644);
         std::fs::set_permissions(&non_exec_path, perms2).unwrap();
 
+        let exec_metadata = std::fs::metadata(&exec_path).unwrap();
+        let non_exec_metadata = std::fs::metadata(&non_exec_path).unwrap();
         assert!(
-            is_executable(&exec_path),
+            is_executable(&exec_path, &exec_metadata),
             "chmod +x file must be considered executable"
         );
         assert!(
-            !is_executable(&non_exec_path),
+            !is_executable(&non_exec_path, &non_exec_metadata),
             "mode 0o644 file must not be considered executable"
         );
     }
