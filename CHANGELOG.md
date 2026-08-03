@@ -8,6 +8,12 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/test-startup-readiness.sh` rebuilds the current release binary,
+  requires native Wayland first focus within a configurable deadline, then
+  verifies candidate acceptance and reports Pikr's internal startup markers.
+
 ### Fixed
 
 - `case_sensitive` configuration now controls picker matching through nucleo's
