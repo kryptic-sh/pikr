@@ -32,6 +32,8 @@ shlex.workspace = true
 toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+unicode-normalization.workspace = true
+unicode-segmentation.workspace = true
 
 # Freedesktop-spec crates (drun, icon theme, XDG base dirs) are
 # unix-only. On macOS / Windows the drun mode degrades to an empty

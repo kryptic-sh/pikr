@@ -10,8 +10,10 @@ and this project adheres to
 
 ### Fixed
 
-- `case_sensitive` configuration now controls picker matching and remains active
-  after matcher panic recovery.
+- `case_sensitive` configuration now controls picker matching through nucleo's
+  high-level atom API, including uppercase queries and Unicode case folding.
+- Decomposed Unicode queries now match correctly, and match highlighting maps
+  nucleo's grapheme indices onto complete codepoint spans.
 - Clipboard previews now truncate at Unicode character boundaries instead of
   panicking when a multibyte character crosses the preview limit.
 

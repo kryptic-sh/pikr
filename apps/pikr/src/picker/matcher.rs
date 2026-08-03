@@ -5,7 +5,10 @@
 //! positions in the label / description that matched the query — the picker
 //! UI uses those to highlight the matched spans independently.
 
+use nucleo::pattern::{Atom, AtomKind, CaseMatching, Normalization};
 use nucleo::{Config, Matcher as NucleoMatcher, Utf32Str};
+use unicode_normalization::UnicodeNormalization;
+use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Debug, Clone)]
 pub struct Match {
@@ -21,8 +24,7 @@ pub struct Match {
 
 pub struct Matcher {
     inner: NucleoMatcher,
-    config: Config,
-    poisoned: bool,
+    case_matching: CaseMatching,
 }
 
 impl Default for Matcher {
@@ -37,12 +39,13 @@ impl Matcher {
     }
 
     pub fn with_case_sensitive(case_sensitive: bool) -> Self {
-        let mut config = Config::DEFAULT;
-        config.ignore_case = !case_sensitive;
         Self {
-            inner: NucleoMatcher::new(config.clone()),
-            config,
-            poisoned: false,
+            inner: NucleoMatcher::new(Config::DEFAULT),
+            case_matching: if case_sensitive {
+                CaseMatching::Respect
+            } else {
+                CaseMatching::Ignore
+            },
         }
     }
 
@@ -54,13 +57,6 @@ impl Matcher {
     /// (raw nucleo score, no field-specific bonus). An entry survives if
     /// either field hits; if both hit, the scores sum.
     pub fn rank(&mut self, entries: &[(&str, Option<&str>)], query: &str) -> Vec<Match> {
-        // Lazy-rebuild a poisoned matcher (post-panic recovery). Doing this
-        // here rather than inside the catch_unwind avoids dropping the
-        // corrupted matcher while its slab allocator is mid-mutation.
-        if self.poisoned {
-            self.inner = NucleoMatcher::new(self.config.clone());
-            self.poisoned = false;
-        }
         if query.is_empty() {
             return entries
                 .iter()
@@ -74,27 +70,18 @@ impl Matcher {
                 .collect();
         }
 
-        let mut needle_buf = Vec::new();
-        let needle = Utf32Str::new(query, &mut needle_buf);
-
-        // Install a no-op panic hook ONCE for the whole rank pass instead of
-        // per row. `set_hook` / `take_hook` lock a global mutex; doing it
-        // 1800× per keystroke (emoji mode) was the dominant cost and froze
-        // the UI thread.
-        let prev_hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
-
+        let query: String = query.nfc().collect();
+        let atom = Atom::new(
+            &query,
+            self.case_matching,
+            Normalization::Smart,
+            AtomKind::Fuzzy,
+            false,
+        );
         let mut out: Vec<Match> = Vec::with_capacity(entries.len());
-        // `nucleo_dead` is set once any row panics nucleo. The internal
-        // slab is corrupted after the panic, so the rest of the pass
-        // walks substring_match instead of try_match. Subsequent rank
-        // calls rebuild via the `poisoned` flag at the top of the fn.
-        let mut nucleo_dead = false;
         for (i, (label, description)) in entries.iter().enumerate() {
-            let label_hit = self.match_field(label, needle, query, &mut nucleo_dead, i, "label");
-            let desc_hit = description.and_then(|d| {
-                self.match_field(d, needle, query, &mut nucleo_dead, i, "description")
-            });
+            let label_hit = self.match_field(&atom, label);
+            let desc_hit = description.and_then(|text| self.match_field(&atom, text));
 
             match (label_hit, desc_hit) {
                 (None, None) => {}
@@ -118,103 +105,46 @@ impl Matcher {
                 }),
             }
         }
-        if nucleo_dead {
-            self.poisoned = true;
-        }
-
-        // Restore the user-installed panic hook.
-        std::panic::set_hook(prev_hook);
 
         out.sort_by(|a, b| b.score.cmp(&a.score).then(a.index.cmp(&b.index)));
         out
     }
 
-    /// Match `haystack` against `needle` for one row, falling back to a
-    /// substring scan when nucleo panics (or has been disabled for the
-    /// remainder of the pass). `nucleo_dead` is set on first panic.
-    fn match_field(
-        &mut self,
-        haystack: &str,
-        needle: Utf32Str<'_>,
-        query: &str,
-        nucleo_dead: &mut bool,
-        row: usize,
-        field: &'static str,
-    ) -> Option<(u16, Vec<u32>)> {
-        if *nucleo_dead {
-            return substring_match(haystack, query, self.config.ignore_case);
-        }
-        let mut panicked = false;
-        let hit = self.try_match(haystack, needle, &mut panicked);
-        if panicked {
-            tracing::warn!(
-                index = row,
-                field,
-                haystack = %haystack,
-                query = %query,
-                "nucleo panicked; falling back to substring for the rest of this rank pass"
-            );
-            *nucleo_dead = true;
-            // nucleo had a chance and gave up — try substring instead. For
-            // queries like \"Thunder\" against \"Thunderbird\" this still
-            // yields the obvious match the user expects.
-            return substring_match(haystack, query, self.config.ignore_case);
-        }
-        hit
-    }
-
-    /// Inner fuzzy match helper. Returns `Some((score, positions))` if the
-    /// haystack matched, `None` otherwise. Sets `*panicked` if the nucleo
-    /// prefilter assert fired so the caller can short-circuit the rest of
-    /// the pass and mark the matcher poisoned.
-    fn try_match(
-        &mut self,
-        haystack: &str,
-        needle: Utf32Str<'_>,
-        panicked: &mut bool,
-    ) -> Option<(u16, Vec<u32>)> {
-        if haystack.is_empty() {
+    fn match_field(&mut self, atom: &Atom, text: &str) -> Option<(u16, Vec<u32>)> {
+        if text.is_empty() {
             return None;
         }
-        let mut hay_buf = Vec::new();
-        let hay = Utf32Str::new(haystack, &mut hay_buf);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut positions = Vec::new();
-            let score = self.inner.fuzzy_indices(hay, needle, &mut positions);
-            (score, positions)
-        }));
-        match result {
-            Ok((Some(score), positions)) => Some((score, positions)),
-            Ok((None, _)) => None,
-            Err(_) => {
-                *panicked = true;
-                None
-            }
+        let mut text_buf = Vec::new();
+        let utf32 = if text.is_ascii() {
+            Utf32Str::Ascii(text.as_bytes())
+        } else {
+            text_buf.extend(
+                text.graphemes(true)
+                    .map(|grapheme| grapheme.nfc().next().expect("graphemes must be non-empty")),
+            );
+            Utf32Str::Unicode(&text_buf)
+        };
+        let mut positions = Vec::new();
+        let score = atom.indices(utf32, &mut self.inner, &mut positions)?;
+        if text.is_ascii() {
+            Some((score, positions))
+        } else {
+            Some((score, grapheme_positions_to_codepoints(text, &positions)))
         }
     }
 }
 
-/// Substring scan used as a fallback when nucleo panics inside its prefilter.
-/// Emits codepoint positions covering the matched span; arbitrary score is high
-/// enough to outrank typical fuzzy hits so direct-substring queries surface near
-/// the top.
-fn substring_match(haystack: &str, query: &str, ignore_case: bool) -> Option<(u16, Vec<u32>)> {
-    if haystack.is_empty() || query.is_empty() {
-        return None;
+fn grapheme_positions_to_codepoints(text: &str, positions: &[u32]) -> Vec<u32> {
+    let mut codepoint = 0_u32;
+    let mut converted = Vec::new();
+    for (grapheme_index, grapheme) in text.graphemes(true).enumerate() {
+        let codepoint_count = grapheme.chars().count() as u32;
+        if positions.contains(&(grapheme_index as u32)) {
+            converted.extend(codepoint..codepoint + codepoint_count);
+        }
+        codepoint += codepoint_count;
     }
-    let (cp_start, cp_count) = if ignore_case {
-        let h_lower = haystack.to_lowercase();
-        let q_lower = query.to_lowercase();
-        let byte_idx = h_lower.find(&q_lower)?;
-        (h_lower[..byte_idx].chars().count(), q_lower.chars().count())
-    } else {
-        let byte_idx = haystack.find(query)?;
-        (haystack[..byte_idx].chars().count(), query.chars().count())
-    };
-    let positions: Vec<u32> = (cp_start..cp_start + cp_count).map(|i| i as u32).collect();
-    // 200 is comfortably above typical nucleo scores (~100-180 range for
-    // short queries). Substring matches are high-quality by definition.
-    Some((200, positions))
+    converted
 }
 
 #[cfg(test)]
@@ -234,6 +164,92 @@ mod tests {
     }
 
     #[test]
+    fn case_insensitive_unicode_query_matches_different_case() {
+        let mut matcher = Matcher::with_case_sensitive(false);
+        let pairs = no_desc(&["Äpfel"]);
+
+        let matches = matcher.rank(&pairs, "äpfel");
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].positions, [0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn canonical_equivalent_queries_have_identical_results() {
+        let mut matcher = Matcher::new();
+        let decomposed = "e\u{301}";
+        let entries = [
+            ("e🙂", Some("e🙂")),
+            ("é🙂", Some(decomposed)),
+            ("prefix é🙂", Some("prefix e\u{301}🙂")),
+        ];
+
+        let composed_matches = matcher.rank(&entries, "é");
+        let decomposed_matches = matcher.rank(&entries, decomposed);
+        let snapshot = |matches: &[Match]| {
+            matches
+                .iter()
+                .map(|matched| {
+                    (
+                        matched.index,
+                        matched.score,
+                        matched.positions.clone(),
+                        matched.desc_positions.clone(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(snapshot(&composed_matches), snapshot(&decomposed_matches));
+        let mut matched_indices: Vec<_> = composed_matches
+            .iter()
+            .map(|matched| matched.index)
+            .collect();
+        matched_indices.sort_unstable();
+        assert_eq!(matched_indices, [1, 2]);
+
+        let exact = composed_matches
+            .iter()
+            .find(|matched| matched.index == 1)
+            .unwrap();
+        assert_eq!(exact.positions, [0]);
+        assert_eq!(exact.desc_positions, [0, 1]);
+        let prefixed = composed_matches
+            .iter()
+            .find(|matched| matched.index == 2)
+            .unwrap();
+        assert_eq!(prefixed.positions, [7]);
+        assert_eq!(prefixed.desc_positions, [7, 8]);
+    }
+
+    #[test]
+    fn decomposed_unicode_matches_identical_label_and_description() {
+        let mut matcher = Matcher::new();
+        let decomposed = "e\u{301}";
+        let pairs = [(decomposed, Some(decomposed))];
+
+        let matches = matcher.rank(&pairs, decomposed);
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].positions, [0, 1]);
+        assert_eq!(matches[0].desc_positions, [0, 1]);
+    }
+
+    #[test]
+    fn grapheme_match_positions_convert_to_codepoints() {
+        let mut matcher = Matcher::new();
+        let family = "👨‍👩‍👧";
+        let label = format!("{family}x");
+        let pairs = [(label.as_str(), None)];
+
+        let suffix = matcher.rank(&pairs, "x");
+        assert_eq!(suffix[0].positions, [5]);
+
+        let grapheme = matcher.rank(&pairs, family);
+        assert_eq!(grapheme[0].positions, [0, 1, 2, 3, 4]);
+    }
+
+    #[test]
     fn case_sensitive_matcher_rejects_different_case() {
         let mut matcher = Matcher::with_case_sensitive(true);
         let pairs = no_desc(&["Foo"]);
@@ -243,34 +259,35 @@ mod tests {
     }
 
     #[test]
-    fn case_sensitive_fallback_rejects_different_case() {
-        let mut matcher = Matcher::with_case_sensitive(true);
-        let mut needle_buf = Vec::new();
-        let needle = Utf32Str::new("Thunder", &mut needle_buf);
-        let mut nucleo_dead = true;
+    fn case_insensitive_uppercase_query_matches_both_cases() {
+        let mut matcher = Matcher::with_case_sensitive(false);
+        let pairs = no_desc(&["Thunderbird", "thunderbird"]);
 
-        assert!(
-            matcher
-                .match_field(
-                    "thunderbird",
-                    needle,
-                    "Thunder",
-                    &mut nucleo_dead,
-                    0,
-                    "label",
-                )
-                .is_none()
-        );
+        let matches = matcher.rank(&pairs, "Thunder");
+
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].positions, [0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(matches[1].positions, [0, 1, 2, 3, 4, 5, 6]);
     }
 
     #[test]
-    fn poisoned_case_sensitive_matcher_preserves_configuration() {
-        let mut matcher = Matcher::with_case_sensitive(true);
-        matcher.poisoned = true;
-        let pairs = no_desc(&["Foo"]);
+    fn query_is_one_literal_atom() {
+        let mut matcher = Matcher::new();
+        let pairs = no_desc(&["foo bar", "bar foo", "foo ^bar", "foo bar$"]);
 
-        assert!(matcher.rank(&pairs, "foo").is_empty());
-        assert!(!matcher.poisoned);
+        let spaced = matcher.rank(&pairs, "foo bar");
+        let mut spaced_indices: Vec<_> = spaced.iter().map(|matched| matched.index).collect();
+        spaced_indices.sort_unstable();
+        assert_eq!(spaced_indices, [0, 2, 3]);
+
+        let syntax = matcher.rank(&pairs, "^bar");
+        assert_eq!(
+            syntax
+                .iter()
+                .map(|matched| matched.index)
+                .collect::<Vec<_>>(),
+            [2]
+        );
     }
 
     #[test]
@@ -325,35 +342,6 @@ mod tests {
         );
     }
 
-    /// Regression for the nucleo 0.5 `should have been caught by prefilter`
-    /// hang: after a panic the matcher is marked poisoned and the *next*
-    /// call must rebuild and still return correct results.
-    #[test]
-    fn poisoned_matcher_rebuilds_on_next_rank() {
-        let mut m = Matcher::new();
-        m.poisoned = true;
-        let pairs = no_desc(&["Firefox", "Files"]);
-        let out = m.rank(&pairs, "fir");
-        assert!(!m.poisoned, "rank() must clear the poison flag");
-        assert!(!out.is_empty(), "rebuilt matcher must still match");
-        assert_eq!(out[0].index, 0);
-    }
-
-    /// Empty-query path runs before the poison check used to be wired —
-    /// guard against regressing the rebuild order, since a poisoned matcher
-    /// might be reused on the next non-empty query.
-    #[test]
-    fn poisoned_matcher_clears_even_on_empty_query() {
-        let mut m = Matcher::new();
-        m.poisoned = true;
-        let pairs = no_desc(&["a", "b"]);
-        let _ = m.rank(&pairs, "");
-        assert!(
-            !m.poisoned,
-            "even the empty-query fast-path must reset the matcher"
-        );
-    }
-
     /// Entry with a label miss but a description hit must still appear.
     /// Caught the matcher's "label OR description" union semantics.
     #[test]
@@ -374,6 +362,18 @@ mod tests {
             !out[0].desc_positions.is_empty(),
             "description positions must be populated for desc-only hits"
         );
+    }
+
+    #[test]
+    fn uppercase_query_matches_lowercase_description() {
+        let mut matcher = Matcher::with_case_sensitive(false);
+        let pairs = [("Mail", Some("thunderbird client"))];
+
+        let matches = matcher.rank(&pairs, "Thunder");
+
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0].positions.is_empty());
+        assert_eq!(matches[0].desc_positions, [0, 1, 2, 3, 4, 5, 6]);
     }
 
     /// Label and description score equally. Two entries that share the
