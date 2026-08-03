@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-08-04
+
 ### Added
 
 - `scripts/test-startup-readiness.sh` rebuilds the current release binary,
@@ -22,6 +24,13 @@ and this project adheres to
   nucleo's grapheme indices onto complete codepoint spans.
 - Clipboard previews now truncate at Unicode character boundaries instead of
   panicking when a multibyte character crosses the preview limit.
+
+### Security
+
+- The dependency lock now uses `crossbeam-epoch 0.9.20`, resolving
+  `RUSTSEC-2026-0204`. The no-CVE `rustybuzz` maintenance advisory remains a
+  documented temporary exception until Pikr and Floem can move to `resvg 0.48`
+  and `harfrust` together.
 
 ### Performance
 
@@ -835,7 +844,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.6...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.7...main
+[0.8.7]: https://github.com/kryptic-sh/pikr/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.6
 [0.8.5]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.5
 [0.8.4]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.4
