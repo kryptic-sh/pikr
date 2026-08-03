@@ -122,9 +122,17 @@ fn payload_key(payload: &Payload) -> String {
         Payload::Stdout(s) => s.clone(),
         Payload::Exec { program, args } => {
             if args.is_empty() {
+                // A bare program is unambiguous on its own — no join needed.
                 program.clone()
             } else {
-                format!("{} {}", program, args.join(" "))
+                // Join with the ASCII unit separator (U+001F) instead of
+                // spaces so the key reconstructs unambiguously: a program
+                // containing a space can never collide with a
+                // program-plus-arg split on spaces. The separator can't
+                // appear in a program path, and .desktop args are
+                // shlex-split on whitespace, so it can't appear in an arg
+                // either.
+                format!("{program}\u{1f}{}", args.join("\u{1f}"))
             }
         }
         Payload::SetClipboard(text) => text.clone(),
@@ -268,6 +276,40 @@ mod tests {
     fn stdout_payload_keyed_by_value() {
         let p = Payload::Stdout("😀".into());
         assert_eq!(payload_key(&p), "😀");
+    }
+
+    #[test]
+    fn exec_program_with_space_distinct_from_program_plus_arg() {
+        // Regression for the space-join ambiguity: `Exec{program:"a b"}`
+        // and `Exec{program:"a", args:["b"]}` stringified to the same
+        // "a b" key and shared one usage record. The unit-separator join
+        // must keep them apart.
+        let p1 = Payload::Exec {
+            program: "a b".into(),
+            args: vec![],
+        };
+        let p2 = Payload::Exec {
+            program: "a".into(),
+            args: vec!["b".into()],
+        };
+        assert_ne!(payload_key(&p1), payload_key(&p2));
+    }
+
+    #[test]
+    fn exec_single_arg_with_space_distinct_from_two_args() {
+        // Same program, different arg split: `["y z"]` vs `["y","z"]` both
+        // joined to "x y z" under the old space-join. The unit-separator
+        // join keeps them distinct — U+001F can't appear in shlex-split
+        // args, so the join is unambiguous.
+        let single = Payload::Exec {
+            program: "x".into(),
+            args: vec!["y z".into()],
+        };
+        let split = Payload::Exec {
+            program: "x".into(),
+            args: vec!["y".into(), "z".into()],
+        };
+        assert_ne!(payload_key(&single), payload_key(&split));
     }
 
     #[test]

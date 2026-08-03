@@ -169,7 +169,14 @@ fn render_svg_to_png(svg_path: &Path, size_px: u32) -> Option<Vec<u8>> {
     let data = std::fs::read(svg_path).ok()?;
     let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default()).ok()?;
     let svg_size = tree.size();
-    let scale = size_px as f32 / svg_size.width().max(svg_size.height());
+    let dim = svg_size.width().max(svg_size.height());
+    // A crafted `<svg width="0" height="0">` yields a zero tree size; the
+    // scale would be `size_px / 0` = inf and tiny-skia would rasterise
+    // garbage. Bail out — the caller treats None as "no icon".
+    if dim <= 0.0 || !dim.is_finite() {
+        return None;
+    }
+    let scale = size_px as f32 / dim;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(size_px, size_px)?;
     let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
@@ -298,6 +305,23 @@ mod tests {
         let bytes2 = cache.rasterise_svg(&path, 24).expect("cache hit");
         assert!(Arc::ptr_eq(&bytes, &bytes2));
         assert_eq!(cache.raster_cache_len(), 1);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn rasterise_zero_size_svg_returns_none() {
+        // A zero-sized SVG must not reach the scale division (`size_px / 0`
+        // = inf → tiny-skia garbage). resvg may reject the tree outright or
+        // parse it with a zero size — either way the result must be None.
+        let dir = std::env::temp_dir();
+        let path = dir.join("pikr-test-zero-size.svg");
+        std::fs::write(
+            &path,
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0"/>"##,
+        )
+        .unwrap();
+        let result = render_svg_to_png(&path, 24);
+        assert!(result.is_none());
         std::fs::remove_file(&path).ok();
     }
 

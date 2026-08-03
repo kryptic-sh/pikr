@@ -71,7 +71,10 @@ impl PickerState {
     /// Push a digit into the count prefix.
     pub fn push_count_digit(&self, d: u32) {
         let cur = self.count.get().unwrap_or(0);
-        self.count.set(Some(cur * 10 + d as usize));
+        // Saturate instead of wrapping: a pathological multi-digit count
+        // prefix must not silently wrap back to a small number in release.
+        let next = cur.saturating_mul(10).saturating_add(d as usize);
+        self.count.set(Some(next));
     }
 }
 
@@ -186,5 +189,16 @@ mod tests {
         st.selected.set(5);
         st.clamp_selected(0);
         assert_eq!(st.selected.get_untracked(), 0);
+    }
+
+    /// Pathological count prefixes (dozens of digits) saturate at
+    /// `usize::MAX` instead of silently wrapping back to a small number.
+    #[test]
+    fn push_count_digit_saturates_on_overflow() {
+        let st = PickerState::new();
+        for _ in 0..25 {
+            st.push_count_digit(9);
+        }
+        assert_eq!(st.count.get(), Some(usize::MAX));
     }
 }

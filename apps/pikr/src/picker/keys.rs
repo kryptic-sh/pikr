@@ -63,11 +63,11 @@ pub fn key_to_action(state: &PickerState, key: &Key, ctrl: bool, shift: bool) ->
                 Some(Action::EnterNormal)
             }
             // `v` / `V` / `<C-v>` in Visual collapses back to Normal (vim
-            // semantics: same trigger toggles the mode off).
+            // semantics: same trigger toggles the mode off). The first arm
+            // matches "v" regardless of modifier, so `<C-v>` is covered too.
             Key::Character(s) if s.as_str() == "v" || s.as_str() == "V" => {
                 Some(Action::EnterNormal)
             }
-            Key::Character(s) if s.as_str() == "v" && ctrl => Some(Action::EnterNormal),
             _ => normal_or_visual_key(state, key, ctrl),
         },
 

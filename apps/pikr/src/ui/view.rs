@@ -55,7 +55,14 @@ const ICON_GAP: f64 = 8.0;
 
 fn parse_color(hex: &str) -> Color {
     let s = hex.trim_start_matches('#');
-    let rgb = u32::from_str_radix(s, 16).unwrap_or(0x00_00_00);
+    // Strict: exactly six hex digits after the optional `#`. Short hex,
+    // 8-digit #AARRGGBB, or garbage all yield deterministic black — the
+    // theme loader has no error channel, so a wrong config value must not
+    // silently render some other colour.
+    let rgb = match s.len() {
+        6 => u32::from_str_radix(s, 16).unwrap_or(0x00_00_00),
+        _ => 0x00_00_00,
+    };
     let r = ((rgb >> 16) & 0xff) as u8;
     let g = ((rgb >> 8) & 0xff) as u8;
     let b = (rgb & 0xff) as u8;
@@ -1646,8 +1653,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
 #[cfg(test)]
 mod tests {
     use super::{
-        char_idx_to_byte, mask_password, rerank_if_query_changed, row_key, with_cursor,
-        word_boundary_back,
+        char_idx_to_byte, mask_password, parse_color, rerank_if_query_changed, row_key,
+        with_cursor, word_boundary_back,
     };
     use crate::picker::state::VimMode;
     use std::cell::Cell;
@@ -1915,5 +1922,38 @@ mod tests {
     #[test]
     fn mask_password_single_char() {
         assert_eq!(mask_password(true, "x"), "●");
+    }
+
+    // ── parse_color tests ────────────────────────────────────────────────
+
+    #[test]
+    fn parse_color_accepts_6_digit_hex() {
+        // #21D1D3 is the default accent (tokyonight cyan).
+        let c = parse_color("#21D1D3");
+        let rgba = c.to_rgba8();
+        assert_eq!((rgba.r, rgba.g, rgba.b), (0x21, 0xD1, 0xD3));
+    }
+
+    #[test]
+    fn parse_color_rejects_short_hex() {
+        // 3-digit shorthand has no CSS-expansion semantics here — black.
+        let c = parse_color("#abc");
+        let rgba = c.to_rgba8();
+        assert_eq!((rgba.r, rgba.g, rgba.b), (0, 0, 0));
+    }
+
+    #[test]
+    fn parse_color_rejects_8_digit_hex() {
+        // #AARRGGBB is out of scope — only 6-digit RGB is accepted.
+        let c = parse_color("#aarrggbb");
+        let rgba = c.to_rgba8();
+        assert_eq!((rgba.r, rgba.g, rgba.b), (0, 0, 0));
+    }
+
+    #[test]
+    fn parse_color_rejects_garbage() {
+        let c = parse_color("zzz");
+        let rgba = c.to_rgba8();
+        assert_eq!((rgba.r, rgba.g, rgba.b), (0, 0, 0));
     }
 }
