@@ -43,8 +43,9 @@ mod unix_impl {
 
     pub fn collect() -> Result<Vec<Entry>> {
         let locales = current_locales();
-        // Map app-id → entry so later `.desktop` files (user-local) override
-        // earlier ones (system) per freedesktop spec.
+        // Map app-id → entry so the FIRST `.desktop` file (user-local,
+        // iterated before system dirs) overrides later ones (system) per the
+        // freedesktop search-order convention.
         let mut by_id: HashMap<String, Entry> = HashMap::new();
 
         for path in Iter::new(default_paths()) {
@@ -85,12 +86,19 @@ mod unix_impl {
             if let Some(i) = icon {
                 entry = entry.with_icon(i);
             }
-            by_id.insert(id, entry);
+            insert_first(&mut by_id, id, entry);
         }
 
         let mut entries: Vec<Entry> = by_id.into_values().collect();
         entries.sort_by_key(|a| a.label.to_lowercase());
         Ok(entries)
+    }
+
+    /// Merge one parsed entry into the id → entry map so the FIRST occurrence
+    /// per app id wins (user-local `.desktop` files are iterated first; a later
+    /// system copy must not overwrite the override).
+    pub fn insert_first(by_id: &mut HashMap<String, Entry>, id: String, entry: Entry) {
+        by_id.entry(id).or_insert(entry);
     }
 
     fn current_locales() -> Vec<String> {
@@ -480,7 +488,44 @@ mod windows_impl {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::unix_impl::{parse_exec, strip_field_codes};
+    use super::super::Entry;
+    use super::unix_impl::{insert_first, parse_exec, strip_field_codes};
+    use std::collections::HashMap;
+
+    #[test]
+    fn user_local_entry_wins_over_system_copy() {
+        let mut by_id = HashMap::new();
+        insert_first(
+            &mut by_id,
+            "firefox".to_string(),
+            Entry::exec("User Firefox", "firefox"),
+        );
+        insert_first(
+            &mut by_id,
+            "firefox".to_string(),
+            Entry::exec("System Firefox", "firefox"),
+        );
+        assert_eq!(by_id.len(), 1);
+        assert_eq!(by_id["firefox"].label, "User Firefox");
+    }
+
+    #[test]
+    fn distinct_ids_both_kept() {
+        let mut by_id = HashMap::new();
+        insert_first(
+            &mut by_id,
+            "firefox".to_string(),
+            Entry::exec("Firefox", "firefox"),
+        );
+        insert_first(
+            &mut by_id,
+            "alacritty".to_string(),
+            Entry::exec("Alacritty", "alacritty"),
+        );
+        assert_eq!(by_id.len(), 2);
+        assert_eq!(by_id["firefox"].label, "Firefox");
+        assert_eq!(by_id["alacritty"].label, "Alacritty");
+    }
 
     #[test]
     fn strip_field_code_alone() {
