@@ -203,7 +203,7 @@ fn entry_row(
         crate::ui::css::apply(s, &sheet_icon, "div", &["icon"])
             .min_width(ICON_SIZE)
             .min_height(ICON_SIZE)
-            .flex_shrink(0.0)
+            .flex_shrink(0.0_f32)
     };
     // Resolve the entry's icon, falling back through a chain of
     // conventional generic-app icon names so drun entries with a missing
@@ -606,7 +606,7 @@ fn status_bar(
     Stack::horizontal((
         mode_label,
         mode_name_label,
-        Container::new(Empty::new()).style(|s| s.flex_grow(1.0)),
+        Container::new(Empty::new()).style(|s| s.flex_grow(1.0_f32)),
         count_label,
     ))
     .style(move |s| {
@@ -615,7 +615,7 @@ fn status_bar(
         // and the const margins exposed for chrome math.
         crate::ui::css::apply(s, &sheet_bar, "stack", &["status-bar"])
             .min_height(STATUS_BAR_HEIGHT + STATUS_BAR_VPAD * 2.0)
-            .flex_shrink(0.0)
+            .flex_shrink(0.0_f32)
             .margin_top(STATUS_BAR_MARGIN_TOP)
             .margin_bottom(STATUS_BAR_MARGIN_BOTTOM)
     })
@@ -986,7 +986,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
     })
     .style(move |s| {
         // CSS owns color, font, margin-left. flex_grow has no CSS analogue — stays inline.
-        crate::ui::css::apply(s, &sheet_query, "label", &["query"]).flex_grow(1.0)
+        crate::ui::css::apply(s, &sheet_query, "label", &["query"]).flex_grow(1.0_f32)
     });
 
     // Rerank whenever the query mutates. Bump `rev` so the dyn_stack rebuilds
@@ -1028,7 +1028,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
         // hjkl-css-gui), plus the reactive `:hover` blend.
         crate::ui::css::apply(s, &sheet_input, "stack", &["input-row"])
             .min_height(INPUT_ROW_HEIGHT)
-            .flex_shrink(0.0)
+            .flex_shrink(0.0_f32)
             .hover(|s| s.background(hover_bg))
     });
 
@@ -1148,7 +1148,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
             // ex / status bars off the bottom of the panel.
             let sh = Arc::clone(&sheet_handle);
             s.width_full()
-                .flex_grow(1.0)
+                .flex_grow(1.0_f32)
                 .flex_basis(0.0)
                 .min_height(0.0)
                 .class(floem::views::scroll::Handle, move |h| {
