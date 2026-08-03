@@ -655,6 +655,11 @@ pub struct AppState {
 impl AppState {
     pub fn rerank(&mut self) {
         let query = self.picker.query.get();
+        tracing::debug!(
+            mode = ?self.cli_mode,
+            query_len = query.chars().count(),
+            "picker query reranked"
+        );
         if matches!(self.cli_mode, CliMode::Calc) {
             self.rerank_calc(&query);
             return;
@@ -809,6 +814,14 @@ impl AppState {
         self.picker.selected.set(0);
         self.rerank();
     }
+}
+
+fn rerank_if_query_changed(previous: Option<&str>, current: &str, rerank: impl FnOnce()) -> bool {
+    if previous == Some(current) {
+        return false;
+    }
+    rerank();
+    true
 }
 
 // ─── Picker view ─────────────────────────────────────────────────────────────
@@ -981,7 +994,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
     let state_rerank = Arc::clone(&state);
     Effect::new(move |prev: Option<String>| {
         let cur = query_sig.get();
-        if prev.as_deref() != Some(cur.as_str()) {
+        let reranked = rerank_if_query_changed(prev.as_deref(), &cur, || {
             // `rerank()` calls `picker.clamp_selected` which `selected.set(0)`s
             // when the match list is empty. floem fires subscribers (status
             // bar count, virtual_stack data fn, empty-state, …) synchronously
@@ -997,12 +1010,12 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
                 }
                 rev.update(|r| *r += 1);
             });
-            if prev.is_none() {
-                tracing::debug!(
-                    elapsed_us = startup_started.elapsed().as_micros(),
-                    "startup state ranked"
-                );
-            }
+        });
+        if reranked && prev.is_none() {
+            tracing::debug!(
+                elapsed_us = startup_started.elapsed().as_micros(),
+                "startup state ranked"
+            );
         }
         cur
     });
@@ -1598,8 +1611,37 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
 
 #[cfg(test)]
 mod tests {
-    use super::{char_idx_to_byte, mask_password, row_key, with_cursor, word_boundary_back};
+    use super::{
+        char_idx_to_byte, mask_password, rerank_if_query_changed, row_key, with_cursor,
+        word_boundary_back,
+    };
     use crate::picker::state::VimMode;
+    use std::cell::Cell;
+
+    #[test]
+    fn initial_query_reranks_once() {
+        let calls = Cell::new(0);
+
+        assert!(rerank_if_query_changed(None, "", || {
+            calls.set(calls.get() + 1);
+        }));
+        assert!(!rerank_if_query_changed(Some(""), "", || {
+            calls.set(calls.get() + 1);
+        }));
+
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn changed_query_reranks_once() {
+        let calls = Cell::new(0);
+
+        assert!(rerank_if_query_changed(Some("old"), "new", || {
+            calls.set(calls.get() + 1);
+        }));
+
+        assert_eq!(calls.get(), 1);
+    }
 
     /// Regression for the empty-query → first-char highlight stuck bug.
     /// Empty match `positions=[]` MUST hash differently from `positions=[0]`,

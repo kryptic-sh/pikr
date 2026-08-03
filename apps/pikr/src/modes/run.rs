@@ -136,6 +136,33 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
+    fn scan_dir_keeps_only_executable_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let executable = dir.path().join("executable");
+        let non_executable = dir.path().join("non-executable");
+        let subdirectory = dir.path().join("directory");
+        std::fs::write(&executable, b"#!/bin/sh").unwrap();
+        std::fs::write(&non_executable, b"data").unwrap();
+        std::fs::create_dir(&subdirectory).unwrap();
+
+        let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&executable, permissions).unwrap();
+
+        let mut permissions = std::fs::metadata(&non_executable).unwrap().permissions();
+        permissions.set_mode(0o644);
+        std::fs::set_permissions(&non_executable, permissions).unwrap();
+
+        let mut names = BTreeSet::new();
+        scan_dir(dir.path(), &mut names);
+
+        assert_eq!(names, BTreeSet::from(["executable".to_string()]));
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn is_executable_unix_bit() {
         use std::os::unix::fs::PermissionsExt;
 

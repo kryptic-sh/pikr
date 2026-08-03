@@ -76,6 +76,34 @@ fn aaa_warmup_absorbs_first_spawn_race() {
     drop(pikr);
 }
 
+#[test]
+fn startup_ranks_query_once() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let pikr = Pikr::spawn_with_env(
+        &sway,
+        &["--show", "drun"],
+        None,
+        &[("RUST_LOG", "pikr=debug")],
+    )
+    .unwrap();
+    let out = pikr
+        .wait_with_retry(Duration::from_secs(15), Duration::from_millis(100), || {
+            let _ = Wtype::new(&sway).keys(&[Key::Escape, Key::Escape]).send();
+        })
+        .unwrap();
+
+    assert_eq!(out.exit_code, Some(1), "stderr:\n{}", out.stderr);
+    assert_eq!(
+        out.stderr.matches("picker query reranked").count(),
+        1,
+        "startup must rank the initial query exactly once; stderr:\n{}",
+        out.stderr
+    );
+}
+
 // ── Escape-based dismiss tests ────────────────────────────────────────────────
 
 /// Two Escapes from Insert mode in `--show drun` must exit 1 (dismissed).

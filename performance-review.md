@@ -6,7 +6,7 @@
    took 0.998 ms for 61 entries in a release diagnostic on this host. Moving
    collection to a worker would add state complexity without addressing the
    observed startup cost.
-2. `apps/pikr/src/app.rs:112` and `apps/pikr/src/ui/view.rs:982` — Startup
+2. `apps/pikr/src/app.rs:112` and `apps/pikr/src/ui/view.rs:995` — Startup
    previously ranked the same entry set in `app::run`, reranked it for frecency,
    then reranked again when the query effect registered. The first results were
    discarded. Startup now initializes an empty result set and lets the query
@@ -38,7 +38,10 @@ because this terminal session has no `WAYLAND_DISPLAY`. Clipboard subprocess
 latency, SSH terminal probing, dmenu stdin latency, macOS, and Windows were not
 profiled.
 
-Wall-clock regression tests were not added: compositor, shader compilation, disk
-cache, and GPU state make a fixed 500 ms CI assertion nondeterministic. The full
-project gate verifies behavior; native launch timing must be measured in the
+Deterministic unit regressions cover the initial, unchanged, and changed-query
+rerank policy plus executable-only PATH scanning. A headless E2E assertion
+launches the real release binary and checks that startup emits exactly one
+`AppState::rerank` trace before dismissal. A fixed 500 ms wall-clock assertion
+remains unsuitable for CI: compositor, shader compilation, disk cache, and GPU
+state make it nondeterministic. Native launch timing must be measured in the
 target graphical session.

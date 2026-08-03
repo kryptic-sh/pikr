@@ -25,10 +25,21 @@ impl Pikr {
     /// `stdin_data`: optional bytes to pipe to pikr's stdin (used by
     /// `--dmenu` to feed candidates).
     pub fn spawn(sway: &Sway, args: &[&str], stdin_data: Option<&str>) -> Result<Self, String> {
+        Self::spawn_with_env(sway, args, stdin_data, &[])
+    }
+
+    /// Spawn pikr with additional environment variables.
+    pub fn spawn_with_env(
+        sway: &Sway,
+        args: &[&str],
+        stdin_data: Option<&str>,
+        env: &[(&str, &str)],
+    ) -> Result<Self, String> {
         let bin = pikr_bin();
         let mut cmd = Command::new(&bin);
         cmd.args(args)
             .envs(sway.env_vars())
+            .envs(env.iter().copied())
             // Force deterministic software rendering. CI runners have no usable
             // GPU; without this, Mesa falls back to ZINK (GL-on-Vulkan) and
             // wgpu hangs when the Vulkan ICD is incompatible
