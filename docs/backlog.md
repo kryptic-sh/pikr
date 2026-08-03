@@ -6,10 +6,9 @@
   launch-to-visible/input-ready measurement. This terminal had no
   `WAYLAND_DISPLAY`, so compositor presentation and GPU initialization were not
   measurable.
-- Diagnose local headless Sway connection resets in the keyboard end-to-end
-  harness. `cargo nextest run --workspace --locked --no-fail-fast` failed eight
-  keyboard tests after Sway reset each Wayland connection; serial execution via
-  `NEXTEST_TEST_THREADS=1` failed identically. The same command at pre-startup-
-  optimization commit `ce74071` produced the same eight failures, confirming the
-  startup changes did not cause them. Format, clippy, release build, and non-E2E
-  unit tests passed.
+- Re-run the headless keyboard end-to-end harness in an environment that permits
+  POSIX shared-memory files under `/dev/shm`. This terminal sandbox denies those
+  writes, causing wlroots to log `Failed to allocate shm file for keymap`; Sway
+  then crashes in `xkb_state_key_get_layout`, and pikr observes a reset Wayland
+  connection. The same sandbox failure occurs before the startup optimization,
+  so no repository change can make this local gate meaningful.
