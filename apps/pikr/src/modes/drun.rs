@@ -124,18 +124,24 @@ mod unix_impl {
         by_id.entry(id).or_insert(entry);
     }
 
-    fn current_locales() -> Vec<String> {
-        let mut out = Vec::new();
-        for var in ["LC_MESSAGES", "LC_ALL", "LANG"] {
-            if let Ok(v) = std::env::var(var) {
+    /// Resolve the locale used for localized names, POSIX-style:
+    /// `LC_ALL` > `LC_*` > `LANG` — `LC_ALL` overrides the per-category
+    /// variables, so it is consulted first. `C` / `POSIX` (and unset vars)
+    /// fall through to the next variable.
+    pub(crate) fn pick_locale(get: impl Fn(&str) -> Option<String>) -> Option<String> {
+        for var in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+            if let Some(v) = get(var) {
                 let trimmed = v.split('.').next().unwrap_or(&v);
                 if !trimmed.is_empty() && trimmed != "C" && trimmed != "POSIX" {
-                    out.push(trimmed.to_string());
-                    break;
+                    return Some(trimmed.to_string());
                 }
             }
         }
-        out
+        None
+    }
+
+    fn current_locales() -> Vec<String> {
+        pick_locale(|v| std::env::var(v).ok()).into_iter().collect()
     }
 
     /// Split an `Exec=` string per freedesktop spec, dropping field codes
@@ -721,7 +727,8 @@ mod windows_impl {
 mod tests {
     use super::super::{Entry, Payload};
     use super::unix_impl::{
-        insert_first, load_cache, parse_exec, strip_field_codes, tree_mtime, write_cache,
+        insert_first, load_cache, parse_exec, pick_locale, strip_field_codes, tree_mtime,
+        write_cache,
     };
     use std::collections::HashMap;
 
@@ -942,6 +949,37 @@ mod tests {
             t2 > t1,
             "a same-second mtime advance must move the tree key (t1={t1}, t2={t2})"
         );
+    }
+
+    #[test]
+    fn locale_precedence_puts_lc_all_first() {
+        // POSIX: LC_ALL > LC_* > LANG. The old order consulted LC_MESSAGES
+        // first, so a set LC_ALL was ignored whenever LC_MESSAGES was set.
+        let lookup = |v: &str| match v {
+            "LC_ALL" => Some("de_DE.UTF-8".to_string()),
+            "LC_MESSAGES" => Some("en_US.UTF-8".to_string()),
+            "LANG" => Some("fr_FR.UTF-8".to_string()),
+            _ => None,
+        };
+        assert_eq!(pick_locale(lookup), Some("de_DE".to_string()));
+    }
+
+    #[test]
+    fn locale_c_or_posix_falls_through_to_next_variable() {
+        // C / POSIX are explicit "no localization" values — they must fall
+        // through to the next variable, not win.
+        let c = |v: &str| match v {
+            "LC_ALL" => Some("C".to_string()),
+            "LC_MESSAGES" => Some("en_US.UTF-8".to_string()),
+            _ => None,
+        };
+        assert_eq!(pick_locale(c), Some("en_US".to_string()));
+        let posix = |v: &str| match v {
+            "LC_ALL" => Some("POSIX".to_string()),
+            "LC_MESSAGES" => Some("en_US.UTF-8".to_string()),
+            _ => None,
+        };
+        assert_eq!(pick_locale(posix), Some("en_US".to_string()));
     }
 }
 
