@@ -121,19 +121,17 @@ fn payload_key(payload: &Payload) -> String {
     match payload {
         Payload::Stdout(s) => s.clone(),
         Payload::Exec { program, args } => {
-            if args.is_empty() {
-                // A bare program is unambiguous on its own — no join needed.
-                program.clone()
-            } else {
-                // Join with the ASCII unit separator (U+001F) instead of
-                // spaces so the key reconstructs unambiguously: a program
-                // containing a space can never collide with a
-                // program-plus-arg split on spaces. The separator can't
-                // appear in a program path, and .desktop args are
-                // shlex-split on whitespace, so it can't appear in an arg
-                // either.
-                format!("{program}\u{1f}{}", args.join("\u{1f}"))
+            // Length-prefix every component so the key is injective over all
+            // byte strings: a program or arg containing U+001F (legal in a
+            // Unix path, and shlex splits on whitespace only, so it survives
+            // inside .desktop args too) can never collide with a different
+            // program/arg split. The `{len}:` prefix fixes each boundary
+            // unambiguously regardless of what the components contain.
+            let mut key = format!("{}:{program}", program.len());
+            for arg in args {
+                key.push_str(&format!("\u{1f}{}:{arg}", arg.len()));
             }
+            key
         }
         Payload::SetClipboard(text) => text.clone(),
     }
@@ -326,5 +324,60 @@ mod tests {
         let text = toml::to_string(&usage).unwrap();
         let back: Usage = toml::from_str(&text).unwrap();
         assert!(back.bonus(&mode_key(CliMode::Emoji), &payload, SystemTime::now()) > 0);
+    }
+
+    #[test]
+    fn exec_program_with_unit_separator_distinct_from_program_plus_arg() {
+        // The exact backlog collision: `a\u{1f}b` as a bare program vs
+        // program `a` with arg `b` — the U+001F join stringified both to
+        // "a\u{1f}b". Length-prefixing must keep them apart.
+        let p1 = Payload::Exec {
+            program: "a\u{1f}b".into(),
+            args: vec![],
+        };
+        let p2 = Payload::Exec {
+            program: "a".into(),
+            args: vec!["b".into()],
+        };
+        assert_ne!(payload_key(&p1), payload_key(&p2));
+    }
+
+    #[test]
+    fn exec_arg_with_unit_separator_distinct_from_two_args() {
+        // shlex splits on whitespace only, so U+001F can survive inside a
+        // single arg — `["a\u{1f}b"]` must not collide with `["a","b"]`.
+        let single = Payload::Exec {
+            program: "x".into(),
+            args: vec!["a\u{1f}b".into()],
+        };
+        let split = Payload::Exec {
+            program: "x".into(),
+            args: vec!["a".into(), "b".into()],
+        };
+        assert_ne!(payload_key(&single), payload_key(&split));
+    }
+
+    #[test]
+    fn exec_program_with_length_prefix_style_name_is_injective() {
+        // A program that LOOKS like the new encoding ("1:a") must not
+        // collide with the encoding of a different payload.
+        let bare = Payload::Exec {
+            program: "1:a".into(),
+            args: vec![],
+        };
+        let arg = Payload::Exec {
+            program: "1".into(),
+            args: vec!["a".into()],
+        };
+        assert_ne!(payload_key(&bare), payload_key(&arg));
+        let with_sep = Payload::Exec {
+            program: "1:a\u{1f}1:b".into(),
+            args: vec![],
+        };
+        let split = Payload::Exec {
+            program: "a".into(),
+            args: vec!["b".into()],
+        };
+        assert_ne!(payload_key(&with_sep), payload_key(&split));
     }
 }
