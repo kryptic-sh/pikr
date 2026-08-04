@@ -25,6 +25,8 @@ pub struct Match {
 pub struct Matcher {
     inner: NucleoMatcher,
     case_matching: CaseMatching,
+    /// Scratch buffer for the rare grapheme→codepoint index conversion.
+    scratch: Vec<u32>,
 }
 
 impl Default for Matcher {
@@ -46,6 +48,7 @@ impl Matcher {
             } else {
                 CaseMatching::Ignore
             },
+            scratch: Vec::new(),
         }
     }
 
@@ -71,6 +74,7 @@ impl Matcher {
         }
 
         let query: String = query.nfc().collect();
+        let query_len = query.chars().count();
         let atom = Atom::new(
             &query,
             self.case_matching,
@@ -80,24 +84,26 @@ impl Matcher {
         );
         let mut out: Vec<Match> = Vec::with_capacity(entries.len());
         for (i, (label, description)) in entries.iter().enumerate() {
-            let label_hit = self.match_field(&atom, label);
-            let desc_hit = description.and_then(|text| self.match_field(&atom, text));
+            let mut lp = Vec::with_capacity(query_len);
+            let mut dp = Vec::with_capacity(query_len);
+            let label_score = self.match_field(&atom, label, &mut lp);
+            let desc_score = description.and_then(|text| self.match_field(&atom, text, &mut dp));
 
-            match (label_hit, desc_hit) {
+            match (label_score, desc_score) {
                 (None, None) => {}
-                (Some((ls, lp)), None) => out.push(Match {
+                (Some(ls), None) => out.push(Match {
                     index: i,
                     score: ls,
                     positions: lp,
                     desc_positions: Vec::new(),
                 }),
-                (None, Some((ds, dp))) => out.push(Match {
+                (None, Some(ds)) => out.push(Match {
                     index: i,
                     score: ds,
                     positions: Vec::new(),
                     desc_positions: dp,
                 }),
-                (Some((ls, lp)), Some((ds, dp))) => out.push(Match {
+                (Some(ls), Some(ds)) => out.push(Match {
                     index: i,
                     score: ls.saturating_add(ds),
                     positions: lp,
@@ -110,7 +116,7 @@ impl Matcher {
         out
     }
 
-    fn match_field(&mut self, atom: &Atom, text: &str) -> Option<(u16, Vec<u32>)> {
+    fn match_field(&mut self, atom: &Atom, text: &str, positions: &mut Vec<u32>) -> Option<u16> {
         if text.is_empty() {
             return None;
         }
@@ -124,27 +130,28 @@ impl Matcher {
             );
             Utf32Str::Unicode(&text_buf)
         };
-        let mut positions = Vec::new();
-        let score = atom.indices(utf32, &mut self.inner, &mut positions)?;
+        positions.clear();
+        let score = atom.indices(utf32, &mut self.inner, positions)?;
         if text.is_ascii() {
-            Some((score, positions))
+            Some(score)
         } else {
-            Some((score, grapheme_positions_to_codepoints(text, &positions)))
+            self.scratch.clear();
+            grapheme_positions_to_codepoints(text, positions, &mut self.scratch);
+            std::mem::swap(positions, &mut self.scratch);
+            Some(score)
         }
     }
 }
 
-fn grapheme_positions_to_codepoints(text: &str, positions: &[u32]) -> Vec<u32> {
+fn grapheme_positions_to_codepoints(text: &str, positions: &[u32], out: &mut Vec<u32>) {
     let mut codepoint = 0_u32;
-    let mut converted = Vec::new();
     for (grapheme_index, grapheme) in text.graphemes(true).enumerate() {
         let codepoint_count = grapheme.chars().count() as u32;
         if positions.contains(&(grapheme_index as u32)) {
-            converted.extend(codepoint..codepoint + codepoint_count);
+            out.extend(codepoint..codepoint + codepoint_count);
         }
         codepoint += codepoint_count;
     }
-    converted
 }
 
 #[cfg(test)]
