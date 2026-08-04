@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `:mode` switching from Visual now exits Visual and clears any count prefix, so
+  the next Enter accepts only the cursor row instead of executing a range
+  (`0..=anchor`) of the new mode's list.
+- ssh mode quotes the host for PowerShell/cmd: a `Host` value containing shell
+  metacharacters (e.g. `foo; notepad`) can no longer inject into the terminal
+  script; cmd validates a safe hostname charset and falls back to argv
+  otherwise.
+- ssh mode splits `Host a b` pattern lists into one entry per pattern instead of
+  offering a single broken `a b` alias.
+- drun names now honor POSIX locale precedence — `LC_ALL` overrides
+  `LC_MESSAGES` — instead of consulting `LC_MESSAGES` first.
+
+### Performance
+
+- The matcher reuses scratch buffers across the rank loop, eliminating ~4-7k
+  transient heap allocations per keystroke on large entry lists (emoji ~1800).
+- Frecency usage keys are precomputed once per entry at collect time instead of
+  being rebuilt and hashed per entry per keystroke; the half-life decay now uses
+  `exp2` instead of `powf`.
+- ssh mode finds its terminal by stat'ing `$PATH` instead of spawning
+  `--version` per candidate at startup.
+- run mode filters `$PATH` entries with readdir's `d_type` before stat'ing,
+  dropping the ~1000+ startup stats to just the regular files.
+
+## [0.8.9] - 2026-08-04
+
+### Changed
+
+- CI: the release pipeline now fails closed — the build/publish chain (`build` →
+  nfpm → GitHub release → aur-bin / brew-tap / scoop-bucket) does not start
+  until every quality gate is green: `test`, `fmt`, `clippy` on all three OSes,
+  `cargo-deny`, `cargo-machete`, `smoke` on all three OSes, the keyboard e2e
+  suite, and the startup time gate. The macOS/Windows clippy rows and the e2e
+  job drop their advisory `continue-on-error`, so a failure anywhere blocks the
+  release instead of deploying alongside it.
+
 ## [0.8.8] - 2026-08-04
 
 ### Fixed
@@ -90,20 +130,6 @@ and this project adheres to
   launch-to-exit time (`--e2e-delay`, default 0.500 s) and nudges headless sway
   sessions with one sacrificial F12 so the first-focus marker can fire without
   real input devices.
-
-## [0.8.9] - 2026-08-04
-
-### Changed
-
-- CI: the release pipeline now fails closed — the build/publish chain (`build` →
-  nfpm → GitHub release → aur-bin / brew-tap / scoop-bucket) does not start
-  until every quality gate is green: `test`, `fmt`, `clippy` on all three OSes,
-  `cargo-deny`, `cargo-machete`, `smoke` on all three OSes, the keyboard e2e
-  suite, and the startup time gate. The macOS/Windows clippy rows and the e2e
-  job drop their advisory `continue-on-error`, so a failure anywhere blocks the
-  release instead of deploying alongside it.
-
-## [Unreleased]
 
 ## [0.8.7] - 2026-08-04
 
