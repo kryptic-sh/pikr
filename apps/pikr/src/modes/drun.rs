@@ -193,8 +193,9 @@ mod unix_impl {
         /// current_locales() at cache time — localized names are baked into
         /// the entries.
         locales: Vec<String>,
-        /// Max mtime (Unix seconds) across every dir and file under `dirs`.
-        max_mtime_unix_secs: u64,
+        /// Max mtime (nanoseconds since UNIX_EPOCH) across every dir and file
+        /// under `dirs`.
+        max_mtime_unix_nanos: u64,
         /// Cached entries — labels, descriptions, icons, program + args.
         entries: Vec<CachedEntry>,
     }
@@ -255,14 +256,14 @@ mod unix_impl {
             .ok()
     }
 
-    /// Compute the max mtime (Unix seconds) across every dir and file under
-    /// the existing applications dirs.  A dir's own mtime only changes when
-    /// its *direct* children change, so a `.desktop` file added or removed
-    /// inside an existing subdirectory would be invisible to a roots-only
-    /// key; taking the max over the whole tree covers both new files anywhere
-    /// and structural changes.  Returns `None` if no dir exists or no entry's
-    /// mtime is readable.
-    fn tree_mtime(dirs: &[PathBuf]) -> Option<u64> {
+    /// Compute the max mtime (nanoseconds since UNIX_EPOCH) across every dir
+    /// and file under the existing applications dirs.  A dir's own mtime only
+    /// changes when its *direct* children change, so a `.desktop` file added
+    /// or removed inside an existing subdirectory would be invisible to a
+    /// roots-only key; taking the max over the whole tree covers both new
+    /// files anywhere and structural changes.  Returns `None` if no dir exists
+    /// or no entry's mtime is readable.
+    pub(crate) fn tree_mtime(dirs: &[PathBuf]) -> Option<u64> {
         let mut mtimes: Vec<u64> = Vec::new();
         for dir in dirs.iter().filter(|d| d.exists()) {
             collect_tree_mtimes(dir, &mut mtimes);
@@ -276,16 +277,16 @@ mod unix_impl {
     /// cycle-free and mirrors `WalkDir::follow_links(false)`.  Uses `std::fs`
     /// recursion because `walkdir` is a windows-only dependency in this crate.
     fn collect_tree_mtimes(dir: &Path, out: &mut Vec<u64>) {
-        if let Some(secs) = mtime_secs(dir) {
-            out.push(secs);
+        if let Some(nanos) = mtime_nanos(dir) {
+            out.push(nanos);
         }
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if let Some(secs) = mtime_secs(&path) {
-                out.push(secs);
+            if let Some(nanos) = mtime_nanos(&path) {
+                out.push(nanos);
             }
             if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
                 collect_tree_mtimes(&path, out);
@@ -293,13 +294,14 @@ mod unix_impl {
         }
     }
 
-    /// Unix-seconds mtime of `path`, or `None` if unreadable or pre-epoch.
-    fn mtime_secs(path: &Path) -> Option<u64> {
+    /// Nanoseconds-since-UNIX_EPOCH mtime of `path`, or `None` if unreadable
+    /// or pre-epoch.
+    fn mtime_nanos(path: &Path) -> Option<u64> {
         std::fs::metadata(path)
             .ok()
             .and_then(|m| m.modified().ok())
             .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs())
+            .map(|d| d.as_nanos() as u64) // lossless: fits u64 until year 2554
     }
 
     /// Try to load a valid cache. Returns `Some(entries)` on hit, `None` on
@@ -319,12 +321,12 @@ mod unix_impl {
             .ok()?;
         if cached.dirs != dirs
             || cached.locales != locales
-            || cached.max_mtime_unix_secs != current_mtime
+            || cached.max_mtime_unix_nanos != current_mtime
         {
             tracing::debug!(
                 dirs_match = cached.dirs == dirs,
                 locales_match = cached.locales == locales,
-                mtime_match = cached.max_mtime_unix_secs == current_mtime,
+                mtime_match = cached.max_mtime_unix_nanos == current_mtime,
                 "drun cache key mismatch — invalidating"
             );
             return None;
@@ -345,7 +347,7 @@ mod unix_impl {
         let cached = CachedDrun {
             dirs: dirs.to_vec(),
             locales: locales.to_vec(),
-            max_mtime_unix_secs: mtime,
+            max_mtime_unix_nanos: mtime,
             entries: entries.iter().map(CachedEntry::from).collect(),
         };
         let write = || -> std::io::Result<()> {
@@ -407,17 +409,20 @@ mod windows_impl {
 
     /// On-disk cache for drun entries.
     ///
-    /// Keyed by the max mtime (in Unix seconds) across every dir and file
-    /// under both Start Menu roots.  If any entry's mtime has advanced since
-    /// the cache was written the whole cache is considered stale and the walk
-    /// is re-run.
+    /// Keyed by the max mtime (in nanoseconds since UNIX_EPOCH) across every
+    /// dir and file under both Start Menu roots.  If any entry's mtime has
+    /// advanced since the cache was written the whole cache is considered
+    /// stale and the walk is re-run.
     #[derive(Serialize, Deserialize)]
     struct CachedDrun {
         /// Max mtime across the whole Start Menu tree — every dir and file —
         /// at cache time.  Invalidate when any tree entry is newer than this
-        /// value.  (Field name kept from the roots-only key for on-disk
-        /// compatibility with existing cache files.)
-        roots_mtime_unix_secs: u64,
+        /// value.  Nanosecond key since the 2026-08-04 finding: second keys
+        /// missed a shortcut added within the same second as the cached max.
+        /// Old second-keyed cache files fail to deserialize and rebuild once;
+        /// that one-time miss is harmless because the cache is a warm-start
+        /// optimisation only.
+        roots_mtime_unix_nanos: u64,
         /// Cached entries — labels, target paths, args.  Icons not yet (#40).
         entries: Vec<CachedEntry>,
     }
@@ -475,13 +480,13 @@ mod windows_impl {
         dirs::data_local_dir().map(|d| d.join("pikr").join("drun-cache.json"))
     }
 
-    /// Compute the max mtime (Unix seconds) across every dir and file under
-    /// the existing Start Menu roots.  A root's own mtime only changes when
-    /// its *direct* children change, so a shortcut added inside an existing
-    /// subfolder would be invisible to a roots-only key; taking the max over
-    /// the whole tree covers both new `.lnk` files anywhere and structural
-    /// changes.  Returns `None` if no root exists or no entry's mtime is
-    /// readable.
+    /// Compute the max mtime (nanoseconds since UNIX_EPOCH) across every dir
+    /// and file under the existing Start Menu roots.  A root's own mtime only
+    /// changes when its *direct* children change, so a shortcut added inside
+    /// an existing subfolder would be invisible to a roots-only key; taking
+    /// the max over the whole tree covers both new `.lnk` files anywhere and
+    /// structural changes.  Returns `None` if no root exists or no entry's
+    /// mtime is readable.
     pub fn tree_mtime(roots: &[PathBuf]) -> Option<u64> {
         roots
             .iter()
@@ -497,7 +502,7 @@ mod windows_impl {
                     .ok()
                     .and_then(|m| m.modified().ok())
                     .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
+                    .map(|d| d.as_nanos() as u64) // lossless: fits u64 until year 2554
             })
             .max()
     }
@@ -509,9 +514,9 @@ mod windows_impl {
         let cached: CachedDrun = serde_json::from_slice(&bytes)
             .map_err(|e| tracing::warn!("drun cache parse error: {e}"))
             .ok()?;
-        if cached.roots_mtime_unix_secs != current_mtime {
+        if cached.roots_mtime_unix_nanos != current_mtime {
             tracing::debug!(
-                cached = cached.roots_mtime_unix_secs,
+                cached = cached.roots_mtime_unix_nanos,
                 current = current_mtime,
                 "drun cache mtime mismatch — invalidating"
             );
@@ -525,7 +530,7 @@ mod windows_impl {
     pub fn write_cache(mtime: u64, entries: &[Entry], path: &Path) {
         let _span = tracing::debug_span!("drun_cache_write", path = %path.display()).entered();
         let cached = CachedDrun {
-            roots_mtime_unix_secs: mtime,
+            roots_mtime_unix_nanos: mtime,
             entries: entries.iter().map(CachedEntry::from).collect(),
         };
         let write = || -> std::io::Result<()> {
@@ -715,7 +720,9 @@ mod windows_impl {
 #[cfg(all(test, unix))]
 mod tests {
     use super::super::{Entry, Payload};
-    use super::unix_impl::{insert_first, load_cache, parse_exec, strip_field_codes, write_cache};
+    use super::unix_impl::{
+        insert_first, load_cache, parse_exec, strip_field_codes, tree_mtime, write_cache,
+    };
     use std::collections::HashMap;
 
     #[test]
@@ -894,6 +901,46 @@ mod tests {
         assert!(
             load_cache(&[], &[], 1, &corrupt).is_none(),
             "corrupt cache file must be a miss"
+        );
+    }
+
+    #[test]
+    fn tree_mtime_detects_same_second_add() {
+        // Regression for the seconds-truncation finding: two files whose
+        // mtimes fall within the same second truncated to an equal key, so a
+        // shortcut added in the same second as the cached max was invisible
+        // until a later change. With nanosecond keys the advance must move
+        // the tree key. mtimes are pinned explicitly via `set_modified` so
+        // the test is deterministic regardless of the filesystem's clock
+        // tick granularity.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("applications");
+        std::fs::create_dir_all(&root).unwrap();
+        let a = root.join("a.desktop");
+        let b = root.join("b.desktop");
+        std::fs::write(&a, b"old").unwrap();
+        std::fs::write(&b, b"new").unwrap();
+
+        let base = std::time::SystemTime::now();
+        let set_mtime = |path: &std::path::Path, t: std::time::SystemTime| {
+            std::fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(t)
+                .unwrap();
+        };
+        // Both mtimes in the same second, 1 ms apart.
+        set_mtime(&a, base);
+        set_mtime(&b, base + std::time::Duration::from_millis(1));
+
+        let t1 = tree_mtime(std::slice::from_ref(&root)).expect("tree mtime must be readable");
+        // Advance `a` by another 1 ms — still within the same second.
+        set_mtime(&a, base + std::time::Duration::from_millis(2));
+        let t2 = tree_mtime(std::slice::from_ref(&root)).expect("tree mtime must be readable");
+        assert!(
+            t2 > t1,
+            "a same-second mtime advance must move the tree key (t1={t1}, t2={t2})"
         );
     }
 }
