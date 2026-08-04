@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.8] - 2026-08-04
 
 ### Fixed
 
@@ -90,6 +90,8 @@ and this project adheres to
   launch-to-exit time (`--e2e-delay`, default 0.500 s) and nudges headless sway
   sessions with one sacrificial F12 so the first-focus marker can fire without
   real input devices.
+
+## [Unreleased]
 
 ## [0.8.7] - 2026-08-04
 
@@ -927,7 +929,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.7...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.8...main
+[0.8.8]: https://github.com/kryptic-sh/pikr/compare/v0.8.7...v0.8.8
 [0.8.7]: https://github.com/kryptic-sh/pikr/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.6
 [0.8.5]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.5
