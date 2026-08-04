@@ -1043,7 +1043,7 @@ mod windows_tests {
 
         std::fs::write(vendor.join("App.lnk"), b"shortcut bytes").unwrap();
         let root_mtime_before = root_mtime(&root);
-        let t1 = tree_mtime(&[root.clone()]).expect("tree mtime must be readable");
+        let t1 = tree_mtime(std::slice::from_ref(&root)).expect("tree mtime must be readable");
 
         // Coarse mtime granularity (FAT, 1s) can leave two writes within the
         // same second with equal mtimes, so wait past a full second before
