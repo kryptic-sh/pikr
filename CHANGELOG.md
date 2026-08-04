@@ -90,6 +90,11 @@ and this project adheres to
   launch-to-exit time (`--e2e-delay`, default 0.500 s) and nudges headless sway
   sessions with one sacrificial F12 so the first-focus marker can fire without
   real input devices.
+
+## [0.8.9] - 2026-08-04
+
+### Changed
+
 - CI: the release pipeline now fails closed — the build/publish chain (`build` →
   nfpm → GitHub release → aur-bin / brew-tap / scoop-bucket) does not start
   until every quality gate is green: `test`, `fmt`, `clippy` on all three OSes,
@@ -936,7 +941,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.8...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.9...main
+[0.8.9]: https://github.com/kryptic-sh/pikr/compare/v0.8.8...v0.8.9
 [0.8.8]: https://github.com/kryptic-sh/pikr/compare/v0.8.7...v0.8.8
 [0.8.7]: https://github.com/kryptic-sh/pikr/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/kryptic-sh/pikr/releases/tag/v0.8.6
