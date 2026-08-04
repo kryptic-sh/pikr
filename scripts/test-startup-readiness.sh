@@ -108,6 +108,8 @@ e2e_deadline_ms=$(awk -v d="$e2e_delay" 'BEGIN { printf "%.0f", d * 1000 }')
 watchdog_seconds=$(awk -v delay="$delay" 'BEGIN { printf "%.3f", delay + 2 }')
 default_focus_attempts=$(awk -v delay="$delay" 'BEGIN { printf "%.0f", (delay + 1) * 100 }')
 pid=""
+err_file=""
+out_file=""
 
 terminate_child() {
   if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
@@ -125,35 +127,39 @@ terminate_child() {
 # shellcheck disable=SC2329
 cleanup() {
   terminate_child
+  if [[ -n "$err_file" ]]; then
+    rm -f "$err_file"
+  fi
+  if [[ -n "$out_file" ]]; then
+    rm -f "$out_file"
+  fi
 }
 
 trap cleanup EXIT
 trap 'exit 130' INT TERM HUP
 
+err_file=$(mktemp) || exit 2
+out_file=$(mktemp) || exit 2
+
 printf 'Testing first focus within %s seconds, end-to-end within %s seconds, then candidate acceptance...\n' \
   "$delay" "$e2e_delay"
 e2e_start_ms=$(date +%s%3N)
-coproc PIKR_PROCESS {
-  exec setsid "$timeout_bin" --signal=TERM --kill-after=0.1 "$watchdog_seconds" \
-    env NO_COLOR=1 RUST_LOG=pikr=debug "$pikr_bin" \
-    --dmenu --filter ban <<< $'apple\nbanana\ncherry' \
-    2> >(while IFS= read -r line; do printf 'STDERR\t%s\n' "$line"; done) \
-    > >(while IFS= read -r line; do printf 'STDOUT\t%s\n' "$line"; done)
-}
-pid=$PIKR_PROCESS_PID
-output_fd=${PIKR_PROCESS[0]}
-declare -a output_lines=()
+# Capture stdout/stderr in regular files instead of pipes: after `wait` the
+# files are complete, so a line Pikr wrote just before exiting can never be
+# lost to a pipe-EOF race. setsid keeps the process group intact so
+# terminate_child's `kill -TERM -- "-$pid"` reaches the whole tree.
+setsid "$timeout_bin" --signal=TERM --kill-after=0.1 "$watchdog_seconds" \
+  env NO_COLOR=1 RUST_LOG=pikr=debug "$pikr_bin" \
+  --dmenu --filter ban <<< $'apple\nbanana\ncherry' \
+  >"$out_file" 2>"$err_file" &
+pid=$!
 focus_line=""
-focus_pattern='^STDERR[[:space:]][^[:space:]]+[[:space:]]+DEBUG[[:space:]]+pikr::ui::view:[[:space:]]+startup first focus received[[:space:]]+elapsed_us=[0-9]+$'
+focus_pattern='^[^[:space:]]+[[:space:]]+DEBUG[[:space:]]+pikr::ui::view:[[:space:]]+startup first focus received[[:space:]]+elapsed_us=[0-9]+$'
 focus_attempts="${PIKR_FOCUS_ATTEMPTS:-$default_focus_attempts}"
 
 for ((attempt = 0; attempt < focus_attempts; attempt++)); do
-  if IFS= read -r -t 0.01 line <&"$output_fd"; then
-    output_lines+=("$line")
-    if [[ "$line" =~ $focus_pattern ]]; then
-      focus_line="$line"
-      break
-    fi
+  if focus_line=$(grep -m1 -E "$focus_pattern" "$err_file"); then
+    break
   elif ! kill -0 "$pid" 2>/dev/null; then
     break
   fi
@@ -167,12 +173,14 @@ for ((attempt = 0; attempt < focus_attempts; attempt++)); do
     "$timeout_bin" --signal=TERM --kill-after=0.1 2 \
       "$wtype_bin" -k F12 >/dev/null 2>&1 || true
   fi
+  sleep 0.01
 done
 
 if [[ -z "$focus_line" ]]; then
   printf 'FAIL: Pikr did not report an authentic first-focus event before the probe timeout\n' >&2
   terminate_child
-  printf '%s\n' "${output_lines[@]}" >&2
+  cat "$err_file" >&2
+  cat "$out_file" >&2
   exit 1
 fi
 
@@ -181,7 +189,8 @@ if ((focus_us > deadline_us)); then
   printf 'FAIL: first focus took %s us, exceeding the %s us deadline\n' \
     "$focus_us" "$deadline_us" >&2
   terminate_child
-  printf '%s\n' "${output_lines[@]}" >&2
+  cat "$err_file" >&2
+  cat "$out_file" >&2
   exit 1
 fi
 
@@ -189,48 +198,38 @@ if ! "$timeout_bin" --signal=TERM --kill-after=0.1 2 \
   "$wtype_bin" -k F12 -k Return; then
   printf 'FAIL: wtype could not send the acceptance keys after Pikr received focus\n' >&2
   terminate_child
-  printf '%s\n' "${output_lines[@]}" >&2
+  cat "$err_file" >&2
+  cat "$out_file" >&2
   exit 1
 fi
 
-while IFS= read -r line <&"$output_fd"; do
-  output_lines+=("$line")
-done
 wait "$pid"
 status=$?
 pid=""
 e2e_ms=$(( $(date +%s%3N) - e2e_start_ms ))
 
 result=""
-for line in "${output_lines[@]}"; do
-  if [[ "$line" == $'STDOUT\tbanana' ]]; then
-    result="banana"
-  fi
-done
+if grep -qx 'banana' "$out_file"; then
+  result="banana"
+fi
 
 if [[ "$status" -eq 0 && "$result" == "banana" ]]; then
   if ((e2e_ms > e2e_deadline_ms)); then
     printf 'FAIL: end-to-end launch-to-exit took %s ms, exceeding the %s ms deadline\n' \
       "$e2e_ms" "$e2e_deadline_ms" >&2
     terminate_child
-    printf '%s\n' "${output_lines[@]}" >&2
+    cat "$err_file" >&2
+    cat "$out_file" >&2
     exit 1
   fi
   printf 'PASS: first focus at %s us met the %s us deadline; accepted "banana" in %s ms end-to-end (deadline %s ms)\n' \
     "$focus_us" "$deadline_us" "$e2e_ms" "$e2e_deadline_ms"
-  for line in "${output_lines[@]}"; do
-    if [[ "$line" == *"startup config loaded"* ||
-      "$line" == *"startup entries collected"* ||
-      "$line" == *"startup state ranked"* ||
-      "$line" == *"startup first paint pass reached"* ||
-      "$line" == *"startup first focus received"* ]]; then
-      printf '%s\n' "${line#*$'\t'}"
-    fi
-  done
+  grep -E 'startup (config loaded|entries collected|state ranked|first paint pass reached|first focus received)' "$err_file"
   exit 0
 fi
 
 printf 'FAIL: expected exit status 0 and output "banana"; got status %s and output %q\n' \
   "$status" "$result" >&2
-printf '%s\n' "${output_lines[@]}" >&2
+cat "$err_file" >&2
+cat "$out_file" >&2
 exit 1

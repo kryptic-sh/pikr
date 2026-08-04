@@ -30,6 +30,10 @@ and this project adheres to
   program-plus-argument split (previously both keyed identically).
 - Theme colors must be exactly 6 hex digits; short, 8-digit, or malformed values
   render deterministic black instead of silently-wrong colors.
+- `scripts/test-startup-readiness.sh` now captures pikr's stdout/stderr in
+  regular files instead of coproc pipes, fixing an intermittent flake where the
+  accepted candidate line could be lost to a pipe-EOF race under parallel load
+  (the smoke test failed with "got status 0 and output ''").
 
 ### Security
 
