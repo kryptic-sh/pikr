@@ -134,11 +134,14 @@ fn make_entry(
 /// - Unix terminals (`alacritty`, `kitty`, `foot`, `xterm`): `-e ssh <host>`
 /// - `wt.exe` (Windows Terminal): `-- ssh <host>`
 ///   Windows Terminal forwards everything after `--` to its shell/command.
-/// - `pwsh.exe` / `powershell.exe`: `-NoExit -Command ssh <host>`
+/// - `pwsh.exe` / `powershell.exe`: `-NoExit -Command ssh '<host>'`
 ///   `-NoExit` keeps the window open after ssh exits so the user can see
-///   error messages before the pane closes.
-/// - `cmd.exe`: `/K ssh <host>`
-///   `/K` runs the command and keeps the prompt alive afterwards.
+///   error messages before the pane closes. The host is single-quoted —
+///   pwsh `-Command` parses a script, and single quotes are literal there.
+/// - `cmd.exe`: `/K ssh "<host>"` for a safe host, else the `-e` argv form.
+///   `/K` runs the command and keeps the prompt alive afterwards; cmd has
+///   no reliable quoting, so a host outside the safe charset never reaches
+///   its script string.
 fn build_terminal_args(terminal: &str, host: &str) -> Vec<String> {
     let binary = std::path::Path::new(terminal)
         .file_name()
@@ -151,12 +154,33 @@ fn build_terminal_args(terminal: &str, host: &str) -> Vec<String> {
         "pwsh.exe" | "pwsh" | "powershell.exe" | "powershell" => vec![
             "-NoExit".to_string(),
             "-Command".to_string(),
-            format!("ssh {host}"),
+            // pwsh -Command parses a script; single quotes are literal in pwsh
+            // and an embedded quote is escaped by doubling, so the host can
+            // never inject into the script.
+            format!("ssh '{}'", host.replace('\'', "''")),
         ],
-        "cmd.exe" | "cmd" => vec!["/K".to_string(), format!("ssh {host}")],
+        "cmd.exe" | "cmd" => {
+            if is_safe_host(host) {
+                vec!["/K".to_string(), format!("ssh \"{host}\"")]
+            } else {
+                // cmd has no reliable quoting — fall back to the argv form so a
+                // pathological host errors visibly in the terminal instead of
+                // executing its metacharacters.
+                vec!["-e".to_string(), "ssh".to_string(), host.to_string()]
+            }
+        }
         // Unix terminals (alacritty, kitty, foot, xterm) and anything unknown.
         _ => vec!["-e".to_string(), "ssh".to_string(), host.to_string()],
     }
+}
+
+/// Hosts are interpolated into a shell string for pwsh/cmd, so reject
+/// anything outside the charset legit hostnames / IPv6 literals use
+/// (alphanumerics plus `. - _ : [ ]`). cmd has no reliable quoting, so
+/// an unsafe host must never reach its string arm.
+fn is_safe_host(host: &str) -> bool {
+    host.chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':' | '[' | ']'))
 }
 
 /// Ordered list of terminal-emulator candidates for the current OS.
@@ -266,19 +290,49 @@ mod tests {
     #[test]
     fn pwsh_args_use_noexist_command() {
         let args = build_terminal_args("pwsh.exe", "myserver");
-        assert_eq!(args, vec!["-NoExit", "-Command", "ssh myserver"]);
+        assert_eq!(args, vec!["-NoExit", "-Command", "ssh 'myserver'"]);
     }
 
     #[test]
     fn powershell_args_use_noexist_command() {
         let args = build_terminal_args("powershell.exe", "myserver");
-        assert_eq!(args, vec!["-NoExit", "-Command", "ssh myserver"]);
+        assert_eq!(args, vec!["-NoExit", "-Command", "ssh 'myserver'"]);
     }
 
     #[test]
     fn cmd_args_use_slash_k() {
         let args = build_terminal_args("cmd.exe", "myserver");
-        assert_eq!(args, vec!["/K", "ssh myserver"]);
+        assert_eq!(args, vec!["/K", "ssh \"myserver\""]);
+    }
+
+    #[test]
+    fn pwsh_host_with_metacharacters_is_quoted() {
+        // `Host foo; notepad` must not become a script: pwsh -Command parses
+        // the string, so the metacharacters must sit inside a literal quote.
+        let args = build_terminal_args("pwsh.exe", "foo; notepad");
+        assert_eq!(args, vec!["-NoExit", "-Command", "ssh 'foo; notepad'"]);
+    }
+
+    #[test]
+    fn pwsh_host_with_single_quote_is_doubled() {
+        // Embedded single quotes are escaped by doubling inside pwsh's
+        // single-quoted literal.
+        let args = build_terminal_args("pwsh.exe", "it's");
+        assert_eq!(args, vec!["-NoExit", "-Command", "ssh 'it''s'"]);
+    }
+
+    #[test]
+    fn cmd_host_with_metacharacters_falls_back_to_argv() {
+        // cmd has no reliable quoting — an unsafe host must take the argv
+        // path (visible error) rather than a /K script string.
+        let args = build_terminal_args("cmd.exe", "foo; notepad");
+        assert_eq!(args, vec!["-e", "ssh", "foo; notepad"]);
+    }
+
+    #[test]
+    fn cmd_safe_host_quoted() {
+        let args = build_terminal_args("cmd.exe", "myserver");
+        assert_eq!(args, vec!["/K", "ssh \"myserver\""]);
     }
 
     #[test]
