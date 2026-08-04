@@ -39,10 +39,27 @@ impl Mode for Drun {
 mod unix_impl {
     use super::{Entry, Result};
     use freedesktop_desktop_entry::{DesktopEntry, Iter, default_paths};
+    use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::time::SystemTime;
 
     pub fn collect() -> Result<Vec<Entry>> {
         let locales = current_locales();
+        // Cache key inputs: the applications dirs that exist right now, in
+        // `default_paths()` order (user-local first), plus the max mtime
+        // across the whole tree.  A warm start with an unchanged tree skips
+        // the parse entirely.
+        let dirs: Vec<PathBuf> = default_paths().filter(|p| p.exists()).collect();
+        let current_mtime = tree_mtime(&dirs);
+
+        // --- Cache probe ---
+        if let (Some(mtime), Some(path)) = (current_mtime, cache_path())
+            && let Some(entries) = load_cache(&dirs, &locales, mtime, &path)
+        {
+            return Ok(entries);
+        }
+
         // Map app-id → entry so the FIRST `.desktop` file (user-local,
         // iterated before system dirs) overrides later ones (system) per the
         // freedesktop search-order convention.
@@ -91,6 +108,12 @@ mod unix_impl {
 
         let mut entries: Vec<Entry> = by_id.into_values().collect();
         entries.sort_by_key(|a| a.label.to_lowercase());
+
+        // --- Cache write (best-effort) ---
+        if let (Some(mtime), Some(path)) = (current_mtime, cache_path()) {
+            write_cache(&dirs, &locales, mtime, &entries, &path);
+        }
+
         Ok(entries)
     }
 
@@ -150,6 +173,191 @@ mod unix_impl {
             }
         }
         out
+    }
+
+    // ── Cache types ───────────────────────────────────────────────────────────
+
+    /// On-disk cache for drun entries.
+    ///
+    /// Keyed by the applications dirs that existed at cache time (in
+    /// `default_paths()` order), the locale list, and the max mtime across
+    /// every dir and file under those dirs.  If any of the three changed since
+    /// the cache was written the whole cache is stale and the parse re-runs.
+    #[derive(Serialize, Deserialize)]
+    struct CachedDrun {
+        /// The applications dirs that existed at cache time, in
+        /// `default_paths()` order.  Order matters: user-local dirs iterate
+        /// first and their entries win the dedupe, so a reordered dirs list
+        /// must invalidate.
+        dirs: Vec<PathBuf>,
+        /// current_locales() at cache time — localized names are baked into
+        /// the entries.
+        locales: Vec<String>,
+        /// Max mtime (Unix seconds) across every dir and file under `dirs`.
+        max_mtime_unix_secs: u64,
+        /// Cached entries — labels, descriptions, icons, program + args.
+        entries: Vec<CachedEntry>,
+    }
+
+    /// A single cached entry.  Mirrors the fields the parse loop populates:
+    /// the unix collector only ever produces `Payload::Exec` entries.
+    #[derive(Serialize, Deserialize)]
+    struct CachedEntry {
+        label: String,
+        description: Option<String>,
+        icon: Option<String>,
+        program: String,
+        args: Vec<String>,
+    }
+
+    impl From<CachedEntry> for Entry {
+        fn from(c: CachedEntry) -> Self {
+            let mut e = Entry::exec(c.label, c.program).with_args(c.args);
+            if let Some(d) = c.description {
+                e = e.with_description(d);
+            }
+            if let Some(i) = c.icon {
+                e = e.with_icon(i);
+            }
+            e
+        }
+    }
+
+    impl From<&Entry> for CachedEntry {
+        fn from(e: &Entry) -> Self {
+            use super::super::Payload;
+            let (program, args) = match &e.payload {
+                Payload::Exec { program, args } => (program.clone(), args.clone()),
+                // Unreachable today — the unix collector only builds Exec
+                // entries.  Mirrors the windows `_ =>` arm.
+                _ => (String::new(), Vec::new()),
+            };
+            CachedEntry {
+                label: e.label.clone(),
+                description: e.description.clone(),
+                icon: e.icon.clone(),
+                program,
+                args,
+            }
+        }
+    }
+
+    // ── Cache helpers ─────────────────────────────────────────────────────────
+
+    /// Path to the drun cache file: `$XDG_STATE_HOME/pikr/drun-cache.toml`
+    /// (falls back to `~/.local/state/pikr/` via `xdg`).  Creating the state
+    /// dir here is a harmless side effect — `place_state_file` creates it if
+    /// missing, and it is where the cache write lands on a miss anyway.
+    fn cache_path() -> Option<PathBuf> {
+        xdg::BaseDirectories::with_prefix("pikr")
+            .ok()?
+            .place_state_file("drun-cache.toml")
+            .ok()
+    }
+
+    /// Compute the max mtime (Unix seconds) across every dir and file under
+    /// the existing applications dirs.  A dir's own mtime only changes when
+    /// its *direct* children change, so a `.desktop` file added or removed
+    /// inside an existing subdirectory would be invisible to a roots-only
+    /// key; taking the max over the whole tree covers both new files anywhere
+    /// and structural changes.  Returns `None` if no dir exists or no entry's
+    /// mtime is readable.
+    fn tree_mtime(dirs: &[PathBuf]) -> Option<u64> {
+        let mut mtimes: Vec<u64> = Vec::new();
+        for dir in dirs.iter().filter(|d| d.exists()) {
+            collect_tree_mtimes(dir, &mut mtimes);
+        }
+        mtimes.into_iter().max()
+    }
+
+    /// Walk `dir` and push the mtime of every dir and file under it,
+    /// including `dir` itself.  Symlinked dirs are not descended into
+    /// (`DirEntry::file_type()` does not follow links), which keeps the walk
+    /// cycle-free and mirrors `WalkDir::follow_links(false)`.  Uses `std::fs`
+    /// recursion because `walkdir` is a windows-only dependency in this crate.
+    fn collect_tree_mtimes(dir: &Path, out: &mut Vec<u64>) {
+        if let Some(secs) = mtime_secs(dir) {
+            out.push(secs);
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(secs) = mtime_secs(&path) {
+                out.push(secs);
+            }
+            if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+                collect_tree_mtimes(&path, out);
+            }
+        }
+    }
+
+    /// Unix-seconds mtime of `path`, or `None` if unreadable or pre-epoch.
+    fn mtime_secs(path: &Path) -> Option<u64> {
+        std::fs::metadata(path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+    }
+
+    /// Try to load a valid cache. Returns `Some(entries)` on hit, `None` on
+    /// miss (missing file, parse error, or any key component changed — dirs,
+    /// locales, or tree mtime).
+    pub fn load_cache(
+        dirs: &[PathBuf],
+        locales: &[String],
+        current_mtime: u64,
+        path: &Path,
+    ) -> Option<Vec<Entry>> {
+        let _span = tracing::debug_span!("drun_cache_load", path = %path.display()).entered();
+        let bytes = std::fs::read(path).ok()?;
+        let text = std::str::from_utf8(&bytes).ok()?;
+        let cached: CachedDrun = toml::from_str(text)
+            .map_err(|e| tracing::warn!("drun cache parse error: {e}"))
+            .ok()?;
+        if cached.dirs != dirs
+            || cached.locales != locales
+            || cached.max_mtime_unix_secs != current_mtime
+        {
+            tracing::debug!(
+                dirs_match = cached.dirs == dirs,
+                locales_match = cached.locales == locales,
+                mtime_match = cached.max_mtime_unix_secs == current_mtime,
+                "drun cache key mismatch — invalidating"
+            );
+            return None;
+        }
+        tracing::debug!(entries = cached.entries.len(), "drun cache hit");
+        Some(cached.entries.into_iter().map(Entry::from).collect())
+    }
+
+    /// Write a fresh cache to disk. Best-effort — logs a warning on any error.
+    pub fn write_cache(
+        dirs: &[PathBuf],
+        locales: &[String],
+        mtime: u64,
+        entries: &[Entry],
+        path: &Path,
+    ) {
+        let _span = tracing::debug_span!("drun_cache_write", path = %path.display()).entered();
+        let cached = CachedDrun {
+            dirs: dirs.to_vec(),
+            locales: locales.to_vec(),
+            max_mtime_unix_secs: mtime,
+            entries: entries.iter().map(CachedEntry::from).collect(),
+        };
+        let write = || -> std::io::Result<()> {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let text = toml::to_string_pretty(&cached).map_err(std::io::Error::other)?;
+            std::fs::write(path, text)
+        };
+        if let Err(e) = write() {
+            tracing::warn!("drun cache write failed: {e}");
+        }
     }
 }
 
@@ -506,8 +714,8 @@ mod windows_impl {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::super::Entry;
-    use super::unix_impl::{insert_first, parse_exec, strip_field_codes};
+    use super::super::{Entry, Payload};
+    use super::unix_impl::{insert_first, load_cache, parse_exec, strip_field_codes, write_cache};
     use std::collections::HashMap;
 
     #[test]
@@ -580,6 +788,113 @@ mod tests {
         let (prog, args) = parse_exec(r#"foo --opt "two words" %u"#).unwrap();
         assert_eq!(prog, "foo");
         assert_eq!(args, vec!["--opt".to_string(), "two words".to_string()]);
+    }
+
+    // ── Cache helpers ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn write_then_load_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("drun-cache.toml");
+
+        let dirs = vec![std::path::PathBuf::from("/usr/share/applications")];
+        let locales = vec!["en_US".to_string()];
+        let mtime: u64 = 1_700_000_000;
+        let entries = vec![
+            Entry::exec("Firefox", "firefox").with_args(vec!["-new-window".to_string()]),
+            Entry::exec("Alacritty", "alacritty")
+                .with_description("Terminal emulator".to_string())
+                .with_icon("utilities-terminal".to_string()),
+        ];
+
+        write_cache(&dirs, &locales, mtime, &entries, &path);
+        assert!(path.exists(), "cache file must be written");
+
+        let loaded = load_cache(&dirs, &locales, mtime, &path).expect("cache must hit on same key");
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].label, "Firefox");
+        assert_eq!(loaded[0].description, None);
+        assert_eq!(loaded[0].icon, None);
+        match &loaded[0].payload {
+            Payload::Exec { program, args } => {
+                assert_eq!(program, "firefox");
+                assert_eq!(*args, vec!["-new-window".to_string()]);
+            }
+            _ => panic!("expected Exec payload"),
+        }
+        assert_eq!(loaded[1].label, "Alacritty");
+        assert_eq!(loaded[1].description.as_deref(), Some("Terminal emulator"));
+        assert_eq!(loaded[1].icon.as_deref(), Some("utilities-terminal"));
+        match &loaded[1].payload {
+            Payload::Exec { program, args } => {
+                assert_eq!(program, "alacritty");
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected Exec payload"),
+        }
+    }
+
+    #[test]
+    fn load_cache_invalidates_on_mtime_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("drun-cache.toml");
+
+        let dirs = vec![std::path::PathBuf::from("/usr/share/applications")];
+        let locales = vec!["en_US".to_string()];
+        let entries = vec![Entry::exec("TestApp", "testapp")];
+
+        write_cache(&dirs, &locales, 1, &entries, &path);
+        assert!(path.exists(), "cache file must be written");
+
+        let result = load_cache(&dirs, &locales, 2, &path);
+        assert!(
+            result.is_none(),
+            "cache must be invalidated when mtime advances"
+        );
+    }
+
+    #[test]
+    fn load_cache_invalidates_on_dirs_or_locales_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("drun-cache.toml");
+
+        let dirs = vec![std::path::PathBuf::from("/usr/share/applications")];
+        let locales = vec!["en_US".to_string()];
+        let mtime: u64 = 42;
+        let entries = vec![Entry::exec("TestApp", "testapp")];
+
+        write_cache(&dirs, &locales, mtime, &entries, &path);
+
+        // Same mtime and locales, different dirs → miss.
+        let other_dirs = vec![std::path::PathBuf::from("/usr/local/share/applications")];
+        assert!(
+            load_cache(&other_dirs, &locales, mtime, &path).is_none(),
+            "changed dirs must invalidate the cache"
+        );
+
+        // Same mtime and dirs, different locales → miss.
+        let other_locales = vec!["de_DE".to_string()];
+        assert!(
+            load_cache(&dirs, &other_locales, mtime, &path).is_none(),
+            "changed locales must invalidate the cache"
+        );
+    }
+
+    #[test]
+    fn load_cache_missing_or_corrupt_file_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing.json");
+        assert!(
+            load_cache(&[], &[], 1, &missing).is_none(),
+            "missing cache file must be a miss"
+        );
+
+        let corrupt = dir.path().join("corrupt.json");
+        std::fs::write(&corrupt, b"this is not toml").unwrap();
+        assert!(
+            load_cache(&[], &[], 1, &corrupt).is_none(),
+            "corrupt cache file must be a miss"
+        );
     }
 }
 
