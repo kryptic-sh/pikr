@@ -40,21 +40,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Pikr is Linux-first, Wayland-only. macOS / Windows clippy is
-        # advisory until #8 / #9 (cross-platform desktop support) land —
-        # floem's layer-shell fork doesn't build on those targets yet, so
-        # `continue-on-error` keeps the matrix informative without
-        # blocking PRs. Drop the continue-on-error guard once the fork
-        # is portable.
-        include:
-          - os: ubuntu-latest
-            advisory: false
-          - os: macos-latest
-            advisory: true
-          - os: windows-latest
-            advisory: true
+        # All three OSes are required gates — the release pipeline
+        # (`build` needs this job) does not run until every clippy row
+        # is green. The macOS / Windows rows were advisory while the
+        # layer-shell fork couldn't build on those targets; they compile
+        # and lint clean now, so the continue-on-error guard is gone.
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.advisory }}
     steps:
       - uses: actions/checkout@v6
       # System deps for transitive gtk-rs / glib-sys build scripts pulled
@@ -189,11 +181,11 @@ jobs:
   e2e:
     name: e2e keyboard
     runs-on: ubuntu-latest
-    # Advisory until the sway-headless harness has shown a few green
-    # main-push runs without flake (tracked in #26). Drop
-    # `continue-on-error` once stability is proven so a real regression
-    # blocks PRs.
-    continue-on-error: true
+    # Required gate for the release pipeline (`build` needs this job) —
+    # a failure here blocks packaging and publishing. The two dmenu
+    # accept-emit cases stay quarantined (`#[ignore]`, #34) but the rest
+    # of the harness has been stable on main-push runs, so the advisory
+    # continue-on-error is gone.
     steps:
       - uses: actions/checkout@v6
       # `mesa-utils` + `libgl1-mesa-dri` pull in llvmpipe so the harness's
@@ -239,7 +231,12 @@ jobs:
 
   build:
     name: Build ${{ matrix.target }}
-    needs: [test]
+    # Every quality gate must be green before packaging and publishing:
+    # test, fmt, clippy (all OSes), deny, machete, smoke (all OSes), the
+    # keyboard e2e suite, and the startup time gate. A failure anywhere
+    # skips this job, which cascades to nfpm → publish-github-release →
+    # aur/brew/scoop, so deploy fails closed.
+    needs: [test, fmt, clippy, deny, machete, smoke, e2e, startup-gate]
     # Skipped on PRs only — runs on every main push + tag + manual
     # dispatch so packaging-code bugs surface BEFORE a release is cut.
     if: github.event_name != 'pull_request'

@@ -90,6 +90,13 @@ and this project adheres to
   launch-to-exit time (`--e2e-delay`, default 0.500 s) and nudges headless sway
   sessions with one sacrificial F12 so the first-focus marker can fire without
   real input devices.
+- CI: the release pipeline now fails closed — the build/publish chain (`build` →
+  nfpm → GitHub release → aur-bin / brew-tap / scoop-bucket) does not start
+  until every quality gate is green: `test`, `fmt`, `clippy` on all three OSes,
+  `cargo-deny`, `cargo-machete`, `smoke` on all three OSes, the keyboard e2e
+  suite, and the startup time gate. The macOS/Windows clippy rows and the e2e
+  job drop their advisory `continue-on-error`, so a failure anywhere blocks the
+  release instead of deploying alongside it.
 
 ## [Unreleased]
 
