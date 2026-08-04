@@ -690,10 +690,11 @@ impl AppState {
         // also benefits — that's when you want the launcher to show the
         // app you actually launch every day first.
         let now = std::time::SystemTime::now();
+        let mode_key = crate::picker::frecency::mode_key(self.cli_mode);
         for m in &mut ranked {
             let bonus = self
                 .usage
-                .bonus(self.cli_mode, &self.entries[m.index].payload, now);
+                .bonus(&mode_key, &self.entries[m.index].payload, now);
             m.score = m.score.saturating_add(bonus);
         }
         ranked.sort_by(|a, b| b.score.cmp(&a.score).then(a.index.cmp(&b.index)));

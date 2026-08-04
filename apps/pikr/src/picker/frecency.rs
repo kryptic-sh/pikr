@@ -100,10 +100,10 @@ impl Usage {
         entry.last_used = now;
     }
 
-    /// Compute the score bonus for `payload` under `cli_mode`, as of `now`.
-    /// Returns 0 for never-used payloads.
-    pub fn bonus(&self, cli_mode: CliMode, payload: &Payload, now: SystemTime) -> u16 {
-        let Some(per_mode) = self.modes.get(&mode_key(cli_mode)) else {
+    /// Compute the score bonus for `payload` under the mode `mode_key` names,
+    /// as of `now`. Returns 0 for never-used payloads.
+    pub fn bonus(&self, mode_key: &str, payload: &Payload, now: SystemTime) -> u16 {
+        let Some(per_mode) = self.modes.get(mode_key) else {
             return 0;
         };
         let key = payload_key(payload);
@@ -141,7 +141,7 @@ fn payload_key(payload: &Payload) -> String {
 
 /// Lowercase the Debug repr — matches the status bar's mode label and stays
 /// stable across `CliMode` reorderings.
-fn mode_key(mode: CliMode) -> String {
+pub(crate) fn mode_key(mode: CliMode) -> String {
     format!("{mode:?}").to_lowercase()
 }
 
@@ -193,7 +193,10 @@ mod tests {
     fn unused_entry_returns_zero_bonus() {
         let usage = Usage::default();
         let payload = Payload::Stdout("never-seen".into());
-        assert_eq!(usage.bonus(CliMode::Drun, &payload, SystemTime::now()), 0);
+        assert_eq!(
+            usage.bonus(&mode_key(CliMode::Drun), &payload, SystemTime::now()),
+            0
+        );
     }
 
     #[test]
@@ -204,7 +207,7 @@ mod tests {
             args: vec!["%U".into()],
         };
         usage.record(CliMode::Drun, &payload);
-        let bonus = usage.bonus(CliMode::Drun, &payload, SystemTime::now());
+        let bonus = usage.bonus(&mode_key(CliMode::Drun), &payload, SystemTime::now());
         assert!(bonus > 0, "freshly-accepted entry must get a bonus");
     }
 
@@ -213,11 +216,11 @@ mod tests {
         let mut usage = Usage::default();
         let payload = Payload::Stdout("foo".into());
         usage.record(CliMode::Run, &payload);
-        let one = usage.bonus(CliMode::Run, &payload, SystemTime::now());
+        let one = usage.bonus(&mode_key(CliMode::Run), &payload, SystemTime::now());
         for _ in 0..4 {
             usage.record(CliMode::Run, &payload);
         }
-        let five = usage.bonus(CliMode::Run, &payload, SystemTime::now());
+        let five = usage.bonus(&mode_key(CliMode::Run), &payload, SystemTime::now());
         assert!(
             five > one,
             "5 accepts should outweigh 1 (got {one} vs {five})"
@@ -252,8 +255,11 @@ mod tests {
         let mut usage = Usage::default();
         let payload = Payload::Stdout("foo".into());
         usage.record(CliMode::Drun, &payload);
-        assert!(usage.bonus(CliMode::Drun, &payload, SystemTime::now()) > 0);
-        assert_eq!(usage.bonus(CliMode::Ssh, &payload, SystemTime::now()), 0);
+        assert!(usage.bonus(&mode_key(CliMode::Drun), &payload, SystemTime::now()) > 0);
+        assert_eq!(
+            usage.bonus(&mode_key(CliMode::Ssh), &payload, SystemTime::now()),
+            0
+        );
     }
 
     #[test]
@@ -319,6 +325,6 @@ mod tests {
         usage.record(CliMode::Emoji, &payload);
         let text = toml::to_string(&usage).unwrap();
         let back: Usage = toml::from_str(&text).unwrap();
-        assert!(back.bonus(CliMode::Emoji, &payload, SystemTime::now()) > 0);
+        assert!(back.bonus(&mode_key(CliMode::Emoji), &payload, SystemTime::now()) > 0);
     }
 }
