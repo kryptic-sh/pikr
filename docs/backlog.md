@@ -1,11 +1,5 @@
 # Backlog
 
-- Validate the under-500-ms cold-launch target in a native graphical session.
-  Run `RUST_LOG=pikr=debug pikr` to capture config, collection, initial-rank,
-  first-paint-pass, and first-focus markers, then pair them with an external
-  launch-to-visible/input-ready measurement. This terminal had no
-  `WAYLAND_DISPLAY`, so compositor presentation and GPU initialization were not
-  measurable.
 - Flaky smoke test: `startup_readiness_script::accepts_matching_candidate_after_focus_within_deadline`
   fails intermittently under full-suite parallel load (script reports "got
   status 0 and output ''" at ~0.1 s; passes in isolation). Cause is a
