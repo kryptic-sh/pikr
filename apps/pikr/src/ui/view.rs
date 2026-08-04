@@ -829,6 +829,7 @@ impl AppState {
         self.picker.query.set(String::new());
         self.picker.query_cursor.set(0);
         self.picker.selected.set(0);
+        self.picker.reset_after_mode_switch();
         self.rerank();
     }
 }

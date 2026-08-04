@@ -68,6 +68,16 @@ impl PickerState {
         n
     }
 
+    /// A mode switch rebuilds the entry list and drops selection state; it
+    /// must also exit Visual and clear any count prefix. Leaving Visual armed
+    /// with a stale anchor made the next Enter execute a range of the NEW
+    /// mode's list (the `:mode`-from-Visual multi-launch bug).
+    pub fn reset_after_mode_switch(&self) {
+        self.vim_mode.set(VimMode::Normal);
+        self.visual_anchor.set(None);
+        self.count.set(None);
+    }
+
     /// Push a digit into the count prefix.
     pub fn push_count_digit(&self, d: u32) {
         let cur = self.count.get().unwrap_or(0);
@@ -189,6 +199,21 @@ mod tests {
         st.selected.set(5);
         st.clamp_selected(0);
         assert_eq!(st.selected.get_untracked(), 0);
+    }
+
+    #[test]
+    fn reset_after_mode_switch_exits_visual_and_clears_count() {
+        // Regression for the `:mode`-from-Visual bug: a mode switch must
+        // leave the picker in Normal with no anchor, or the next Enter
+        // executes a range of the new mode's list.
+        let st = PickerState::new();
+        st.vim_mode.set(VimMode::Visual);
+        st.visual_anchor.set(Some(5));
+        st.count.set(Some(usize::MAX));
+        st.reset_after_mode_switch();
+        assert_eq!(st.vim_mode.get(), VimMode::Normal);
+        assert_eq!(st.visual_anchor.get(), None);
+        assert_eq!(st.count.get(), None);
     }
 
     /// Pathological count prefixes (dozens of digits) saturate at
