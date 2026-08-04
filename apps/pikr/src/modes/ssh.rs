@@ -3,8 +3,7 @@
 
 use super::{Entry, Mode, Payload};
 use anyhow::Result;
-use std::path::PathBuf;
-use std::process::Command;
+use std::path::{Path, PathBuf};
 
 #[derive(Default)]
 pub struct Ssh;
@@ -257,16 +256,70 @@ fn resolve_terminal() -> String {
         .to_string()
 }
 
-/// Probe whether a tool exists by attempting to run it with `--version`.
-/// Works cross-platform without touching unix permission bits.
+/// Probe whether a tool exists by walking `$PATH` and stat'ing the
+/// binary — cheaper than spawning `--version` per candidate on the
+/// launch path (a fork/exec/wait per miss).
 fn is_tool_installed(name: &str) -> bool {
-    Command::new(name)
-        .arg("--version")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok()
+    if name.contains('/') || name.contains('\\') {
+        // Path-like `$TERMINAL` value ("/usr/bin/alacritty"): probe the
+        // path directly, not via PATH joins.
+        return std::fs::metadata(name)
+            .map(|m| m.is_file() && is_executable(Path::new(name), &m))
+            .unwrap_or(false);
+    }
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    probe_in_path(&path, name)
+}
+
+/// Pure probe over an explicit PATH string — testable without env mutation.
+fn probe_in_path(path_var: &std::ffi::OsStr, name: &str) -> bool {
+    std::env::split_paths(path_var).any(|dir| {
+        candidate_names(name).iter().any(|candidate| {
+            let path = dir.join(candidate);
+            std::fs::metadata(&path)
+                .map(|m| m.is_file() && is_executable(&path, &m))
+                .unwrap_or(false)
+        })
+    })
+}
+
+/// Names to try for a probe: the name as given, plus (Windows) the name
+/// with each PATHEXT extension appended — mirroring what `Command::new`
+/// resolves at spawn time, so `$TERMINAL=pwsh` finds `pwsh.exe`.
+fn candidate_names(name: &str) -> Vec<String> {
+    #[cfg(windows)]
+    {
+        let pathext =
+            std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+        let mut names = vec![name.to_string()];
+        for ext in pathext.split(';').filter(|e| !e.is_empty()) {
+            names.push(format!("{name}{ext}"));
+        }
+        names
+    }
+    #[cfg(not(windows))]
+    {
+        vec![name.to_string()]
+    }
+}
+
+/// Executable predicate: Unix checks the executable bit; Windows accepts
+/// any file (PATHEXT extension resolution happens in `candidate_names`
+/// and again at spawn time).
+fn is_executable(path: &Path, meta: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = path;
+        meta.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, meta);
+        true
+    }
 }
 
 #[cfg(test)]
@@ -451,5 +504,53 @@ mod tests {
         // On any platform, home_dir() must not panic — it may return None if
         // home is genuinely unset, but it must not abort the process.
         let _ = home_dir();
+    }
+
+    // ── tool-probe tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn probe_finds_executable_in_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("pikr-test-tool");
+        std::fs::write(&tool, b"#!/bin/sh\nexit 0").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let path = std::env::join_paths([dir.path()]).unwrap();
+        assert!(probe_in_path(&path, "pikr-test-tool"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn probe_ignores_non_executable_in_path() {
+        // Same file WITHOUT the exec bit must not be found on Unix.
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("pikr-test-tool");
+        std::fs::write(&tool, b"#!/bin/sh\nexit 0").unwrap();
+        let path = std::env::join_paths([dir.path()]).unwrap();
+        assert!(!probe_in_path(&path, "pikr-test-tool"));
+    }
+
+    #[test]
+    fn probe_misses_absent_tool() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = std::env::join_paths([dir.path()]).unwrap();
+        assert!(!probe_in_path(&path, "no-such-tool-xyz"));
+    }
+
+    #[test]
+    fn probe_path_like_name_directly() {
+        // An absolute $TERMINAL value is probed as a path, not via PATH.
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("direct-tool");
+        std::fs::write(&tool, b"#!/bin/sh\nexit 0").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert!(is_tool_installed(tool.to_str().unwrap()));
     }
 }
