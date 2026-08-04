@@ -482,7 +482,7 @@ mod windows_impl {
     /// the whole tree covers both new `.lnk` files anywhere and structural
     /// changes.  Returns `None` if no root exists or no entry's mtime is
     /// readable.
-    fn tree_mtime(roots: &[PathBuf]) -> Option<u64> {
+    pub fn tree_mtime(roots: &[PathBuf]) -> Option<u64> {
         roots
             .iter()
             .filter(|r| r.exists())
