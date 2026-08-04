@@ -125,6 +125,7 @@ mod startup_readiness_script {
         result: &str,
         status: i32,
         wtype_behavior: WtypeBehavior,
+        extra_args: &[&str],
     ) -> ProbeOutput {
         let dir = tempfile::tempdir().unwrap();
         let trigger = dir.path().join("trigger");
@@ -153,10 +154,13 @@ mod startup_readiness_script {
         command
             .arg(script())
             .args(["--delay", "0.500"])
+            .args(extra_args)
             .env("WAYLAND_DISPLAY", "test")
             .env("PIKR_BIN", pikr)
             .env("WTYPE_BIN", wtype)
-            .env("PIKR_FOCUS_ATTEMPTS", "5")
+            // > 10 so the script's headless-nudge F12 (fired at attempt 10)
+            // is exercised by `terminates_when_focus_marker_never_arrives`.
+            .env("PIKR_FOCUS_ATTEMPTS", "20")
             .env("PIKR_TEST_TRIGGER", trigger)
             .env("PIKR_TEST_PID", &pid_log)
             .env("PIKR_TEST_WTYPE_ARGS", &args_log);
@@ -182,7 +186,7 @@ mod startup_readiness_script {
 
     #[test]
     fn accepts_matching_candidate_after_focus_within_deadline() {
-        let out = run_probe(Some(1_000), "banana", 0, WtypeBehavior::Succeed);
+        let out = run_probe(Some(1_000), "banana", 0, WtypeBehavior::Succeed, &[]);
         assert!(
             out.process.status.success(),
             "stdout:\n{}\nstderr:\n{}",
@@ -192,12 +196,37 @@ mod startup_readiness_script {
         let stdout = String::from_utf8_lossy(&out.process.stdout);
         assert!(stdout.contains("PASS"));
         assert!(stdout.contains("first focus at 1000 us"));
+        assert!(
+            stdout.contains("end-to-end"),
+            "the probe must report the end-to-end launch-to-exit duration; got:\n{stdout}"
+        );
+        assert_eq!(out.wtype_args, "-k F12 -k Return\n");
+    }
+
+    #[test]
+    fn rejects_e2e_time_over_deadline() {
+        // The fake pikr takes tens of ms to run its whole lifecycle, so a 1 ms
+        // e2e deadline is guaranteed to trip even though focus and the result
+        // are both fine.
+        let out = run_probe(
+            Some(1_000),
+            "banana",
+            0,
+            WtypeBehavior::Succeed,
+            &["--e2e-delay", "0.001"],
+        );
+        assert!(!out.process.status.success());
+        assert!(
+            String::from_utf8_lossy(&out.process.stderr).contains("end-to-end launch-to-exit took"),
+            "stderr:\n{}",
+            String::from_utf8_lossy(&out.process.stderr)
+        );
         assert_eq!(out.wtype_args, "-k F12 -k Return\n");
     }
 
     #[test]
     fn rejects_wrong_result() {
-        let out = run_probe(Some(1_000), "apple", 0, WtypeBehavior::Succeed);
+        let out = run_probe(Some(1_000), "apple", 0, WtypeBehavior::Succeed, &[]);
         assert!(!out.process.status.success());
         assert!(String::from_utf8_lossy(&out.process.stderr).contains("FAIL"));
         assert_eq!(out.wtype_args, "-k F12 -k Return\n");
@@ -205,7 +234,7 @@ mod startup_readiness_script {
 
     #[test]
     fn rejects_focus_after_deadline_without_injecting_keys() {
-        let out = run_probe(Some(500_001), "banana", 0, WtypeBehavior::Succeed);
+        let out = run_probe(Some(500_001), "banana", 0, WtypeBehavior::Succeed, &[]);
         assert!(!out.process.status.success());
         assert!(
             String::from_utf8_lossy(&out.process.stderr)
@@ -216,18 +245,20 @@ mod startup_readiness_script {
 
     #[test]
     fn terminates_when_focus_marker_never_arrives() {
-        let out = run_probe(None, "banana", 0, WtypeBehavior::Succeed);
+        let out = run_probe(None, "banana", 0, WtypeBehavior::Succeed, &[]);
         assert!(!out.process.status.success());
         assert!(
             String::from_utf8_lossy(&out.process.stderr)
                 .contains("did not report an authentic first-focus event")
         );
-        assert!(out.wtype_args.is_empty());
+        // The headless nudge fires (focus never arrived) but the marker gate
+        // still rejects the probe — the sacrificial F12 is the only key sent.
+        assert_eq!(out.wtype_args, "-k F12\n");
     }
 
     #[test]
     fn rejects_failed_wtype() {
-        let out = run_probe(Some(1_000), "banana", 0, WtypeBehavior::Fail);
+        let out = run_probe(Some(1_000), "banana", 0, WtypeBehavior::Fail, &[]);
         assert!(!out.process.status.success());
         assert!(String::from_utf8_lossy(&out.process.stderr).contains("wtype could not send"));
         assert_eq!(out.wtype_args, "-k F12 -k Return\n");
@@ -235,7 +266,7 @@ mod startup_readiness_script {
 
     #[test]
     fn times_out_hanging_wtype() {
-        let out = run_probe(Some(1_000), "banana", 0, WtypeBehavior::Hang);
+        let out = run_probe(Some(1_000), "banana", 0, WtypeBehavior::Hang, &[]);
         assert!(!out.process.status.success());
         assert!(String::from_utf8_lossy(&out.process.stderr).contains("wtype could not send"));
         assert_eq!(out.wtype_args, "-k F12 -k Return\n");

@@ -60,6 +60,16 @@ and this project adheres to
 - The e2e harness gives every pikr under test isolated `XDG_CONFIG_HOME` /
   `XDG_STATE_HOME` under the sway tempdir, so tests never read the developer's
   real config nor write real history/usage files.
+- New external e2e time gate (`apps/pikr/tests/startup_gate.rs`): drives the
+  release binary inside sway headless, measures the wall-clock launch-to-exit
+  time after a selection is locked in, and asserts it is within 500 ms — the
+  same target as the usable-startup marker. Runs as a solo CI job after the full
+  test suite so the measurement gets the whole runner and a slow launch fails
+  the workflow.
+- `scripts/test-startup-readiness.sh` now also measures and gates the end-to-end
+  launch-to-exit time (`--e2e-delay`, default 0.500 s) and nudges headless sway
+  sessions with one sacrificial F12 so the first-focus marker can fire without
+  real input devices.
 
 ## [0.8.7] - 2026-08-04
 

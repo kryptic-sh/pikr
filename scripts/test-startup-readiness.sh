@@ -4,15 +4,18 @@ set -uo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/test-startup-readiness.sh [--delay SECONDS]
+Usage: scripts/test-startup-readiness.sh [--delay SECONDS] [--e2e-delay SECONDS]
 
 Launch the release Pikr binary in dmenu mode, require its monotonic first-focus
 marker to fall within the chosen deadline, then verify that it accepts F12 and
-Return and emits the matching candidate.
+Return and emits the matching candidate. Also measures the end-to-end time —
+launch to process exit after the selection is locked in — and requires it to
+fall within the e2e deadline.
 
 Options:
-  --delay SECONDS  First-focus deadline in seconds (default: 0.500)
-  -h, --help       Show this help
+  --delay SECONDS     First-focus deadline in seconds (default: 0.500)
+  --e2e-delay SECONDS  End-to-end launch-to-exit deadline in seconds (default: 0.500)
+  -h, --help          Show this help
 
 Environment:
   PIKR_BIN          Explicit binary to test (default: build current source)
@@ -26,6 +29,7 @@ EOF
 }
 
 delay="0.500"
+e2e_delay="0.500"
 while (($# > 0)); do
   case "$1" in
     --delay)
@@ -34,6 +38,14 @@ while (($# > 0)); do
         exit 2
       fi
       delay="$2"
+      shift 2
+      ;;
+    --e2e-delay)
+      if (($# < 2)); then
+        printf 'error: --e2e-delay requires a value\n' >&2
+        exit 2
+      fi
+      e2e_delay="$2"
       shift 2
       ;;
     -h | --help)
@@ -50,6 +62,10 @@ done
 
 if [[ ! "$delay" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   printf 'error: --delay must be a non-negative number of seconds\n' >&2
+  exit 2
+fi
+if [[ ! "$e2e_delay" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  printf 'error: --e2e-delay must be a non-negative number of seconds\n' >&2
   exit 2
 fi
 
@@ -88,6 +104,7 @@ for tool in "$wtype_bin" "$timeout_bin" setsid awk; do
 done
 
 deadline_us=$(awk -v delay="$delay" 'BEGIN { printf "%.0f", delay * 1000000 }')
+e2e_deadline_ms=$(awk -v d="$e2e_delay" 'BEGIN { printf "%.0f", d * 1000 }')
 watchdog_seconds=$(awk -v delay="$delay" 'BEGIN { printf "%.3f", delay + 2 }')
 default_focus_attempts=$(awk -v delay="$delay" 'BEGIN { printf "%.0f", (delay + 1) * 100 }')
 pid=""
@@ -113,7 +130,9 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM HUP
 
-printf 'Testing first focus within %s seconds, then candidate acceptance...\n' "$delay"
+printf 'Testing first focus within %s seconds, end-to-end within %s seconds, then candidate acceptance...\n' \
+  "$delay" "$e2e_delay"
+e2e_start_ms=$(date +%s%3N)
 coproc PIKR_PROCESS {
   exec setsid "$timeout_bin" --signal=TERM --kill-after=0.1 "$watchdog_seconds" \
     env NO_COLOR=1 RUST_LOG=pikr=debug "$pikr_bin" \
@@ -137,6 +156,16 @@ for ((attempt = 0; attempt < focus_attempts; attempt++)); do
     fi
   elif ! kill -0 "$pid" 2>/dev/null; then
     break
+  fi
+  # Headless-compositor nudge: sway's headless backend has no input devices,
+  # so a layer-shell surface never receives keyboard focus until some client
+  # connects. Send one sacrificial F12 (unmapped in pikr, inert to other apps)
+  # once, early, to trigger the seat — the focus-marker gate below still
+  # applies. In a real session pikr is focused within a few attempts and the
+  # nudge never fires.
+  if ((attempt == 10)) && [[ -z "$focus_line" ]]; then
+    "$timeout_bin" --signal=TERM --kill-after=0.1 2 \
+      "$wtype_bin" -k F12 >/dev/null 2>&1 || true
   fi
 done
 
@@ -170,6 +199,7 @@ done
 wait "$pid"
 status=$?
 pid=""
+e2e_ms=$(( $(date +%s%3N) - e2e_start_ms ))
 
 result=""
 for line in "${output_lines[@]}"; do
@@ -179,8 +209,15 @@ for line in "${output_lines[@]}"; do
 done
 
 if [[ "$status" -eq 0 && "$result" == "banana" ]]; then
-  printf 'PASS: first focus at %s us met the %s us deadline; accepted "banana"\n' \
-    "$focus_us" "$deadline_us"
+  if ((e2e_ms > e2e_deadline_ms)); then
+    printf 'FAIL: end-to-end launch-to-exit took %s ms, exceeding the %s ms deadline\n' \
+      "$e2e_ms" "$e2e_deadline_ms" >&2
+    terminate_child
+    printf '%s\n' "${output_lines[@]}" >&2
+    exit 1
+  fi
+  printf 'PASS: first focus at %s us met the %s us deadline; accepted "banana" in %s ms end-to-end (deadline %s ms)\n' \
+    "$focus_us" "$deadline_us" "$e2e_ms" "$e2e_deadline_ms"
   for line in "${output_lines[@]}"; do
     if [[ "$line" == *"startup config loaded"* ||
       "$line" == *"startup entries collected"* ||
