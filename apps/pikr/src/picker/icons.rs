@@ -12,19 +12,31 @@ use std::{
 };
 
 /// Per-process XDG icon-theme cache. Stores both hits and misses so that the
-/// same name is never looked up twice, and caches icon file bytes — SVG
-/// rasterised to PNG once so resvg's render pass doesn't repeat, raw
-/// PNG / JPEG bytes read once so the disk isn't touched on every
-/// virtual_stack frame.
+/// same name is never looked up twice, and caches icon file bytes per file
+/// version — SVG rasterised to PNG once so resvg's render pass doesn't
+/// repeat, raw PNG / JPEG bytes read once so the disk isn't touched on every
+/// virtual_stack frame. A `stat` per lookup checks the file's mtime/length
+/// and re-reads (or re-rasterises) when the file changed on disk; a rewrite
+/// that preserves both mtime and length on a coarse filesystem stays
+/// undetectable, which is inherent to a stat key.
 pub struct IconCache {
     /// name-or-path → resolved file path (or `None` for misses).
     cache: HashMap<String, Option<PathBuf>>,
-    /// SVG file path → PNG bytes, rasterised once via resvg.
-    raster_cache: HashMap<PathBuf, Arc<Vec<u8>>>,
-    /// Raw file path → file bytes, read once. PNGs / JPEGs go straight to
-    /// floem's `img()` from here instead of being re-read on each row
-    /// rebuild.
-    file_cache: HashMap<PathBuf, Arc<Vec<u8>>>,
+    /// SVG file path → PNG bytes, rasterised once per file version.
+    raster_cache: HashMap<PathBuf, CachedBytes>,
+    /// Raw file path → file bytes, read once per file version. PNGs / JPEGs
+    /// go straight to floem's `img()` from here instead of being re-read on
+    /// each row rebuild.
+    file_cache: HashMap<PathBuf, CachedBytes>,
+}
+
+/// Cached file bytes plus the mtime/length they were read at, so a file
+/// replaced on disk while pikr runs is re-read instead of serving stale
+/// bytes for the session.
+struct CachedBytes {
+    mtime: std::time::SystemTime,
+    len: u64,
+    bytes: Arc<Vec<u8>>,
 }
 
 /// Conventional generic-application icon names tried in order when an
@@ -135,8 +147,13 @@ impl IconCache {
         None
     }
 
-    /// Rasterise `svg_path` to PNG bytes at `size_px` × `size_px`, cached
-    /// per path. Returns `None` if the file can't be read or parsed.
+    /// Rasterise `svg_path` to PNG bytes at `size_px` × `size_px`, cached per
+    /// file version. Returns `None` if the file can't be read or parsed.
+    ///
+    /// A `stat` per lookup checks the file's mtime and length; when either
+    /// differs from the cached entry the SVG is re-rasterised, so an icon
+    /// replaced on disk while pikr runs picks up the new bytes. The stat is
+    /// far cheaper than the render pass it lets us skip.
     ///
     /// Bypasses floem's `svg()` view, which goes through vello's SVG path
     /// and silently drops paths that use features it doesn't fully
@@ -145,27 +162,61 @@ impl IconCache {
     /// a black square. resvg handles the full SVG 1.1 surface, produces
     /// a correct raster, and we route the PNG through floem's `img()`.
     pub fn rasterise_svg(&mut self, svg_path: &Path, size_px: u32) -> Option<Arc<Vec<u8>>> {
-        if let Some(cached) = self.raster_cache.get(svg_path) {
-            return Some(cached.clone());
+        let meta = std::fs::metadata(svg_path).ok()?;
+        let Some(mtime) = meta.modified().ok() else {
+            // No mtime to key freshness on — rasterise without caching.
+            return render_svg_to_png(svg_path, size_px).map(Arc::new);
+        };
+        if let Some(cached) = self.raster_cache.get(svg_path)
+            && cached.mtime == mtime
+            && cached.len == meta.len()
+        {
+            return Some(cached.bytes.clone());
         }
         let bytes = render_svg_to_png(svg_path, size_px)?;
         let arc = Arc::new(bytes);
-        self.raster_cache
-            .insert(svg_path.to_path_buf(), arc.clone());
+        self.raster_cache.insert(
+            svg_path.to_path_buf(),
+            CachedBytes {
+                mtime,
+                len: meta.len(),
+                bytes: arc.clone(),
+            },
+        );
         Some(arc)
     }
 
-    /// Read `path`'s bytes once, cached per path for subsequent calls. PNG /
+    /// Read `path`'s bytes, cached per file version for subsequent calls. PNG /
     /// JPEG files go straight to floem's `img()`; caching the bytes avoids a
     /// disk read on every row rebuild (the virtual_stack rebuilds visible rows
     /// on each rerank and scroll).
+    ///
+    /// A `stat` per lookup checks the file's mtime and length; when either
+    /// differs from the cached entry the file is re-read, so an icon replaced
+    /// on disk while pikr runs picks up the new bytes. The stat is far cheaper
+    /// than the disk read it lets us skip.
     pub fn file_bytes(&mut self, path: &Path) -> Option<Arc<Vec<u8>>> {
-        if let Some(cached) = self.file_cache.get(path) {
-            return Some(cached.clone());
+        let meta = std::fs::metadata(path).ok()?;
+        let Some(mtime) = meta.modified().ok() else {
+            // No mtime to key freshness on — read without caching.
+            return std::fs::read(path).ok().map(Arc::new);
+        };
+        if let Some(cached) = self.file_cache.get(path)
+            && cached.mtime == mtime
+            && cached.len == meta.len()
+        {
+            return Some(cached.bytes.clone());
         }
         let bytes = std::fs::read(path).ok()?;
         let arc = Arc::new(bytes);
-        self.file_cache.insert(path.to_path_buf(), arc.clone());
+        self.file_cache.insert(
+            path.to_path_buf(),
+            CachedBytes {
+                mtime,
+                len: meta.len(),
+                bytes: arc.clone(),
+            },
+        );
         Some(arc)
     }
 
@@ -218,6 +269,15 @@ impl Default for IconCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pin_mtime(path: &Path, t: std::time::SystemTime) {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(t)
+            .unwrap();
+    }
 
     #[test]
     fn absolute_path_passthrough() {
@@ -372,6 +432,96 @@ mod tests {
         let result = cache.file_bytes(Path::new("/tmp/does-not-exist.png"));
         assert!(result.is_none());
         assert_eq!(cache.file_cache_len(), 0);
+    }
+
+    #[test]
+    fn file_bytes_invalidates_on_mtime_change() {
+        // An icon replaced on disk while pikr runs must be re-read, not served
+        // from the session cache. Content changes with the SAME byte length, so
+        // only the pinned mtime distinguishes the versions.
+        let dir = std::env::temp_dir();
+        let path = dir.join("pikr-test-icon-replaced.png");
+        std::fs::write(&path, b"AAAA").unwrap();
+        let mut cache = IconCache::new();
+        let first = cache.file_bytes(&path).expect("read");
+        assert_eq!(&first[..], b"AAAA");
+
+        let t0 = std::time::SystemTime::now();
+        std::fs::write(&path, b"BBBB").unwrap();
+        pin_mtime(&path, t0 + std::time::Duration::from_millis(1));
+
+        let second = cache.file_bytes(&path).expect("re-read");
+        assert_ne!(
+            &second[..],
+            &first[..],
+            "changed mtime must re-read the file"
+        );
+        assert_eq!(&second[..], b"BBBB");
+        assert_eq!(
+            cache.file_cache_len(),
+            1,
+            "entry must be replaced, not duplicated"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn file_bytes_invalidates_on_len_change() {
+        // Same pinned mtime, different length: the len half of the key must
+        // invalidate on its own.
+        let dir = std::env::temp_dir();
+        let path = dir.join("pikr-test-icon-len.png");
+        std::fs::write(&path, b"AAAA").unwrap();
+        let mut cache = IconCache::new();
+        let first = cache.file_bytes(&path).expect("read");
+
+        let t0 = std::time::SystemTime::now();
+        std::fs::write(&path, b"BB").unwrap();
+        pin_mtime(&path, t0); // restore the original mtime — only len differs
+
+        let second = cache.file_bytes(&path).expect("re-read");
+        assert_ne!(
+            &second[..],
+            &first[..],
+            "changed length must re-read the file"
+        );
+        assert_eq!(&second[..], b"BB");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn rasterise_svg_invalidates_on_change() {
+        // A replaced SVG must re-rasterise: the old PNG bytes must not survive.
+        let dir = std::env::temp_dir();
+        let path = dir.join("pikr-test-icon-replaced.svg");
+        std::fs::write(
+            &path,
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ff0000"/></svg>"##,
+        )
+        .unwrap();
+        let mut cache = IconCache::new();
+        let first = cache.rasterise_svg(&path, 24).expect("rasterise");
+        assert_eq!(&first[..8], b"\x89PNG\r\n\x1a\n");
+
+        let t0 = std::time::SystemTime::now();
+        std::fs::write(
+            &path,
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#00ff00"/></svg>"##,
+        )
+        .unwrap();
+        pin_mtime(&path, t0 + std::time::Duration::from_millis(1));
+
+        let second = cache.rasterise_svg(&path, 24).expect("re-rasterise");
+        assert!(
+            !Arc::ptr_eq(&first, &second),
+            "a changed SVG must re-rasterise, not return the cached PNG"
+        );
+        assert_eq!(
+            cache.raster_cache_len(),
+            1,
+            "entry must be replaced, not duplicated"
+        );
+        std::fs::remove_file(&path).ok();
     }
 
     #[test]
