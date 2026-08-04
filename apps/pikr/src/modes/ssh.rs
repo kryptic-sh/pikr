@@ -64,7 +64,7 @@ fn home_dir() -> Option<PathBuf> {
 /// Walk the ssh config text, returning one Entry per non-wildcard Host.
 pub fn parse_config(text: &str, terminal: &str) -> Vec<Entry> {
     let mut entries = Vec::new();
-    let mut current_host: Option<String> = None;
+    let mut current_hosts: Vec<String> = Vec::new();
     let mut hostname: Option<String> = None;
     let mut user: Option<String> = None;
 
@@ -80,16 +80,27 @@ pub fn parse_config(text: &str, terminal: &str) -> Vec<Entry> {
 
         if key == "host" {
             // Flush the previous block before starting a new one.
-            if let Some(host) = current_host.take() {
-                entries.push(make_entry(host, hostname.take(), user.take(), terminal));
-            }
+            flush_hosts(
+                &mut entries,
+                &mut current_hosts,
+                &mut hostname,
+                &mut user,
+                terminal,
+            );
+            // ssh_config(5) allows `Host a b` — one entry per pattern.
             // Wildcard patterns are not real hosts — skip them.
-            if value.contains('*') || value.contains('?') {
-                current_host = None;
-            } else {
-                current_host = Some(value);
+            current_hosts = value
+                .split_whitespace()
+                .filter(|p| !p.contains('*') && !p.contains('?'))
+                .map(str::to_string)
+                .collect();
+            if current_hosts.is_empty() {
+                // A wildcard-only block contributes no entries — its
+                // HostName/User must not leak into the next block.
+                hostname = None;
+                user = None;
             }
-        } else if current_host.is_some() {
+        } else if !current_hosts.is_empty() {
             match key.as_str() {
                 "hostname" => hostname = Some(value),
                 "user" => user = Some(value),
@@ -98,10 +109,34 @@ pub fn parse_config(text: &str, terminal: &str) -> Vec<Entry> {
         }
     }
     // Flush the final block.
-    if let Some(host) = current_host {
-        entries.push(make_entry(host, hostname, user, terminal));
-    }
+    flush_hosts(
+        &mut entries,
+        &mut current_hosts,
+        &mut hostname,
+        &mut user,
+        terminal,
+    );
     entries
+}
+
+/// Emit one entry per accumulated host, sharing the block's HostName/User,
+/// then clear the block state. No-op when the block produced no hosts.
+fn flush_hosts(
+    entries: &mut Vec<Entry>,
+    hosts: &mut Vec<String>,
+    hostname: &mut Option<String>,
+    user: &mut Option<String>,
+    terminal: &str,
+) {
+    if hosts.is_empty() {
+        return;
+    }
+    let hosts = std::mem::take(hosts);
+    let hostname = hostname.take();
+    let user = user.take();
+    for host in hosts {
+        entries.push(make_entry(host, hostname.clone(), user.clone(), terminal));
+    }
 }
 
 fn make_entry(
@@ -276,6 +311,42 @@ mod tests {
         let input = "Host bare\n";
         let entries = parse_config(input, "xterm");
         assert_eq!(entries.len(), 1);
+        assert!(entries[0].description.is_none());
+    }
+
+    #[test]
+    fn host_pattern_list_splits_into_entries() {
+        // ssh_config(5) allows `Host dev prod`; each pattern is its own
+        // entry, sharing the block's HostName.
+        let input = "Host dev prod\n    HostName example.com\n";
+        let entries = parse_config(input, "xterm");
+        let labels: Vec<&str> = entries.iter().map(|e| e.label.as_str()).collect();
+        assert_eq!(labels, ["dev", "prod"]);
+        assert!(
+            entries
+                .iter()
+                .all(|e| e.description.as_deref() == Some("example.com"))
+        );
+    }
+
+    #[test]
+    fn wildcard_among_patterns_skipped_keeps_others() {
+        // `Host foo * bar` — the wildcard pattern is dropped, the real ones
+        // kept.
+        let input = "Host foo * bar\n";
+        let entries = parse_config(input, "xterm");
+        let labels: Vec<&str> = entries.iter().map(|e| e.label.as_str()).collect();
+        assert_eq!(labels, ["foo", "bar"]);
+    }
+
+    #[test]
+    fn wildcard_block_settings_do_not_leak_into_next_block() {
+        // A wildcard-only block contributes no entries, so its HostName must
+        // not leak into the following block's description.
+        let input = "Host *\n    HostName example.com\nHost foo\n";
+        let entries = parse_config(input, "xterm");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "foo");
         assert!(entries[0].description.is_none());
     }
 
