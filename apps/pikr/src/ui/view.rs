@@ -134,19 +134,19 @@ fn blend(over: Color, under: Color, t: f32) -> Color {
 /// shaping introduced visible horizontal jitter when characters
 /// switched between matched and unmatched as the user typed.
 ///
-/// `font_family` and `font_size` are baked into the `Attrs` because
-/// `rich_text` does not inherit them from the parent style cascade
-/// (unlike `label`, which reads its font off `self.font.*`).
+/// `families` (parsed once per session) and `font_size` are baked into the
+/// `Attrs` because `rich_text` does not inherit them from the parent style
+/// cascade (unlike `label`, which reads its font off `self.font.*`).
 fn highlighted_label(
     label_str: String,
-    positions: Vec<u32>,
+    positions: &[u32],
     fg: Color,
     accent: Color,
-    font_family: String,
+    families: std::sync::Arc<Vec<FamilyOwned>>,
     font_size: f32,
 ) -> impl IntoView {
     // Collapse adjacent same-color runs to keep the AttrsList compact.
-    let pos_set: std::collections::HashSet<u32> = positions.into_iter().collect();
+    let pos_set: std::collections::HashSet<u32> = positions.iter().copied().collect();
     let mut runs: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
     let mut byte = 0usize;
     for (i, c) in label_str.chars().enumerate() {
@@ -164,17 +164,11 @@ fn highlighted_label(
     }
 
     let compute = move || {
-        let families: Vec<FamilyOwned> = FamilyOwned::parse_list(&font_family).collect();
-        let default_attrs = Attrs::new()
-            .color(fg)
-            .family(&families)
-            .font_size(font_size);
+        let fam = families.clone();
+        let default_attrs = Attrs::new().color(fg).family(&fam).font_size(font_size);
         let mut attrs_list = AttrsList::new(default_attrs);
         for (range, color) in &runs {
-            let span_attrs = Attrs::new()
-                .color(*color)
-                .family(&families)
-                .font_size(font_size);
+            let span_attrs = Attrs::new().color(*color).family(&fam).font_size(font_size);
             attrs_list.add_span(range.clone(), span_attrs);
         }
         (label_str.clone(), attrs_list)
@@ -188,8 +182,8 @@ fn highlighted_label(
 #[allow(clippy::too_many_arguments)]
 fn entry_row(
     entry: Arc<Entry>,
-    positions: Vec<u32>,
-    desc_positions: Vec<u32>,
+    positions: Rc<Vec<u32>>,
+    desc_positions: Rc<Vec<u32>>,
     mi: usize,
     selected_sig: RwSignal<usize>,
     visual_anchor_sig: RwSignal<Option<usize>>,
@@ -198,7 +192,7 @@ fn entry_row(
     accent: Color,
     muted: Color,
     selected_bg: Color,
-    font_family: String,
+    families: std::sync::Arc<Vec<FamilyOwned>>,
     font_size: f32,
     sheet: Arc<hjkl_css::Stylesheet>,
 ) -> impl IntoView {
@@ -266,10 +260,10 @@ fn entry_row(
 
     let label_view = highlighted_label(
         entry.label.clone(),
-        positions,
+        &positions,
         fg,
         accent,
-        font_family.clone(),
+        families.clone(),
         font_size,
     );
 
@@ -288,10 +282,10 @@ fn entry_row(
             let sheet_desc = Arc::clone(&sheet);
             highlighted_label(
                 wrapped,
-                shifted,
+                &shifted,
                 muted,
                 accent,
-                font_family.clone(),
+                families.clone(),
                 font_size,
             )
             .style(move |s| crate::ui::css::apply(s, &sheet_desc, "div", &["desc"]))
@@ -710,6 +704,7 @@ impl AppState {
     /// fall through to history-only ranking so the user can still scrub past
     /// expressions while typing a new one.
     fn rerank_calc(&mut self, query: &str) {
+        let empty: Rc<Vec<u32>> = Rc::new(Vec::new());
         let trimmed = query.trim();
         let live_eval = if trimmed.is_empty() {
             None
@@ -761,8 +756,8 @@ impl AppState {
             matches.push(Match {
                 index: 0,
                 score: u16::MAX,
-                positions: Vec::new(),
-                desc_positions: Vec::new(),
+                positions: empty.clone(),
+                desc_positions: empty.clone(),
             });
         }
 
@@ -772,8 +767,8 @@ impl AppState {
                 matches.push(Match {
                     index: live_offset + i,
                     score: 0,
-                    positions: Vec::new(),
-                    desc_positions: Vec::new(),
+                    positions: empty.clone(),
+                    desc_positions: empty.clone(),
                 });
             }
         } else {
@@ -892,6 +887,12 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
     let password = state.lock().unwrap().password;
     let sheet = Arc::clone(&state.lock().unwrap().stylesheet);
 
+    // Parse the font family list once per session and share it — the query
+    // bar and every row's rich_text rebuild on each relayout/keystroke, and
+    // re-parsing the same string there would be pure per-frame waste.
+    let families: std::sync::Arc<Vec<FamilyOwned>> =
+        std::sync::Arc::new(FamilyOwned::parse_list(&font_family).collect());
+
     let rev: RwSignal<u64> = RwSignal::new(0);
 
     // History-recall state: `history_cursor` is the index into the per-mode
@@ -951,13 +952,13 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
     // the block width are measured with the SAME font the label renders, so the
     // overlay lines up exactly and stays font-independent.
     let qfont = font_family.clone();
+    let families_query = families.clone();
     let query_view = dyn_view(move || {
         let displayed = mask_password(password, &query_sig.get());
         let mode = vim_mode_sig.get();
         let on = blink_on.get();
         let ff = qfont.clone();
-
-        let families: Vec<FamilyOwned> = FamilyOwned::parse_list(&ff).collect();
+        let families = families_query.clone();
         let measure = move |s: &str| -> f64 {
             if s.is_empty() {
                 return 0.0;
@@ -1060,7 +1061,6 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
     // glyph-atlas uploads for hundreds of multi-byte unicode rows.
     let state_list = Arc::clone(&state);
     let state_row = Arc::clone(&state);
-    let ff_list = font_family.clone();
     let sheet_row_list = Arc::clone(&sheet);
     let result_list = virtual_stack(
         move || {
@@ -1106,7 +1106,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
                 accent,
                 muted,
                 selected_bg,
-                ff_list.clone(),
+                families.clone(),
                 font_size,
                 Arc::clone(&sheet_row_list),
             )

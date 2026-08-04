@@ -5,6 +5,8 @@
 //! positions in the label / description that matched the query — the picker
 //! UI uses those to highlight the matched spans independently.
 
+use std::rc::Rc;
+
 use nucleo::pattern::{Atom, AtomKind, CaseMatching, Normalization};
 use nucleo::{Config, Matcher as NucleoMatcher, Utf32Str};
 use unicode_normalization::UnicodeNormalization;
@@ -16,10 +18,10 @@ pub struct Match {
     pub score: u16,
     /// Codepoint indices in `entry.label` that matched the query (empty if
     /// the match came from the description only).
-    pub positions: Vec<u32>,
+    pub positions: Rc<Vec<u32>>,
     /// Codepoint indices in `entry.description` (when present) that matched
     /// the query. Empty when the label alone explains the hit.
-    pub desc_positions: Vec<u32>,
+    pub desc_positions: Rc<Vec<u32>>,
 }
 
 pub struct Matcher {
@@ -61,14 +63,15 @@ impl Matcher {
     /// either field hits; if both hit, the scores sum.
     pub fn rank(&mut self, entries: &[(&str, Option<&str>)], query: &str) -> Vec<Match> {
         if query.is_empty() {
+            let empty: Rc<Vec<u32>> = Rc::new(Vec::new());
             return entries
                 .iter()
                 .enumerate()
                 .map(|(i, _)| Match {
                     index: i,
                     score: 0,
-                    positions: Vec::new(),
-                    desc_positions: Vec::new(),
+                    positions: empty.clone(),
+                    desc_positions: empty.clone(),
                 })
                 .collect();
         }
@@ -82,6 +85,7 @@ impl Matcher {
             AtomKind::Fuzzy,
             false,
         );
+        let empty: Rc<Vec<u32>> = Rc::new(Vec::new());
         let mut out: Vec<Match> = Vec::with_capacity(entries.len());
         for (i, (label, description)) in entries.iter().enumerate() {
             let mut lp = Vec::with_capacity(query_len);
@@ -94,20 +98,20 @@ impl Matcher {
                 (Some(ls), None) => out.push(Match {
                     index: i,
                     score: ls,
-                    positions: lp,
-                    desc_positions: Vec::new(),
+                    positions: Rc::new(lp),
+                    desc_positions: empty.clone(),
                 }),
                 (None, Some(ds)) => out.push(Match {
                     index: i,
                     score: ds,
-                    positions: Vec::new(),
-                    desc_positions: dp,
+                    positions: empty.clone(),
+                    desc_positions: Rc::new(dp),
                 }),
                 (Some(ls), Some(ds)) => out.push(Match {
                     index: i,
                     score: ls.saturating_add(ds),
-                    positions: lp,
-                    desc_positions: dp,
+                    positions: Rc::new(lp),
+                    desc_positions: Rc::new(dp),
                 }),
             }
         }
@@ -178,7 +182,7 @@ mod tests {
         let matches = matcher.rank(&pairs, "äpfel");
 
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].positions, [0, 1, 2, 3, 4]);
+        assert_eq!(matches[0].positions.as_slice(), [0, 1, 2, 3, 4]);
     }
 
     #[test]
@@ -219,14 +223,14 @@ mod tests {
             .iter()
             .find(|matched| matched.index == 1)
             .unwrap();
-        assert_eq!(exact.positions, [0]);
-        assert_eq!(exact.desc_positions, [0, 1]);
+        assert_eq!(exact.positions.as_slice(), [0]);
+        assert_eq!(exact.desc_positions.as_slice(), [0, 1]);
         let prefixed = composed_matches
             .iter()
             .find(|matched| matched.index == 2)
             .unwrap();
-        assert_eq!(prefixed.positions, [7]);
-        assert_eq!(prefixed.desc_positions, [7, 8]);
+        assert_eq!(prefixed.positions.as_slice(), [7]);
+        assert_eq!(prefixed.desc_positions.as_slice(), [7, 8]);
     }
 
     #[test]
@@ -238,8 +242,8 @@ mod tests {
         let matches = matcher.rank(&pairs, decomposed);
 
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].positions, [0, 1]);
-        assert_eq!(matches[0].desc_positions, [0, 1]);
+        assert_eq!(matches[0].positions.as_slice(), [0, 1]);
+        assert_eq!(matches[0].desc_positions.as_slice(), [0, 1]);
     }
 
     #[test]
@@ -250,10 +254,10 @@ mod tests {
         let pairs = [(label.as_str(), None)];
 
         let suffix = matcher.rank(&pairs, "x");
-        assert_eq!(suffix[0].positions, [5]);
+        assert_eq!(suffix[0].positions.as_slice(), [5]);
 
         let grapheme = matcher.rank(&pairs, family);
-        assert_eq!(grapheme[0].positions, [0, 1, 2, 3, 4]);
+        assert_eq!(grapheme[0].positions.as_slice(), [0, 1, 2, 3, 4]);
     }
 
     #[test]
@@ -273,8 +277,8 @@ mod tests {
         let matches = matcher.rank(&pairs, "Thunder");
 
         assert_eq!(matches.len(), 2);
-        assert_eq!(matches[0].positions, [0, 1, 2, 3, 4, 5, 6]);
-        assert_eq!(matches[1].positions, [0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(matches[0].positions.as_slice(), [0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(matches[1].positions.as_slice(), [0, 1, 2, 3, 4, 5, 6]);
     }
 
     #[test]
@@ -380,7 +384,7 @@ mod tests {
 
         assert_eq!(matches.len(), 1);
         assert!(matches[0].positions.is_empty());
-        assert_eq!(matches[0].desc_positions, [0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(matches[0].desc_positions.as_slice(), [0, 1, 2, 3, 4, 5, 6]);
     }
 
     /// Label and description score equally. Two entries that share the
