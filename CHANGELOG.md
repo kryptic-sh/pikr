@@ -41,6 +41,19 @@ and this project adheres to
 
 - PNG/JPEG icon files are now cached per path in the icon cache, avoiding a disk
   read on every result-row rebuild (each rerank and scroll).
+- drun now caches the parsed `.desktop` list at
+  `$XDG_STATE_HOME/pikr/drun-cache.toml`, keyed on the XDG applications dirs
+  (order-sensitive — user-local dedupe depends on it), the locale list, and the
+  max mtime across the whole tree: a warm start with an unchanged tree skips the
+  parse entirely (measured ~10× faster collect on this machine).
+- The rerank frecency loop computes the per-mode key once per rerank instead of
+  once per entry, cutting ~2N String allocations per keystroke and at startup.
+- The matcher sizes each per-field position buffer to the query length and
+  converts grapheme indices through a reused scratch, so the per-keystroke rank
+  loop stops growing fresh `Vec`s from empty.
+- Match position vectors are shared via `Rc` (one shared empty per rerank, so
+  the empty-query startup path gains no allocations) and the font-family list is
+  parsed once per session, making result-row rebuilds clone cheaply.
 
 ### Changed
 
