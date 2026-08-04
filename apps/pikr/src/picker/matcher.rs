@@ -29,6 +29,8 @@ pub struct Matcher {
     case_matching: CaseMatching,
     /// Scratch buffer for the rare grapheme→codepoint index conversion.
     scratch: Vec<u32>,
+    /// Reused buffer for the per-field non-ASCII text reduction.
+    text_buf: Vec<char>,
 }
 
 impl Default for Matcher {
@@ -51,6 +53,7 @@ impl Matcher {
                 CaseMatching::Ignore
             },
             scratch: Vec::new(),
+            text_buf: Vec::new(),
         }
     }
 
@@ -87,9 +90,14 @@ impl Matcher {
         );
         let empty: Rc<Vec<u32>> = Rc::new(Vec::new());
         let mut out: Vec<Match> = Vec::with_capacity(entries.len());
+        // Reused across entries — cleared per entry so a survivor's positions
+        // never bleed into the next entry. Survivors clone into their Rc; the
+        // per-entry allocation churn is gone.
+        let mut lp = Vec::with_capacity(query_len);
+        let mut dp = Vec::with_capacity(query_len);
         for (i, (label, description)) in entries.iter().enumerate() {
-            let mut lp = Vec::with_capacity(query_len);
-            let mut dp = Vec::with_capacity(query_len);
+            lp.clear();
+            dp.clear();
             let label_score = self.match_field(&atom, label, &mut lp);
             let desc_score = description.and_then(|text| self.match_field(&atom, text, &mut dp));
 
@@ -98,20 +106,20 @@ impl Matcher {
                 (Some(ls), None) => out.push(Match {
                     index: i,
                     score: ls,
-                    positions: Rc::new(lp),
+                    positions: Rc::new(lp.clone()),
                     desc_positions: empty.clone(),
                 }),
                 (None, Some(ds)) => out.push(Match {
                     index: i,
                     score: ds,
                     positions: empty.clone(),
-                    desc_positions: Rc::new(dp),
+                    desc_positions: Rc::new(dp.clone()),
                 }),
                 (Some(ls), Some(ds)) => out.push(Match {
                     index: i,
                     score: ls.saturating_add(ds),
-                    positions: Rc::new(lp),
-                    desc_positions: Rc::new(dp),
+                    positions: Rc::new(lp.clone()),
+                    desc_positions: Rc::new(dp.clone()),
                 }),
             }
         }
@@ -124,15 +132,15 @@ impl Matcher {
         if text.is_empty() {
             return None;
         }
-        let mut text_buf = Vec::new();
         let utf32 = if text.is_ascii() {
             Utf32Str::Ascii(text.as_bytes())
         } else {
-            text_buf.extend(
+            self.text_buf.clear();
+            self.text_buf.extend(
                 text.graphemes(true)
                     .map(|grapheme| grapheme.nfc().next().expect("graphemes must be non-empty")),
             );
-            Utf32Str::Unicode(&text_buf)
+            Utf32Str::Unicode(&self.text_buf)
         };
         positions.clear();
         let score = atom.indices(utf32, &mut self.inner, positions)?;
@@ -440,5 +448,20 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert!(!out[0].positions.is_empty());
         assert!(!out[0].desc_positions.is_empty());
+    }
+
+    #[test]
+    fn per_entry_positions_do_not_leak_across_entries() {
+        // Scratch reuse must clear positions between entries: the second
+        // entry's match must not inherit the first's positions.
+        let mut m = Matcher::new();
+        let pairs = no_desc(&["firefox", "prefix fox tail"]);
+        let out = m.rank(&pairs, "fox");
+        assert_eq!(out.len(), 2);
+        let second = out
+            .iter()
+            .find(|m| m.index == 1)
+            .expect("second entry must match");
+        assert_eq!(second.positions.as_slice(), [7, 8, 9]);
     }
 }
