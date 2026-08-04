@@ -10,12 +10,13 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 use crate::cli::Mode as CliMode;
-use crate::modes::Payload;
+use crate::modes::{Entry, Payload};
 
 /// Half-life for the recency decay. After this much time, a single use
 /// counts for half its original weight. Set to 14 days so a launcher
@@ -100,18 +101,31 @@ impl Usage {
         entry.last_used = now;
     }
 
-    /// Compute the score bonus for `payload` under the mode `mode_key` names,
-    /// as of `now`. Returns 0 for never-used payloads.
-    pub fn bonus(&self, mode_key: &str, payload: &Payload, now: SystemTime) -> u16 {
+    /// Compute the score bonus for a precomputed key under the mode `mode_key`
+    /// names, as of `now`. Returns 0 for never-used keys.
+    pub fn bonus_for_key(&self, mode_key: &str, key: &str, now: SystemTime) -> u16 {
         let Some(per_mode) = self.modes.get(mode_key) else {
             return 0;
         };
-        let key = payload_key(payload);
-        let Some(entry) = per_mode.get(&key) else {
+        let Some(entry) = per_mode.get(key) else {
             return 0;
         };
         score_bonus(entry, unix_seconds(now))
     }
+
+    /// Compute the score bonus for `payload` under the mode `mode_key` names,
+    /// as of `now`. Returns 0 for never-used payloads.
+    pub fn bonus(&self, mode_key: &str, payload: &Payload, now: SystemTime) -> u16 {
+        let key = payload_key(payload);
+        self.bonus_for_key(mode_key, &key, now)
+    }
+}
+
+/// Precompute the usage key for every entry once at collect time, so the
+/// per-keystroke rerank bonus loop looks up by key instead of rebuilding
+/// (and hashing) a fresh String per entry.
+pub(crate) fn entry_keys(entries: &[Arc<Entry>]) -> Vec<String> {
+    entries.iter().map(|e| payload_key(&e.payload)).collect()
 }
 
 /// Stable key used to look up an entry's usage record. Two entries with the
@@ -158,8 +172,8 @@ fn score_bonus(entry: &UsageEntry, now_secs: i64) -> u16 {
     }
     let dt = (now_secs - entry.last_used).max(0) as f64;
     let half_life_secs = HALF_LIFE.as_secs() as f64;
-    // count · 0.5^(dt / HALF_LIFE) — equivalent to exp(-ln2·dt/half).
-    let decay = 0.5_f64.powf(dt / half_life_secs);
+    // 2^(-dt/HALF_LIFE) — equivalent to 0.5^(dt/HALF_LIFE), cheaper than powf.
+    let decay = (-dt / half_life_secs).exp2();
     let bonus = (entry.count as f64) * decay * BONUS_SCALE;
     bonus.clamp(0.0, u16::MAX as f64) as u16
 }
@@ -207,6 +221,24 @@ mod tests {
         usage.record(CliMode::Drun, &payload);
         let bonus = usage.bonus(&mode_key(CliMode::Drun), &payload, SystemTime::now());
         assert!(bonus > 0, "freshly-accepted entry must get a bonus");
+    }
+
+    #[test]
+    fn bonus_for_key_matches_payload_bonus() {
+        // The key-taking variant must agree exactly with the payload-taking
+        // one — the rerank loop uses it with precomputed keys.
+        let mut usage = Usage::default();
+        let payload = Payload::Exec {
+            program: "firefox".into(),
+            args: vec!["%U".into()],
+        };
+        usage.record(CliMode::Drun, &payload);
+        let now = SystemTime::now();
+        let key = payload_key(&payload);
+        let via_payload = usage.bonus(&mode_key(CliMode::Drun), &payload, now);
+        let via_key = usage.bonus_for_key(&mode_key(CliMode::Drun), &key, now);
+        assert_eq!(via_payload, via_key);
+        assert!(via_key > 0, "recorded payload must get a bonus");
     }
 
     #[test]

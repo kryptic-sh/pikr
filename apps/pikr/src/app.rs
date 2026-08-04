@@ -113,12 +113,14 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
     let matches = Vec::new();
 
     let usage = crate::picker::frecency::Usage::load();
+    let usage_keys = crate::picker::frecency::entry_keys(&entries);
     let history = crate::picker::history::History::load();
     let icons = Arc::new(Mutex::new(crate::picker::icons::IconCache::new()));
     let stylesheet = Arc::new(crate::ui::css::build_stylesheet(&cfg.theme));
     let app_state = Arc::new(Mutex::new(AppState {
         picker,
         entries,
+        usage_keys,
         matches,
         g_pending: false,
         cli_mode: chosen_mode,

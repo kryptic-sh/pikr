@@ -634,6 +634,10 @@ fn status_bar(
 pub struct AppState {
     pub picker: PickerState,
     pub entries: Vec<Arc<Entry>>,
+    /// Usage keys parallel to `entries` (one per entry, same order), so the
+    /// per-keystroke bonus loop looks up frecency by key instead of rebuilding
+    /// a String per entry. Rebuilt whenever `entries` is replaced.
+    pub usage_keys: Vec<String>,
     pub matches: Vec<Match>,
     pub g_pending: bool,
     pub cli_mode: CliMode,
@@ -688,7 +692,7 @@ impl AppState {
         for m in &mut ranked {
             let bonus = self
                 .usage
-                .bonus(&mode_key, &self.entries[m.index].payload, now);
+                .bonus_for_key(&mode_key, &self.usage_keys[m.index], now);
             m.score = m.score.saturating_add(bonus);
         }
         ranked.sort_by(|a, b| b.score.cmp(&a.score).then(a.index.cmp(&b.index)));
@@ -747,6 +751,7 @@ impl AppState {
             }));
         }
         self.entries = entries;
+        self.usage_keys = crate::picker::frecency::entry_keys(&self.entries);
 
         let live_offset = usize::from(live_eval.is_some());
         let mut matches: Vec<Match> = Vec::new();
@@ -826,6 +831,7 @@ impl AppState {
                 .collect(),
             None => Vec::new(),
         };
+        self.usage_keys = crate::picker::frecency::entry_keys(&self.entries);
         self.picker.query.set(String::new());
         self.picker.query_cursor.set(0);
         self.picker.selected.set(0);
