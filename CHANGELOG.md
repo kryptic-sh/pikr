@@ -34,6 +34,22 @@ and this project adheres to
   regular files instead of coproc pipes, fixing an intermittent flake where the
   accepted candidate line could be lost to a pipe-EOF race under parallel load
   (the smoke test failed with "got status 0 and output ''").
+- Count-prefix motions clamp with a saturating add: a saturated count
+  (`usize::MAX`, e.g. twenty 9s then `j`) no longer overflows the selection
+  offset — it clamps to the last row instead of panicking in debug builds or
+  wrapping the selection upward in release.
+- Frecency keys for `Exec` payloads are length-prefixed, so a program or
+  argument containing the U+001F separator can no longer collide with a
+  different program/arg split. Exec keys change format, so accumulated Exec
+  usage records reset once on upgrade.
+- The drun cache key is now the max tree mtime in nanoseconds, so a shortcut
+  added within the same second (or FAT's 2 s window) as the cached max
+  invalidates the cache instead of staying invisible. Cache files change format
+  — one automatic rebuild on the first launch after upgrade.
+- Icon bytes are re-read on change: `file_bytes` and `rasterise_svg` stat per
+  lookup and re-read / re-rasterise when the file's mtime or length changed, so
+  an icon replaced on disk while pikr runs renders the new bytes instead of the
+  session-cached old ones.
 
 ### Security
 
