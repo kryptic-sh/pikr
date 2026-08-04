@@ -33,7 +33,14 @@ const E2E_DEADLINE: Duration = Duration::from_millis(500);
 /// `startup first focus received`). pikr's perf markers print as
 /// `... DEBUG pikr::ui::view: <name> elapsed_us=<us>`; the collect marker has
 /// `phase_us=` before `elapsed_us=`, so search after the name, not adjacent.
+///
+/// ANSI escape codes are stripped first: tracing-subscriber emits colors
+/// unless `NO_COLOR` is set (its default), and the escapes wrap field names
+/// (`elapsed_us` + ESC + `=`), which would break the literal search. The gate
+/// sets `NO_COLOR=1` on the spawn too, but the parser stays robust to a
+/// colorized stderr regardless.
 fn marker_us(stderr: &str, marker: &str) -> Option<u64> {
+    let stderr = strip_ansi(stderr);
     let rest = &stderr[stderr.find(marker)? + marker.len()..];
     let idx = rest.find("elapsed_us=")?;
     rest[idx + "elapsed_us=".len()..]
@@ -44,6 +51,25 @@ fn marker_us(stderr: &str, marker: &str) -> Option<u64> {
         .ok()
 }
 
+/// Remove CSI escape sequences (`ESC [ … final byte`) from a string.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            for c in chars.by_ref() {
+                if ('\x40'..='\x7e').contains(&c) {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Drive one full pikr lifecycle: spawn, accept the matched candidate via
 /// F12+Return, exit. Returns the outcome for assertion.
 fn run_once(sway: &Sway) -> Result<support::pikr::Outcome, String> {
@@ -51,7 +77,12 @@ fn run_once(sway: &Sway) -> Result<support::pikr::Outcome, String> {
         sway,
         &["--dmenu", "--filter", "ban"],
         Some("apple\nbanana\ncherry\n"),
-        &[("RUST_LOG", "pikr=debug")],
+        &[
+            ("RUST_LOG", "pikr=debug"),
+            // tracing-subscriber colors stderr unless NO_COLOR is set; the
+            // ANSI escapes wrap the marker field names and break parsing.
+            ("NO_COLOR", "1"),
+        ],
     )?;
     pikr.wait_with_retry(Duration::from_secs(15), Duration::from_millis(100), || {
         let _ = Wtype::new(sway).keys(&[Key::F12, Key::Return]).send();
