@@ -843,6 +843,14 @@ fn rerank_if_query_changed(previous: Option<&str>, current: &str, rerank: impl F
 
 // ─── Picker view ─────────────────────────────────────────────────────────────
 
+/// Selection after moving down by `n` rows, clamped to the last row.
+/// `n` can be `usize::MAX` (a saturated count prefix); the addition must
+/// saturate, not wrap — wrapping lands on `cur - 1` and moves the
+/// selection up.
+fn move_down_selection(cur: usize, n: usize, total: usize) -> usize {
+    cur.saturating_add(n).min(total.saturating_sub(1))
+}
+
 pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> impl IntoView {
     // Typing-key events in floem main route only to the focused view. We
     // construct the outer container with a stable `root_id` so two
@@ -1363,8 +1371,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
         match action {
             Action::MoveDown(n) => {
                 let cur = selected_sig.get();
-                let next = (cur + n).min(total.saturating_sub(1));
-                selected_sig.set(next);
+                selected_sig.set(move_down_selection(cur, n, total));
             }
             Action::MoveUp(n) => {
                 let cur = selected_sig.get();
@@ -1658,8 +1665,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
 #[cfg(test)]
 mod tests {
     use super::{
-        char_idx_to_byte, mask_password, parse_color, rerank_if_query_changed, row_key,
-        with_cursor, word_boundary_back,
+        char_idx_to_byte, mask_password, move_down_selection, parse_color, rerank_if_query_changed,
+        row_key, with_cursor, word_boundary_back,
     };
     use crate::picker::state::VimMode;
     use std::cell::Cell;
@@ -1960,5 +1967,18 @@ mod tests {
         let c = parse_color("zzz");
         let rgba = c.to_rgba8();
         assert_eq!((rgba.r, rgba.g, rgba.b), (0, 0, 0));
+    }
+
+    #[test]
+    fn move_down_saturates_on_max_count() {
+        // n == usize::MAX (a saturated count prefix) must clamp to the last
+        // row, not overflow: `cur + n` panics in debug and wraps to `cur - 1`
+        // in release (moving the selection UP).
+        assert_eq!(move_down_selection(1, usize::MAX, 10), 9);
+        assert_eq!(move_down_selection(0, usize::MAX, 10), 9);
+        assert_eq!(move_down_selection(5, usize::MAX, 3), 2);
+        assert_eq!(move_down_selection(0, 2, 5), 2);
+        assert_eq!(move_down_selection(4, 2, 5), 4);
+        assert_eq!(move_down_selection(0, 2, 0), 0);
     }
 }
