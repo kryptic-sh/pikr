@@ -112,12 +112,19 @@ fn scan_dir(dir: &Path, names: &mut BTreeSet<String>) {
         return;
     };
     for entry in read.flatten() {
+        // file_type() comes from readdir's d_type on Unix — no stat syscall
+        // for non-files; the metadata() stat below is paid only for regular
+        // files (is_executable needs the mode bits). On filesystems without
+        // d_type, file_type() falls back to a stat internally — still correct.
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
+        if !ft.is_file() {
+            continue;
+        }
         let Ok(meta) = entry.metadata() else {
             continue;
         };
-        if !meta.is_file() {
-            continue;
-        }
         let entry_path = entry.path();
         if !is_executable(&entry_path, &meta) {
             continue;
