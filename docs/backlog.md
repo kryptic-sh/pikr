@@ -8,10 +8,6 @@
   saturating — `n == usize::MAX` overflows for `cur >= 1` (debug panic, release
   wrap to `cur - 1`, so the selection moves up). Repro: 20 nines then `j`. Fix:
   `cur.saturating_add(n)`.
-- Pre-existing `cfg(windows)` compile break (surfaced 2026-08-04 on
-  `clippy windows-latest`): the windows test module imports `tree_mtime` from
-  `windows_impl` in `modes/drun.rs`, but the function is private (E0603). One
-  line: `pub fn tree_mtime`.
 - Windows drun cache mtime granularity: `load_cache` compares seconds-truncated
   max mtimes with `!=` — a shortcut added within the same second (or FAT's 2 s
   granularity) as the cached max is invisible until a later change. Pre-existing
