@@ -475,7 +475,14 @@ jobs:
   publish-github-release:
     name: Publish GitHub release
     needs: [build, nfpm]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # Manual dispatch on a version tag is the recovery path for a publish
+    # job that died to a transient outage at tag time (aur-bin lost
+    # v0.8.7–v0.8.9 to an aur.archlinux.org maintenance window, Aug 2026).
+    # A tag push never re-fires, so without this the missed publish is
+    # lost forever. The downstream jobs (aur-bin / brew-tap /
+    # scoop-bucket) are idempotent — "no changes, nothing to push" — so a
+    # re-run only publishes what the outage skipped.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
