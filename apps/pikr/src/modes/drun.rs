@@ -162,8 +162,11 @@ mod unix_impl {
         Some((program, iter.collect()))
     }
 
-    /// Remove field-code substitutions (`%X` for single-letter `X`) from a token.
-    /// A `%%` literal collapses to `%`.
+    /// Remove freedesktop field-code substitutions (`%f` / `%F` / `%u` / `%U` /
+    /// `%i` / `%c` / `%k`) from a token. A `%%` literal collapses to `%`.
+    /// Unknown `%X` pairs and a trailing `%` are NOT field codes — the spec
+    /// does not define them to be deleted, and `Exec=notify-send "50%"` or
+    /// `yt-dlp -o "%(title)s.%(ext)s"` legitimately carry them.
     pub fn strip_field_codes(tok: &str) -> String {
         let mut out = String::with_capacity(tok.len());
         let mut chars = tok.chars().peekable();
@@ -171,8 +174,13 @@ mod unix_impl {
             if c == '%' {
                 match chars.next() {
                     Some('%') => out.push('%'),
-                    Some(_) => {} // single-char field code — drop
-                    None => {}
+                    Some('f' | 'F' | 'u' | 'U' | 'i' | 'c' | 'k') => {} // field code — drop
+                    Some(other) => {
+                        // Unknown code / literal `%X` — keep both characters.
+                        out.push('%');
+                        out.push(other);
+                    }
+                    None => out.push('%'), // trailing `%` — keep
                 }
             } else {
                 out.push(c);
@@ -781,6 +789,40 @@ mod tests {
     #[test]
     fn strip_double_percent() {
         assert_eq!(strip_field_codes("100%%"), "100%");
+    }
+
+    #[test]
+    fn unknown_percent_pair_preserved() {
+        // Regression for the audit finding: stripping ANY `%X` mangled
+        // legitimate Exec= args. `50%` and `%(title)s.%(ext)s` are not
+        // field codes and must survive byte-for-byte.
+        assert_eq!(strip_field_codes("50%"), "50%");
+        assert_eq!(strip_field_codes("%(title)s.%(ext)s"), "%(title)s.%(ext)s");
+        assert_eq!(strip_field_codes("%z"), "%z");
+        // Trailing `%` is not a field code either.
+        assert_eq!(strip_field_codes("tail%"), "tail%");
+    }
+
+    #[test]
+    fn spec_field_codes_all_stripped() {
+        // The freedesktop spec's codes, each standalone and inline.
+        for code in ["f", "F", "u", "U", "i", "c", "k"] {
+            assert_eq!(
+                strip_field_codes(&format!("%{code}")),
+                "",
+                "%{code} is a field code and must be dropped"
+            );
+        }
+        assert_eq!(
+            strip_field_codes("prog --url=%u %f --flag"),
+            // %f is its own token and becomes empty (parse_exec drops empty
+            // tokens); the surrounding spaces remain.
+            "prog --url=  --flag"
+        );
+        assert_eq!(
+            parse_exec("prog --url=%u %f --flag").map(|(p, a)| (p, a.join("|"))),
+            Some(("prog".to_string(), "--url=|--flag".to_string()))
+        );
     }
 
     #[test]
