@@ -20,14 +20,31 @@ use std::{
 /// that preserves both mtime and length on a coarse filesystem stays
 /// undetectable, which is inherent to a stat key.
 pub struct IconCache {
-    /// name-or-path → resolved file path (or `None` for misses).
-    cache: HashMap<String, Option<PathBuf>>,
+    /// name-or-path → resolved file path (or `None` for misses), with the
+    /// lookup time so a stale miss can be re-resolved after
+    /// [`MISS_RELOOKUP`].
+    cache: HashMap<String, Resolution>,
     /// SVG file path → PNG bytes, rasterised once per file version.
     raster_cache: HashMap<PathBuf, CachedBytes>,
     /// Raw file path → file bytes, read once per file version. PNGs / JPEGs
     /// go straight to floem's `img()` from here instead of being re-read on
     /// each row rebuild.
     file_cache: HashMap<PathBuf, CachedBytes>,
+}
+
+/// How long a cached miss stays cached before `resolve` tries the theme
+/// lookup again — so an icon theme installed while pikr runs is picked up
+/// without waiting for a restart, while a persistently-missing name (e.g.
+/// every entry on a theme-less system walking the fallback chain) isn't
+/// re-resolved on every row rebuild. Hits are served for the session; on-disk
+/// freshness of the file itself is handled per-read by `file_bytes` /
+/// `rasterise_svg`.
+const MISS_RELOOKUP: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// One cached resolution: the path (or the miss) plus when it was looked up.
+struct Resolution {
+    path: Option<PathBuf>,
+    resolved_at: std::time::Instant,
 }
 
 /// Cached file bytes plus the mtime/length they were read at, so a file
@@ -88,12 +105,25 @@ impl IconCache {
     /// Results — including `None` for misses — are cached so we don't
     /// re-resolve the same name on every virtual_stack frame.
     pub fn resolve(&mut self, name_or_path: &str) -> Option<PathBuf> {
+        self.resolve_at(name_or_path, std::time::Instant::now())
+    }
+
+    /// `resolve` with an injectable clock — the production entry point wraps
+    /// this with `Instant::now()` so the miss-staleness logic is testable
+    /// without sleeping.
+    fn resolve_at(&mut self, name_or_path: &str, now: std::time::Instant) -> Option<PathBuf> {
         if name_or_path.is_empty() {
             return None;
         }
 
         if let Some(cached) = self.cache.get(name_or_path) {
-            return cached.clone();
+            // Hits are served for the session; misses expire after
+            // MISS_RELOOKUP so a newly-installed theme gets picked up.
+            if cached.path.is_some()
+                || now.saturating_duration_since(cached.resolved_at) < MISS_RELOOKUP
+            {
+                return cached.path.clone();
+            }
         }
 
         let resolved = if Path::new(name_or_path).is_absolute() {
@@ -119,8 +149,13 @@ impl IconCache {
             }
         };
 
-        self.cache
-            .insert(name_or_path.to_string(), resolved.clone());
+        self.cache.insert(
+            name_or_path.to_string(),
+            Resolution {
+                path: resolved.clone(),
+                resolved_at: now,
+            },
+        );
         resolved
     }
 
@@ -313,6 +348,54 @@ mod tests {
         cache.resolve(path);
         // Only one entry in cache regardless of how many times we ask.
         assert_eq!(cache.cache_len(), 1);
+    }
+
+    #[test]
+    fn stale_miss_is_re_resolved() {
+        // A miss cached before MISS_RELOOKUP expires must be looked up again
+        // — otherwise a theme installed while pikr runs never resolves until
+        // restart. Observable via the entry's resolved_at advancing: the
+        // re-lookup of a still-missing name replaces the cached timestamp.
+        let mut cache = IconCache::new();
+        let t0 = std::time::Instant::now();
+        cache.cache.insert(
+            "zzz-no-such-icon".to_string(),
+            Resolution {
+                path: None,
+                resolved_at: t0,
+            },
+        );
+
+        // Fresh miss: served from cache, timestamp untouched.
+        cache.resolve_at("zzz-no-such-icon", t0 + std::time::Duration::from_secs(59));
+        assert_eq!(cache.cache["zzz-no-such-icon"].resolved_at, t0);
+
+        // Stale miss: re-resolved, so the timestamp moves to the lookup time.
+        let t1 = t0 + std::time::Duration::from_secs(61);
+        cache.resolve_at("zzz-no-such-icon", t1);
+        assert_ne!(
+            cache.cache["zzz-no-such-icon"].resolved_at, t0,
+            "a stale miss must be looked up again"
+        );
+    }
+
+    #[test]
+    fn hit_is_served_forever_even_after_ttl() {
+        // Only misses expire; a resolved path stays cached for the session
+        // (file freshness on disk is file_bytes/rasterise_svg's stat key).
+        let mut cache = IconCache::new();
+        let t0 = std::time::Instant::now();
+        let path = std::path::PathBuf::from("/tmp/some-icon.png");
+        cache.cache.insert(
+            "/tmp/some-icon.png".to_string(),
+            Resolution {
+                path: Some(path.clone()),
+                resolved_at: t0,
+            },
+        );
+        let later = t0 + std::time::Duration::from_secs(3600);
+        assert_eq!(cache.resolve_at("/tmp/some-icon.png", later), Some(path));
+        assert_eq!(cache.cache["/tmp/some-icon.png"].resolved_at, t0);
     }
 
     #[test]
