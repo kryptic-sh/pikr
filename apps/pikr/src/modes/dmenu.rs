@@ -8,10 +8,6 @@ use std::io::{self, BufRead, IsTerminal};
 pub struct Dmenu;
 
 impl Mode for Dmenu {
-    fn name(&self) -> &'static str {
-        "dmenu"
-    }
-
     fn collect(&mut self) -> Result<Vec<Entry>> {
         let stdin = io::stdin();
         if stdin.is_terminal() {

@@ -19,10 +19,6 @@ mod icons_windows;
 pub struct Drun;
 
 impl Mode for Drun {
-    fn name(&self) -> &'static str {
-        "drun"
-    }
-
     fn collect(&mut self) -> Result<Vec<Entry>> {
         #[cfg(unix)]
         return unix_impl::collect();

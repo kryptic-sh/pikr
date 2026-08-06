@@ -21,10 +21,6 @@ fn preview_label(text: &str) -> String {
 }
 
 impl Mode for Clipboard {
-    fn name(&self) -> &'static str {
-        "clipboard"
-    }
-
     fn collect(&mut self) -> Result<Vec<Entry>> {
         #[cfg(unix)]
         return unix_impl::collect();

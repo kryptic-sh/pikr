@@ -23,10 +23,6 @@ const MAX_EXPR_LEN: usize = 4096;
 pub struct Calc;
 
 impl Mode for Calc {
-    fn name(&self) -> &'static str {
-        "calc"
-    }
-
     fn collect(&mut self) -> Result<Vec<Entry>> {
         Ok(Vec::new())
     }

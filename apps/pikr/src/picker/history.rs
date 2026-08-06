@@ -103,10 +103,6 @@ impl History {
     pub fn len(&self, mode: CliMode) -> usize {
         self.modes.get(&mode_key(mode)).map_or(0, Vec::len)
     }
-
-    pub fn is_empty(&self, mode: CliMode) -> bool {
-        self.len(mode) == 0
-    }
 }
 
 fn mode_key(mode: CliMode) -> String {
@@ -157,7 +153,7 @@ mod tests {
         h.push(CliMode::Drun, "");
         h.push(CliMode::Drun, "   ");
         h.push(CliMode::Drun, "\t\n");
-        assert!(h.is_empty(CliMode::Drun));
+        assert_eq!(h.len(CliMode::Drun), 0);
     }
 
     #[test]

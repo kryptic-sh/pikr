@@ -9,10 +9,6 @@ use std::path::{Path, PathBuf};
 pub struct Ssh;
 
 impl Mode for Ssh {
-    fn name(&self) -> &'static str {
-        "ssh"
-    }
-
     fn collect(&mut self) -> Result<Vec<Entry>> {
         let terminal = resolve_terminal();
         let mut entries: Vec<Entry> = Vec::new();

@@ -42,17 +42,10 @@ pub const INPUT_MARGIN_BOTTOM: f64 = 8.0;
 pub const STATUS_HEIGHT: f64 = 0.0;
 const SCROLLOFF: f64 = 1.0;
 pub const PANEL_PAD: f64 = 10.0;
-const HORIZ_PAD: f64 = 14.0;
-const DESC_GAP: f64 = 10.0;
-const PANEL_RADIUS: f64 = 10.0;
-const ROW_RADIUS: f64 = 6.0;
 const BORDER_W: f64 = 1.5;
 /// Rendered icon size (px). Source icons are resolved at 32 px so they
 /// downscale cleanly to this render target.
 const ICON_SIZE: f64 = 24.0;
-/// Gap between the icon slot and the label text.
-const ICON_GAP: f64 = 8.0;
-
 // ─── Colour helpers ──────────────────────────────────────────────────────────
 
 fn parse_color(hex: &str) -> Color {
@@ -558,16 +551,10 @@ fn status_bar(
     selected_sig: RwSignal<usize>,
     rev: RwSignal<u64>,
     state: Arc<Mutex<AppState>>,
-    fg: Color,
     accent: Color,
     muted: Color,
-    _selected_bg: Color,
-    _font_family: String,
-    _font_size: f32,
     sheet: Arc<hjkl_css::Stylesheet>,
 ) -> impl IntoView {
-    let _ = fg;
-
     let sheet_chip = Arc::clone(&sheet);
     let mode_label = Label::derived(move || match vim_mode_sig.get() {
         VimMode::Insert => "INSERT".to_string(),
@@ -887,11 +874,10 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
         )
     };
 
-    let (_bg, fg, accent, muted, selected_bg, font_family, font_size) = {
+    let (fg, accent, muted, selected_bg, font_family, font_size) = {
         let s = state.lock().unwrap();
         let t = &s.theme;
         (
-            parse_color(&t.bg),
             parse_color(&t.fg),
             parse_color(&t.accent),
             parse_color(&t.muted),
@@ -1210,12 +1196,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
         selected_sig,
         rev,
         Arc::clone(&state),
-        fg,
         accent,
         muted,
-        selected_bg,
-        font_family.clone(),
-        font_size,
         Arc::clone(&sheet),
     );
 
@@ -1287,11 +1269,6 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
         let ctrl = ke.modifiers.ctrl();
         let shift = ke.modifiers.shift();
         let key = &ke.key;
-
-        enum NavAction {
-            None,
-            Rerank,
-        }
 
         let (vim_mode, ex_open, total, g_was_pending, action_opt) = {
             let s = state_key.lock().unwrap();
@@ -1395,7 +1372,6 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
             return EventPropagation::Continue;
         };
 
-        let after = NavAction::None;
         match action {
             Action::MoveDown(n) => {
                 let cur = selected_sig.get();
@@ -1684,7 +1660,6 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
             }
         }
 
-        let _ = after;
         rev.update(|r| *r += 1);
         EventPropagation::Stop
     })

@@ -87,11 +87,15 @@ pub enum Payload {
     /// where a detached spawn would silently drop a missing `wl-copy`.
     ExecWait { program: String, args: Vec<String> },
     /// Write a string directly to the system clipboard (no subprocess).
+    /// Constructed only by the Windows clipboard mode (`modes/clipboard.rs`
+    /// `windows_impl`); it must exist on every platform because `execute` and
+    /// the frecency `payload_key` match it exhaustively. On non-Windows
+    /// builds nothing constructs it, so silence the dead-code lint there.
+    #[cfg_attr(not(windows), allow(dead_code))]
     SetClipboard(String),
 }
 
 pub trait Mode {
-    fn name(&self) -> &'static str;
     fn collect(&mut self) -> Result<Vec<Entry>>;
 }
 

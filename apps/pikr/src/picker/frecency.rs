@@ -115,6 +115,7 @@ impl Usage {
 
     /// Compute the score bonus for `payload` under the mode `mode_key` names,
     /// as of `now`. Returns 0 for never-used payloads.
+    #[cfg(test)]
     pub fn bonus(&self, mode_key: &str, payload: &Payload, now: SystemTime) -> u16 {
         let key = payload_key(payload);
         self.bonus_for_key(mode_key, &key, now)

@@ -21,10 +21,6 @@ use std::path::Path;
 pub struct Run;
 
 impl Mode for Run {
-    fn name(&self) -> &'static str {
-        "run"
-    }
-
     fn collect(&mut self) -> Result<Vec<Entry>> {
         let names = scan_path();
         Ok(names

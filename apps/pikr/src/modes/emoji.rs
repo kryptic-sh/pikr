@@ -7,10 +7,6 @@ use anyhow::Result;
 pub struct Emoji;
 
 impl Mode for Emoji {
-    fn name(&self) -> &'static str {
-        "emoji"
-    }
-
     fn collect(&mut self) -> Result<Vec<Entry>> {
         // Label = "<glyph> <name>" so the fuzzy matcher actually has a name
         // to search on (the matcher only sees `label`, not `description`).
