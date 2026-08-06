@@ -18,11 +18,27 @@ use hjkl_css::{Color as CssColor, Length, Node, Stylesheet, Value, parse};
 
 use crate::config::Theme;
 
+/// A memo key: the (element, classes) pair a style evaluation is for.
+type MemoKey = (String, Vec<String>);
+/// Sorted (specificity, source-index) rule refs for one key.
+type MatchedRules = Vec<(u32, usize)>;
+
+/// A parsed stylesheet plus a per-(element, classes) memo of the sorted
+/// matched rules. The sheet is immutable after build_stylesheet, so the
+/// matched-rule set for a given (element, classes) pair is constant and
+/// only needs computing once — previously apply() re-scanned and re-sorted
+/// every rule on every style evaluation (per row, per keystroke).
+pub struct Sheet {
+    inner: Stylesheet,
+    /// (element, classes) -> sorted (specificity, source-index) rule refs.
+    matched: std::cell::RefCell<std::collections::HashMap<MemoKey, MatchedRules>>,
+}
+
 /// Build the runtime stylesheet by substituting theme colours into the
 /// `default.css` template. Computed colours (`ex_bg`, `status_bg`,
 /// `count_bg`) mirror the `blend()` calls that were inline in
 /// `ui/view.rs` before the CSS migration.
-pub fn build_stylesheet(theme: &Theme) -> Stylesheet {
+pub fn build_stylesheet(theme: &Theme) -> Sheet {
     let accent = parse_hex(&theme.accent);
     let muted = parse_hex(&theme.muted);
     let selected_bg = parse_hex(&theme.selected_bg);
@@ -43,43 +59,61 @@ pub fn build_stylesheet(theme: &Theme) -> Stylesheet {
         .replace("{font_family}", &theme.font)
         .replace("{font_size}", &theme.font_size.to_string());
 
-    parse(&css).unwrap_or_else(|err| {
-        tracing::error!(?err, "default.css failed to parse — using empty stylesheet");
-        Stylesheet { rules: Vec::new() }
-    })
+    Sheet {
+        inner: parse(&css).unwrap_or_else(|err| {
+            tracing::error!(?err, "default.css failed to parse — using empty stylesheet");
+            Stylesheet { rules: Vec::new() }
+        }),
+        matched: std::cell::RefCell::new(std::collections::HashMap::new()),
+    }
 }
 
 /// Apply every matching rule's declarations to `s`, in source order.
 /// Specificity is honoured: higher-specificity rules override lower
-/// when both target the same property.
-pub fn apply(s: Style, sheet: &Stylesheet, element: &str, classes: &[&str]) -> Style {
+/// when both target the same property. The matched-rule set for a given
+/// (element, classes) pair is computed once and memoized in the sheet —
+/// later calls walk the cached list instead of re-scanning and re-sorting
+/// every rule.
+pub fn apply(s: Style, sheet: &Sheet, element: &str, classes: &[&str]) -> Style {
     let node = Node { element, classes };
-    // Collect matching rules with their specificity. Iterate in source order
-    // so equal-specificity rules cascade later-wins; sort_by_key ensures the
-    // *order* is (specificity asc, source order asc) by relying on
-    // `sort_by_key` being stable.
-    let mut matches: Vec<(u32, usize, &hjkl_css::Rule)> = sheet
-        .rules
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, rule)| {
-            rule.selectors
-                .iter()
-                .filter_map(|sel| {
-                    if sel.matches(&node, &[], &[], None) {
-                        Some(sel.specificity())
-                    } else {
-                        None
-                    }
-                })
-                .max()
-                .map(|sp| (sp, idx, rule))
-        })
-        .collect();
-    matches.sort_by_key(|(sp, idx, _)| (*sp, *idx));
+    let key = (
+        element.to_string(),
+        classes.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+    );
+    // Borrow once for the whole call: the memo lives alongside the sheet and
+    // apply() never recurses into itself, so a single RefMut is safe.
+    let mut memo = sheet.matched.borrow_mut();
+    let matches = memo.entry(key).or_insert_with(|| {
+        // Collect matching rules with their specificity. Iterate in source
+        // order so equal-specificity rules cascade later-wins; sort_by_key
+        // ensures the *order* is (specificity asc, source order asc) by
+        // relying on `sort_by_key` being stable.
+        let mut matches: Vec<(u32, usize)> = sheet
+            .inner
+            .rules
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, rule)| {
+                rule.selectors
+                    .iter()
+                    .filter_map(|sel| {
+                        if sel.matches(&node, &[], &[], None) {
+                            Some(sel.specificity())
+                        } else {
+                            None
+                        }
+                    })
+                    .max()
+                    .map(|sp| (sp, idx))
+            })
+            .collect();
+        matches.sort_by_key(|(sp, idx)| (*sp, *idx));
+        matches
+    });
 
     let mut out = s;
-    for (_, _, rule) in matches {
+    for (_, idx) in matches.iter() {
+        let rule = &sheet.inner.rules[*idx];
         for decl in &rule.declarations {
             out = apply_decl(out, decl);
         }
@@ -209,4 +243,67 @@ fn blend_hex(over: u32, under: u32, t: f32) -> u32 {
     let g = (og * t + ug * (1.0 - t)) as u32;
     let b = (ob * t + ub * (1.0 - t)) as u32;
     (r << 16) | (g << 8) | b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // floem's Style is neither PartialEq nor publicly inspectable (its prop
+    // map is pub(crate) to floem), so "equal Style values" can't be asserted
+    // directly. Instead the test pins the observable contract of the memo:
+    // the cached (specificity, source-index) list — the exact thing that
+    // drives declaration application and cascade order.
+    #[test]
+    fn apply_memoizes_sorted_matches_per_key() {
+        let sheet = build_stylesheet(&Theme::default());
+        assert!(sheet.matched.borrow().is_empty());
+
+        // First call computes and stores the matched-rule list for the key.
+        let _ = apply(Style::new(), &sheet, "div", &["icon"]);
+        assert_eq!(sheet.matched.borrow().len(), 1);
+        let key = ("div".to_string(), vec!["icon".to_string()]);
+        let first = sheet
+            .matched
+            .borrow()
+            .get(&key)
+            .cloned()
+            .expect("memo entry for div.icon");
+        // default.css has an `.icon` rule — apply() must really have matched
+        // and walked it, not stored an empty list.
+        assert!(!first.is_empty(), "div.icon should match the .icon rule");
+        // Cascade order: (specificity asc, source index asc) — identical to
+        // the pre-memo sort, so the applied declarations are unchanged.
+        let mut sorted = first.clone();
+        sorted.sort_by_key(|(sp, idx)| (*sp, *idx));
+        assert_eq!(first, sorted);
+
+        // Second call with the same key must hit the memo: no recompute, no
+        // new entry, and it returns the identical stored list.
+        let _ = apply(Style::new(), &sheet, "div", &["icon"]);
+        assert_eq!(sheet.matched.borrow().len(), 1);
+        let second = sheet
+            .matched
+            .borrow()
+            .get(&key)
+            .cloned()
+            .expect("memo entry still present");
+        assert_eq!(first, second);
+
+        // A second sheet built from the same theme computes the identical
+        // list cold — the memo result is deterministic per (sheet, key).
+        let sheet2 = build_stylesheet(&Theme::default());
+        let _ = apply(Style::new(), &sheet2, "div", &["icon"]);
+        let other = sheet2
+            .matched
+            .borrow()
+            .get(&key)
+            .cloned()
+            .expect("memo entry for second sheet");
+        assert_eq!(first, other);
+
+        // A different (element, classes) pair is a separate memo key.
+        let _ = apply(Style::new(), &sheet, "label", &["mode-name"]);
+        assert_eq!(sheet.matched.borrow().len(), 2);
+    }
 }

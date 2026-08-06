@@ -196,7 +196,7 @@ fn entry_row(
     selected_bg: Color,
     families: std::sync::Arc<Vec<FamilyOwned>>,
     font_size: f32,
-    sheet: Arc<hjkl_css::Stylesheet>,
+    sheet: Arc<crate::ui::css::Sheet>,
 ) -> impl IntoView {
     // ── Icon view ─────────────────────────────────────────────────────────
     let sheet_icon = Arc::clone(&sheet);
@@ -465,7 +465,7 @@ pub(crate) fn mask_password(enabled: bool, text: &str) -> String {
 /// Renders `text` inside the same panel chrome as `picker_view` — same bg,
 /// border, radius, and padding. No input row, no result list, no status bar.
 /// Pressing Escape dismisses via `std::process::exit(0)`.
-pub fn message_view(text: String, sheet: Arc<hjkl_css::Stylesheet>) -> impl IntoView {
+pub fn message_view(text: String, sheet: Arc<crate::ui::css::Sheet>) -> impl IntoView {
     // Same focus story as picker_view: floem routes key events only to the
     // focused view, and the Esc registry-fallback alone is racy — if the
     // compositor grants keyboard focus before the view tree settles, the
@@ -508,7 +508,7 @@ fn ex_bar(
     ex_buf: RwSignal<Option<String>>,
     blink_on: RwSignal<bool>,
     fg: Color,
-    sheet: Arc<hjkl_css::Stylesheet>,
+    sheet: Arc<crate::ui::css::Sheet>,
 ) -> impl IntoView {
     // Always render — even when no ex command is active. Toggling the bar
     // visibility would otherwise re-flow the v_stack and bump the status
@@ -559,7 +559,7 @@ fn status_bar(
     state: Arc<Mutex<AppState>>,
     accent: Color,
     muted: Color,
-    sheet: Arc<hjkl_css::Stylesheet>,
+    sheet: Arc<crate::ui::css::Sheet>,
 ) -> impl IntoView {
     let sheet_chip = Arc::clone(&sheet);
     let mode_label = Label::derived(move || match vim_mode_sig.get() {
@@ -659,7 +659,7 @@ pub struct AppState {
     /// Parsed default stylesheet with theme colours substituted. Migrated
     /// `.style(...)` sites use `ui::css::apply` against this sheet to pick
     /// up declarative rules; reactive sites still chain inline.
-    pub stylesheet: Arc<hjkl_css::Stylesheet>,
+    pub stylesheet: Arc<crate::ui::css::Sheet>,
 }
 
 impl AppState {
