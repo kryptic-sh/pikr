@@ -8,6 +8,36 @@ use std::path::{Path, PathBuf};
 #[derive(Default)]
 pub struct Ssh;
 
+/// The resolved terminal to launch ssh inside. `$TERMINAL` is shell-split so
+/// the common `TERMINAL="alacritty --class foo"` idiom works: the program is
+/// what gets probed / spawned, the rest become prefix args to every ssh
+/// launch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Terminal {
+    /// Binary name (or path) passed to `Command::new`.
+    pub program: String,
+    /// Extra args from the `$TERMINAL` value, prepended to the ssh argv.
+    pub prefix_args: Vec<String>,
+}
+
+impl Terminal {
+    fn new(program: String, prefix_args: Vec<String>) -> Self {
+        Self {
+            program,
+            prefix_args,
+        }
+    }
+
+    /// Plain binary name, no prefix args — what the candidate fallbacks and
+    /// the tests use.
+    fn simple(name: &str) -> Self {
+        Self {
+            program: name.to_string(),
+            prefix_args: Vec::new(),
+        }
+    }
+}
+
 impl Mode for Ssh {
     fn collect(&mut self) -> Result<Vec<Entry>> {
         let terminal = resolve_terminal();
@@ -57,7 +87,7 @@ fn home_dir() -> Option<PathBuf> {
 }
 
 /// Walk the ssh config text, returning one Entry per non-wildcard Host.
-pub fn parse_config(text: &str, terminal: &str) -> Vec<Entry> {
+pub fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
     let mut entries = Vec::new();
     let mut current_hosts: Vec<String> = Vec::new();
     let mut hostname: Option<String> = None;
@@ -121,7 +151,7 @@ fn flush_hosts(
     hosts: &mut Vec<String>,
     hostname: &mut Option<String>,
     user: &mut Option<String>,
-    terminal: &str,
+    terminal: &Terminal,
 ) {
     if hosts.is_empty() {
         return;
@@ -138,7 +168,7 @@ fn make_entry(
     host: String,
     hostname: Option<String>,
     user: Option<String>,
-    terminal: &str,
+    terminal: &Terminal,
 ) -> Entry {
     let description = match (hostname.as_deref(), user.as_deref()) {
         (Some(h), Some(u)) => Some(format!("{h} ({u})")),
@@ -146,8 +176,11 @@ fn make_entry(
         (None, Some(u)) => Some(u.to_string()),
         (None, None) => None,
     };
-    let args = build_terminal_args(terminal, &host);
-    Entry::exec_with(host, terminal.to_string(), args, description, None)
+    // Prefix args from `$TERMINAL` (e.g. `--class foo`) come before the
+    // terminal's own launch convention.
+    let mut args = terminal.prefix_args.clone();
+    args.extend(build_terminal_args(&terminal.program, &host));
+    Entry::exec_with(host, terminal.program.clone(), args, description, None)
 }
 
 /// Build the argv for the chosen terminal to run `ssh <host>`.
@@ -223,25 +256,32 @@ fn terminal_candidates() -> &'static [&'static str] {
 }
 
 /// Find a usable terminal emulator: $TERMINAL env first, then well-known names.
-fn resolve_terminal() -> String {
+/// The `$TERMINAL` value is shell-split, so `TERMINAL="alacritty --class foo"`
+/// resolves to program `alacritty` with prefix args `--class foo` — the old
+/// whole-string probe silently fell back to a candidate for that common idiom.
+fn resolve_terminal() -> Terminal {
     if let Ok(t) = std::env::var("TERMINAL")
         && !t.is_empty()
-        && is_tool_installed(&t)
     {
-        return t;
+        // The program (first word) is what gets probed; the rest become
+        // prefix args. Unparseable or missing values fall through to the
+        // candidates below.
+        if let Some(mut split) = shlex::split(&t)
+            && let Some(program) = split.first()
+            && is_tool_installed(program)
+        {
+            let program = split.remove(0);
+            return Terminal::new(program, split);
+        }
     }
     for &name in terminal_candidates() {
         if is_tool_installed(name) {
-            return name.to_string();
+            return Terminal::simple(name);
         }
     }
     // Last resort: first candidate even if not found; exec will fail with a
     // clear error rather than silently doing nothing.
-    terminal_candidates()
-        .first()
-        .copied()
-        .unwrap_or("xterm")
-        .to_string()
+    Terminal::simple(terminal_candidates().first().copied().unwrap_or("xterm"))
 }
 
 /// Probe whether a tool exists by walking `$PATH` and stat'ing the
@@ -322,7 +362,7 @@ mod tests {
     #[test]
     fn parse_simple_host_block() {
         let input = "Host foo\n    HostName bar.example\n    User alice\n";
-        let entries = parse_config(input, "xterm");
+        let entries = parse_config(input, &Terminal::simple("xterm"));
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
         assert_eq!(e.label, "foo");
@@ -338,16 +378,37 @@ mod tests {
     }
 
     #[test]
+    fn terminal_prefix_args_prepend_ssh_argv() {
+        // `TERMINAL="alacritty --class foo"` resolves to program alacritty
+        // with prefix args ["--class", "foo"]; every ssh launch must carry
+        // them before the terminal's own `-e ssh <host>` convention.
+        let terminal = Terminal::new(
+            "alacritty".to_string(),
+            vec!["--class".to_string(), "foo".to_string()],
+        );
+        let input = "Host dev\n";
+        let entries = parse_config(input, &terminal);
+        assert_eq!(entries.len(), 1);
+        match &entries[0].payload {
+            crate::modes::Payload::Exec { program, args } => {
+                assert_eq!(program, "alacritty");
+                assert_eq!(args, &["--class", "foo", "-e", "ssh", "dev"]);
+            }
+            other => panic!("expected Exec payload, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn wildcard_host_skipped() {
         let input = "Host *\n    ServerAliveInterval 60\n";
-        let entries = parse_config(input, "xterm");
+        let entries = parse_config(input, &Terminal::simple("xterm"));
         assert!(entries.is_empty(), "wildcard Host must be skipped");
     }
 
     #[test]
     fn host_with_only_hostname() {
         let input = "Host bastion\n    HostName 10.0.0.1\n";
-        let entries = parse_config(input, "xterm");
+        let entries = parse_config(input, &Terminal::simple("xterm"));
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].description.as_deref(), Some("10.0.0.1"));
     }
@@ -355,7 +416,7 @@ mod tests {
     #[test]
     fn host_no_extras_has_no_description() {
         let input = "Host bare\n";
-        let entries = parse_config(input, "xterm");
+        let entries = parse_config(input, &Terminal::simple("xterm"));
         assert_eq!(entries.len(), 1);
         assert!(entries[0].description.is_none());
     }
@@ -365,7 +426,7 @@ mod tests {
         // ssh_config(5) allows `Host dev prod`; each pattern is its own
         // entry, sharing the block's HostName.
         let input = "Host dev prod\n    HostName example.com\n";
-        let entries = parse_config(input, "xterm");
+        let entries = parse_config(input, &Terminal::simple("xterm"));
         let labels: Vec<&str> = entries.iter().map(|e| e.label.as_str()).collect();
         assert_eq!(labels, ["dev", "prod"]);
         assert!(
@@ -380,7 +441,7 @@ mod tests {
         // `Host foo * bar` — the wildcard pattern is dropped, the real ones
         // kept.
         let input = "Host foo * bar\n";
-        let entries = parse_config(input, "xterm");
+        let entries = parse_config(input, &Terminal::simple("xterm"));
         let labels: Vec<&str> = entries.iter().map(|e| e.label.as_str()).collect();
         assert_eq!(labels, ["foo", "bar"]);
     }
@@ -390,7 +451,7 @@ mod tests {
         // A wildcard-only block contributes no entries, so its HostName must
         // not leak into the following block's description.
         let input = "Host *\n    HostName example.com\nHost foo\n";
-        let entries = parse_config(input, "xterm");
+        let entries = parse_config(input, &Terminal::simple("xterm"));
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].label, "foo");
         assert!(entries[0].description.is_none());
