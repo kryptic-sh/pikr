@@ -94,8 +94,56 @@ impl Config {
         }
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("read config {}", path.display()))?;
-        let cfg: Self =
+        let mut cfg: Self =
             toml::from_str(&text).with_context(|| format!("parse config {}", path.display()))?;
+        // TOML accepts `font_size = nan` / `= inf`; a non-finite value would
+        // flow into every layout / text-measurement call unverified, so
+        // reject it back to the default.
+        if !cfg.theme.font_size.is_finite() {
+            tracing::warn!(
+                font_size = cfg.theme.font_size,
+                "non-finite font_size in config — falling back to the default"
+            );
+            cfg.theme.font_size = Self::default().theme.font_size;
+        }
         Ok(cfg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn load_with(config_toml: &str) -> Config {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, config_toml).unwrap();
+        Config::load(Some(&path)).unwrap()
+    }
+
+    #[test]
+    fn non_finite_font_size_falls_back_to_default() {
+        // TOML parses `nan` / `inf` as floats; a non-finite font_size would
+        // flow into every layout call — it must be rejected back to 14.0.
+        for bad in ["nan", "inf", "-inf"] {
+            let cfg = load_with(&format!("[theme]\nfont_size = {bad}\n"));
+            assert_eq!(cfg.theme.font_size, 14.0, "font_size = {bad}");
+        }
+    }
+
+    #[test]
+    fn finite_font_size_respected() {
+        let cfg = load_with("[theme]\nfont_size = 18.5\n");
+        assert_eq!(cfg.theme.font_size, 18.5);
+    }
+
+    #[test]
+    fn missing_config_returns_defaults() {
+        let cfg = Config::load(Some(std::path::Path::new(
+            "/tmp/definitely-not-a-pikr-config.toml",
+        )))
+        .unwrap();
+        assert_eq!(cfg.theme.font_size, 14.0);
+        assert_eq!(cfg.max_results, 256);
     }
 }
