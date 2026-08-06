@@ -59,7 +59,7 @@ impl History {
                 return;
             }
         };
-        if let Err(e) = std::fs::write(&path, text) {
+        if let Err(e) = crate::picker::write_private_state(&path, &text) {
             tracing::warn!(error = %e, path = %path.display(), "write history");
         }
     }
