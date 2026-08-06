@@ -118,20 +118,50 @@ mod unix_impl {
     /// `LC_ALL` > `LC_*` > `LANG` — `LC_ALL` overrides the per-category
     /// variables, so it is consulted first. `C` / `POSIX` (and unset vars)
     /// fall through to the next variable.
-    pub(crate) fn pick_locale(get: impl Fn(&str) -> Option<String>) -> Option<String> {
+    ///
+    /// Returns the spec fallback chain for the winning variable, longest
+    /// first: `lang_COUNTRY@MODIFIER`, `lang@MODIFIER`, `lang_COUNTRY`,
+    /// `lang` (the codeset is dropped — `.desktop` keys never carry one).
+    /// `freedesktop_desktop_entry` matches each item exactly and, on a miss,
+    /// falls back by stripping at `_` only — so a lone `sr_RS@latin` would
+    /// jump straight to `sr` and skip a `Name[sr_RS]` key. The explicit chain
+    /// restores the territory-only step.
+    pub(crate) fn pick_locale(get: impl Fn(&str) -> Option<String>) -> Vec<String> {
         for var in ["LC_ALL", "LC_MESSAGES", "LANG"] {
             if let Some(v) = get(var) {
-                let trimmed = v.split('.').next().unwrap_or(&v);
-                if !trimmed.is_empty() && trimmed != "C" && trimmed != "POSIX" {
-                    return Some(trimmed.to_string());
+                let no_codeset = v.split('.').next().unwrap_or(&v);
+                if no_codeset.is_empty() || no_codeset == "C" || no_codeset == "POSIX" {
+                    continue;
                 }
+                let (lang_country, modifier) = match no_codeset.split_once('@') {
+                    Some((lc, m)) => (lc, Some(m.to_string())),
+                    None => (no_codeset, None),
+                };
+                let lang = lang_country.split('_').next().unwrap_or(lang_country);
+                if lang.is_empty() {
+                    continue;
+                }
+                let mut chain = Vec::with_capacity(4);
+                if let Some(m) = &modifier {
+                    chain.push(format!("{lang_country}@{m}"));
+                    if lang != lang_country {
+                        chain.push(format!("{lang}@{m}"));
+                    }
+                }
+                if lang_country != lang {
+                    chain.push(lang_country.to_string());
+                }
+                if !chain.iter().any(|c| c == lang) {
+                    chain.push(lang.to_string());
+                }
+                return chain;
             }
         }
-        None
+        Vec::new()
     }
 
     fn current_locales() -> Vec<String> {
-        pick_locale(|v| std::env::var(v).ok()).into_iter().collect()
+        pick_locale(|v| std::env::var(v).ok())
     }
 
     /// Split an `Exec=` string per freedesktop spec, dropping field codes
@@ -992,7 +1022,10 @@ mod tests {
             "LANG" => Some("fr_FR.UTF-8".to_string()),
             _ => None,
         };
-        assert_eq!(pick_locale(lookup), Some("de_DE".to_string()));
+        assert_eq!(
+            pick_locale(lookup),
+            vec!["de_DE".to_string(), "de".to_string()]
+        );
     }
 
     #[test]
@@ -1004,13 +1037,46 @@ mod tests {
             "LC_MESSAGES" => Some("en_US.UTF-8".to_string()),
             _ => None,
         };
-        assert_eq!(pick_locale(c), Some("en_US".to_string()));
+        assert_eq!(pick_locale(c), vec!["en_US".to_string(), "en".to_string()]);
         let posix = |v: &str| match v {
             "LC_ALL" => Some("POSIX".to_string()),
             "LC_MESSAGES" => Some("en_US.UTF-8".to_string()),
             _ => None,
         };
-        assert_eq!(pick_locale(posix), Some("en_US".to_string()));
+        assert_eq!(
+            pick_locale(posix),
+            vec!["en_US".to_string(), "en".to_string()]
+        );
+    }
+
+    #[test]
+    fn locale_modifier_expands_to_full_fallback_chain() {
+        // `sr_RS@latin.UTF-8` must produce the whole spec chain — without
+        // the lang_COUNTRY step, freedesktop_desktop_entry's own `_`-stripping
+        // fallback would jump from sr_RS@latin straight to sr and miss a
+        // `Name[sr_RS]` key.
+        let lookup = |v: &str| match v {
+            "LANG" => Some("sr_RS@latin.UTF-8".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            pick_locale(lookup),
+            vec![
+                "sr_RS@latin".to_string(),
+                "sr@latin".to_string(),
+                "sr_RS".to_string(),
+                "sr".to_string(),
+            ]
+        );
+        // Language-only with a modifier: sr@latin → sr@latin, sr.
+        let lang_only = |v: &str| match v {
+            "LANG" => Some("sr@latin".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            pick_locale(lang_only),
+            vec!["sr@latin".to_string(), "sr".to_string()]
+        );
     }
 }
 
