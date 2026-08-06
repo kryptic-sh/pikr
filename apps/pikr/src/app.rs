@@ -115,6 +115,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
     let usage = crate::picker::frecency::Usage::load();
     let usage_keys = crate::picker::frecency::entry_keys(&entries);
     let history = crate::picker::history::History::load();
+    let calc_results = crate::modes::calc::precompute(history.list(crate::cli::Mode::Calc));
     let icons = Arc::new(Mutex::new(crate::picker::icons::IconCache::new()));
     let stylesheet = Arc::new(crate::ui::css::build_stylesheet(&cfg.theme));
     let app_state = Arc::new(Mutex::new(AppState {
@@ -131,6 +132,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         password: cli.password,
         usage,
         history,
+        calc_results,
         icons,
         stylesheet,
     }));

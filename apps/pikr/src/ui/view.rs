@@ -1,6 +1,7 @@
 //! Floem view tree for pikr — tokyonight/rofi-style layout.
 
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -649,6 +650,9 @@ pub struct AppState {
     /// Per-mode query history (most-recent first). Pushed on Accept (with
     /// non-empty query), recalled via Ctrl-P/Ctrl-N in Insert mode.
     pub history: crate::picker::history::History,
+    /// Precomputed expr → result for the calc-history entries, built once at
+    /// startup (see modes::calc::precompute).
+    pub calc_results: HashMap<String, String>,
     /// XDG icon-theme lookup cache. Populated lazily as rows scroll into
     /// view; icons are picker-only (message_view doesn't use it).
     pub icons: Arc<Mutex<crate::picker::icons::IconCache>>,
@@ -722,8 +726,9 @@ impl AppState {
                     .is_none_or(|(live_expr, _)| live_expr.as_str() != expr.as_str())
             })
             .filter_map(|expr| {
-                let result = crate::modes::calc::eval(expr)?;
-                Some((expr.clone(), result))
+                self.calc_results
+                    .get(expr)
+                    .map(|result| (expr.clone(), result.clone()))
             })
             .collect();
 

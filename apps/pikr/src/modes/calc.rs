@@ -5,6 +5,8 @@
 //! and calls [`eval`] against the live query, producing a single synthetic
 //! `Entry` per evaluation.
 
+use std::collections::HashMap;
+
 use super::{Entry, Mode};
 use anyhow::Result;
 
@@ -58,6 +60,17 @@ fn format_float(f: f64) -> String {
     } else {
         format!("{f}")
     }
+}
+
+/// Precompute the result of every stored calc-history expression, once per
+/// session. History strings are immutable while pikr runs (entries are
+/// pushed only at Accept, after which the process exits), so rerank_calc
+/// can read these instead of re-evaluating every expression per keystroke.
+pub fn precompute(history: &[String]) -> HashMap<String, String> {
+    history
+        .iter()
+        .filter_map(|expr| eval(expr).map(|result| (expr.clone(), result)))
+        .collect()
 }
 
 #[cfg(test)]
@@ -116,5 +129,20 @@ mod tests {
     #[test]
     fn boolean_supported() {
         assert_eq!(eval("1 < 2"), Some("true".to_string()));
+    }
+
+    #[test]
+    fn precompute_filters_non_evaluating_and_over_cap() {
+        let deep: String = "(".repeat(5000) + "1" + &")".repeat(5000);
+        let input: Vec<String> = vec!["1+1".into(), "zzz".into(), deep.clone()];
+        let map = precompute(&input);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("1+1").map(String::as_str), Some("2"));
+        assert!(!map.contains_key("zzz"));
+        assert!(!map.contains_key(&deep));
+        // Every stored entry must agree with a fresh eval of the expression.
+        for (expr, result) in &map {
+            assert_eq!(Some(result.clone()), eval(expr));
+        }
     }
 }
