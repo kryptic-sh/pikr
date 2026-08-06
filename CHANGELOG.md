@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.8.10] - 2026-08-06
+
 ### Fixed
 
 - `:mode` switching from Visual now exits Visual and clears any count prefix, so
@@ -1004,7 +1006,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.9...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.10...main
+[0.8.10]: https://github.com/kryptic-sh/pikr/compare/v0.8.9...v0.8.10
 [0.8.9]: https://github.com/kryptic-sh/pikr/compare/v0.8.8...v0.8.9
 [0.8.8]: https://github.com/kryptic-sh/pikr/compare/v0.8.7...v0.8.8
 [0.8.7]: https://github.com/kryptic-sh/pikr/compare/v0.8.6...v0.8.7
