@@ -54,7 +54,7 @@ walkdir = "2"     # recursive directory walker for Start Menu trees (issue #38)
 # Win32 API bindings for drun icon extraction (issue #40): SHGetFileInfo,
 # GetDIBits, DestroyIcon.  Feature set kept narrow — only the UI Shell,
 # window messaging, GDI, and foundation types we actually call into.
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
     "Win32_Graphics_Gdi",
@@ -66,7 +66,7 @@ windows = { version = "0.58", features = [
 # transitive dep via floem; pin explicitly so the Windows icon path can
 # reference it without relying on transitive feature unification.
 image = { version = "0.25", default-features = false, features = ["png"] }
-sha2 = "0.10"     # SHA-256 cache-key derivation for icon-cache filenames
+sha2 = "0.11"     # SHA-256 cache-key derivation for icon-cache filenames
 
 [dev-dependencies]
 libc = "0.2"

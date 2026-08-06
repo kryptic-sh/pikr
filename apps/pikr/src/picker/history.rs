@@ -107,7 +107,7 @@ fn state_file_path() -> Option<PathBuf> {
     // session-scoped on macOS / Windows until we route through `dirs`.
     #[cfg(unix)]
     {
-        let dirs = xdg::BaseDirectories::with_prefix("pikr").ok()?;
+        let dirs = xdg::BaseDirectories::with_prefix("pikr");
         dirs.place_state_file("history.toml").ok()
     }
     #[cfg(not(unix))]

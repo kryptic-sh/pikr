@@ -278,7 +278,6 @@ mod unix_impl {
     /// missing, and it is where the cache write lands on a miss anyway.
     fn cache_path() -> Option<PathBuf> {
         xdg::BaseDirectories::with_prefix("pikr")
-            .ok()?
             .place_state_file("drun-cache.toml")
             .ok()
     }

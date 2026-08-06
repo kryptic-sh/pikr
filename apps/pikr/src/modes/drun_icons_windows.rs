@@ -47,7 +47,7 @@ pub fn icon_for(target: &Path) -> Option<PathBuf> {
 fn icon_cache_path(target: &Path) -> Option<PathBuf> {
     use sha2::{Digest, Sha256};
     let hash = Sha256::digest(target.to_string_lossy().as_bytes());
-    let hash_hex = format!("{hash:x}");
+    let hash_hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
     let cache_dir = dirs::data_local_dir()?.join("pikr").join("icon-cache");
     std::fs::create_dir_all(&cache_dir).ok()?;
     Some(cache_dir.join(format!("{hash_hex}.png")))
@@ -150,10 +150,10 @@ fn hicon_to_png(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option
     // Helper closure: clean up bitmap handles before returning.
     let cleanup = || unsafe {
         if !hbm_color.is_invalid() {
-            let _ = DeleteObject(hbm_color);
+            let _ = DeleteObject(hbm_color.into());
         }
         if !hbm_mask.is_invalid() {
-            let _ = DeleteObject(hbm_mask);
+            let _ = DeleteObject(hbm_mask.into());
         }
     };
 
@@ -161,7 +161,7 @@ fn hicon_to_png(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option
     let mut bm: BITMAP = unsafe { std::mem::zeroed() };
     let got = unsafe {
         GetObjectW(
-            hbm_color,
+            hbm_color.into(),
             std::mem::size_of::<BITMAP>() as i32,
             Some(&mut bm as *mut BITMAP as *mut core::ffi::c_void),
         )
@@ -204,7 +204,7 @@ fn hicon_to_png(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option
 
     // GetDC(HWND::default()) returns a screen DC suitable for GetDIBits
     // without a window association.
-    let hdc = unsafe { GetDC(HWND::default()) };
+    let hdc = unsafe { GetDC(Some(HWND::default())) };
     let rows_copied = unsafe {
         GetDIBits(
             hdc,
@@ -216,7 +216,7 @@ fn hicon_to_png(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option
             DIB_RGB_COLORS,
         )
     };
-    unsafe { ReleaseDC(HWND::default(), hdc) };
+    unsafe { ReleaseDC(Some(HWND::default()), hdc) };
 
     cleanup();
 

@@ -186,7 +186,7 @@ fn state_file_path() -> Option<PathBuf> {
     // Followup: route through `dirs::data_dir()` on macOS / Windows.
     #[cfg(unix)]
     {
-        let dirs = xdg::BaseDirectories::with_prefix("pikr").ok()?;
+        let dirs = xdg::BaseDirectories::with_prefix("pikr");
         dirs.place_state_file("usage.toml").ok()
     }
     #[cfg(not(unix))]

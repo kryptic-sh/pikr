@@ -8,6 +8,15 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- Dependencies updated to latest stable: dirs 6, emojis 0.9, evalexpr 11 (stays
+  — 12+ relicenses to AGPL-3.0-only, incompatible with pikr's MIT),
+  freedesktop-desktop-entry 0.8, hjkl-css 0.41, resvg 0.48, shlex 2, toml 1.1,
+  xdg 3, windows 0.62, sha2 0.11. Win32 icon extraction updated for the
+  windows-rs 0.62 GDI signatures (`Option<HWND>`, `HGDIOBJ` conversions) and the
+  sha2 0.11 digest hex output.
+
 ## [0.8.10] - 2026-08-06
 
 ### Fixed

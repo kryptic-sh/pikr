@@ -18,37 +18,38 @@ authors = ["mxaddict <mxaddict@kryptic.sh>"]
 [workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-dirs = "5"
-emojis = "0.6"
+dirs = "6"
+emojis = "0.9"
 # Persistent Vector for floem's virtual_stack VirtualVector impl. O(1) clone.
 imbl = "7.0"
 evalexpr = "11"
 floem = "0.2"
-freedesktop-desktop-entry = "0.7"
+freedesktop-desktop-entry = "0.8"
 freedesktop-icons = "0.4"
 # CSS parser used for pikr's stylesheet driving floem's view styling.
 # `hjkl-css-gui` is intentionally skipped: it's built against floem 0.2.0
 # stable and breaks under pikr's `[patch.crates-io]` redirect to current
 # `lapce/floem` main. Pikr ships its own thin floem-Style adapter against
 # the parsed `Stylesheet` for the small subset of CSS properties used here.
-hjkl-css = "0.25"
+hjkl-css = "0.41"
 # resvg + tiny-skia for server-side SVG rasterisation (icon-only). Floem's
 # `svg` view goes through vello which silently drops unsupported features
 # (markers, complex clip-paths) and renders the icon's black background
 # plate alone. Rasterising once with resvg → PNG and feeding through
-# `img()` produces a correct bitmap. resvg is already in the workspace
-# transitively via floem; promoting to a direct dep costs no build time.
-resvg = "0.43"
+# `img()` produces a correct bitmap. Pinned at the latest stable (0.48),
+# ahead of floem main's resvg 0.46 — the two copies cost build time but
+# keep the rasteriser current; unify once floem main catches up.
+resvg = "0.48"
 nucleo = "0.5"
 serde = { version = "1", features = ["derive"] }
-shlex = "1"
-toml = "0.8"
+shlex = "2"
+toml = "1.1"
 tempfile = "3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-normalization = "0.1.25"
 unicode-segmentation = "1.13.3"
-xdg = "2"
+xdg = "3"
 
 [profile.release]
 lto = "thin"

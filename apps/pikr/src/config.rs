@@ -74,10 +74,7 @@ impl Config {
                 // in-memory defaults until we route through `dirs`.
                 #[cfg(unix)]
                 {
-                    let dirs = match xdg::BaseDirectories::with_prefix("pikr") {
-                        Ok(d) => d,
-                        Err(_) => return Ok(Self::default()),
-                    };
+                    let dirs = xdg::BaseDirectories::with_prefix("pikr");
                     match dirs.place_config_file("config.toml") {
                         Ok(p) => p,
                         Err(_) => return Ok(Self::default()),

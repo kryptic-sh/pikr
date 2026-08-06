@@ -29,9 +29,10 @@ ignore = [
     "RUSTSEC-2024-0420",
     # proc-macro-error — unmaintained, pulled transitively. No CVE.
     "RUSTSEC-2024-0370",
-    # rustybuzz — unmaintained, pulled through Pikr's resvg 0.43 and
-    # Floem's resvg 0.46. No CVE and no safe upgrade exists in either
-    # dependency line. Drop after both move to resvg 0.48+ / harfrust.
+    # rustybuzz — unmaintained, pulled through Floem's resvg 0.46 (pikr
+    # itself is on resvg 0.48, which no longer uses rustybuzz). No CVE and
+    # no safe upgrade in the floem dependency line. Drop once floem main
+    # moves to resvg 0.48+ / harfrust.
     "RUSTSEC-2026-0206",
     # ttf-parser — unmaintained, pulled transitively via the floem font
     # stack. No CVE, no safe upgrade published. Revisit with floem.
