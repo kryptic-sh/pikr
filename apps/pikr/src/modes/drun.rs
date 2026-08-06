@@ -428,6 +428,7 @@ mod windows_impl {
     use super::{Entry, Result};
     use rayon::prelude::*;
     use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
     use std::path::{Path, PathBuf};
     use std::time::SystemTime;
     use walkdir::WalkDir;
@@ -613,6 +614,13 @@ mod windows_impl {
                 .collect()
         };
 
+        // Dedupe: the same app can have a .lnk under both the %APPDATA% and
+        // %ProgramData% Start Menu roots — without this it renders twice.
+        // First occurrence wins (per-user APPDATA is walked first), matching
+        // the unix collector's `insert_first` semantics. The shortcut label
+        // (file stem) is the per-app id, as the .desktop filename is on unix.
+        let mut entries = dedupe_first_wins(entries);
+
         entries.sort_by_key(|e| e.label.to_lowercase());
 
         // --- Cache write (best-effort) ---
@@ -621,6 +629,16 @@ mod windows_impl {
         }
 
         Ok(entries)
+    }
+
+    /// Dedupe entries by label, keeping the first occurrence — extracted from
+    /// `collect` so the first-wins rule is testable without lnk fixtures.
+    fn dedupe_first_wins(entries: Vec<Entry>) -> Vec<Entry> {
+        let mut by_label: HashMap<String, Entry> = HashMap::with_capacity(entries.len());
+        for e in entries {
+            by_label.entry(e.label.clone()).or_insert(e);
+        }
+        by_label.into_values().collect()
     }
 
     /// Return the Start Menu `Programs` roots to scan.
@@ -641,6 +659,12 @@ mod windows_impl {
             );
         }
         if let Some(programdata) = std::env::var_os("ProgramData") {
+            // All-users root. Trust note: whether standard users can write
+            // this folder is a Windows ACL question (NOT verified on this
+            // Linux host); if they can, a planted shortcut runs as the pikr
+            // user. Inherent to the launcher trust model — rofi/wofi drun
+            // behave the same. Revisit with a same-user-only filter on this
+            // root if the threat model tightens.
             roots.push(
                 PathBuf::from(programdata)
                     .join("Microsoft")
@@ -1082,7 +1106,42 @@ mod tests {
 
 #[cfg(all(test, windows))]
 mod windows_tests {
-    use super::windows_impl::{load_cache, start_menu_roots, tree_mtime, write_cache};
+    use super::super::{Entry, Payload};
+    use super::windows_impl::{
+        dedupe_first_wins, load_cache, start_menu_roots, tree_mtime, write_cache,
+    };
+
+    /// The same app installed for both users has a .lnk under each Start Menu
+    /// root — the collector must render it once, with the per-user (%APPDATA%,
+    /// walked first) copy winning, mirroring unix `insert_first`.
+    #[test]
+    fn dedupe_keeps_first_occurrence_per_label() {
+        let per_user = Entry::exec("Firefox", "C:\\Users\\alice\\...\\firefox.exe");
+        let system_copy = Entry::exec("Firefox", "C:\\ProgramData\\...\\firefox.exe");
+        let other = Entry::exec("Notepad", "C:\\Windows\\notepad.exe");
+
+        let deduped = dedupe_first_wins(vec![per_user.clone(), system_copy, other.clone()]);
+
+        assert_eq!(deduped.len(), 2);
+        let firefox = deduped
+            .iter()
+            .find(|e| e.label == "Firefox")
+            .expect("Firefox must survive the dedupe");
+        match (&firefox.payload, &per_user.payload) {
+            (Payload::Exec { program: a, .. }, Payload::Exec { program: b, .. }) => {
+                assert_eq!(a, b, "the per-user copy must win");
+            }
+            _ => panic!("expected Exec payloads"),
+        }
+        assert!(deduped.iter().any(|e| e.label == "Notepad"));
+    }
+
+    #[test]
+    fn dedupe_distinct_labels_both_kept() {
+        let a = Entry::exec("A", "a.exe");
+        let b = Entry::exec("B", "b.exe");
+        assert_eq!(dedupe_first_wins(vec![a, b]).len(), 2);
+    }
 
     /// start_menu_roots() must return at least one path when %APPDATA% or
     /// %ProgramData% env vars are set (as they always are on real Windows).
