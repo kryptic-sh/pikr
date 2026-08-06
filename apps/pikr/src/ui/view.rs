@@ -8,7 +8,9 @@ use std::time::Instant;
 use floem::ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
 use floem::{
     IntoView, ViewId,
-    event::listener::{Click, KeyDown, UpdatePhasePaintPresent, WindowGainedFocus},
+    event::listener::{
+        Click, KeyDown, UpdatePhasePaintPresent, WindowGainedFocus, WindowLostFocus,
+    },
     event::{EventCx, EventPropagation},
     kurbo::{Rect, Size as KurboSize},
     peniko::Color,
@@ -936,12 +938,21 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
     // query_sig directly. Avoids floem text_input's focus-stealing Esc.
     let sheet_query = Arc::clone(&sheet);
     let blink_on: RwSignal<bool> = RwSignal::new(true);
+    // The blink thread keeps ticking, but the toggle is gated on window
+    // focus: an unfocused surface would otherwise rebuild the query bar's
+    // dyn_view (two TextLayout measurements) and repaint every 530 ms
+    // forever, for no user-visible reason. WindowLostFocus leaves the cursor
+    // visible-but-static; WindowGainedFocus restarts the blink from the
+    // visible phase.
+    let focused: RwSignal<bool> = RwSignal::new(false);
     {
         let (tx, rx) = std::sync::mpsc::channel::<()>();
         let tick_sig = ChannelSignal::new(rx);
         Effect::new(move |_| {
             let _ = tick_sig.get(); // Option<()> — any value triggers the blink flip
-            blink_on.update(|b| *b = !*b);
+            if focused.get_untracked() {
+                blink_on.update(|b| *b = !*b);
+            }
         });
         std::thread::spawn(move || {
             loop {
@@ -1253,6 +1264,16 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
         // this pikr drops keys until Esc→i: the Esc registry-fallback
         // is the only thing that nudges focus onto root.
         root_id.request_focus();
+        // Restart the cursor blink from the visible phase on focus gain.
+        focused.set(true);
+        blink_on.set(true);
+        EventPropagation::Continue
+    })
+    .on_event(WindowLostFocus, move |_cx: &mut EventCx, _ev: &()| {
+        // Stop the blink loop (the tick effect checks this signal) and leave
+        // the cursor visible-but-static so it doesn't vanish mid-wait.
+        focused.set(false);
+        blink_on.set(true);
         EventPropagation::Continue
     })
     .on_event(KeyDown, move |_cx: &mut EventCx, ke: &KeyboardEvent| {
