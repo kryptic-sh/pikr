@@ -21,6 +21,32 @@ and this project adheres to
   offering a single broken `a b` alias.
 - drun names now honor POSIX locale precedence — `LC_ALL` overrides
   `LC_MESSAGES` — instead of consulting `LC_MESSAGES` first.
+- run mode lists symlinked executables: `$PATH` entries that are links to
+  executables (`sh`, `python`, `awk`) now appear instead of being silently
+  dropped.
+- calc mode rejects over-long expressions (4 KiB+) instead of aborting the
+  process with a stack overflow from evalexpr's unbounded recursion — reachable
+  from every keystroke and via `--show calc --filter`.
+- drun `Exec=` stripping now removes only the freedesktop field codes, so
+  legitimate `%` arguments survive (`notify-send "50%"`,
+  `yt-dlp -o "%(title)s.%(ext)s"`).
+- Persisted query history and frecency files are written owner-only (0600)
+  instead of world-readable, and a file left 0644 by an older version is
+  upgraded on the next save.
+- Clipboard accept now observes the `cliphist decode | wl-copy` pipeline's exit:
+  a missing `wl-copy` (or a failed decode) surfaces as an error instead of
+  silently doing nothing.
+- Icon theme misses are re-resolved after 60 s, so an icon theme installed while
+  pikr runs is picked up without a restart.
+- A non-finite `font_size` in config (`nan` / `inf`) falls back to the default
+  instead of flowing into every layout call.
+- `$TERMINAL` is shell-split, so `TERMINAL="alacritty --class foo"` works; the
+  flags are prepended to every ssh launch.
+- drun locale resolution emits the full fallback chain (`lang_COUNTRY@MODIFIER`,
+  `lang@MODIFIER`, `lang_COUNTRY`, `lang`), so an `sr_RS@latin` locale reaches
+  `Name[sr_RS]` keys it previously skipped.
+- Windows drun dedupes shortcuts present under both Start Menu roots (per-user
+  `%APPDATA%` copy wins).
 
 ### Performance
 
@@ -33,6 +59,13 @@ and this project adheres to
   `--version` per candidate at startup.
 - run mode filters `$PATH` entries with readdir's `d_type` before stat'ing,
   dropping the ~1000+ startup stats to just the regular files.
+- The cursor blink stops when the window is unfocused — no more query-bar
+  relayout and repaint every 530 ms for a surface that never has focus.
+- Calc mode precomputes history-expression results once at startup instead of
+  re-evaluating up to 100 stored expressions on every keystroke.
+- Style evaluation memoizes the matched-rule list per (element, classes) — the
+  per-row, per-keystroke stylesheet scan+sort now happens once per distinct
+  style key.
 
 ## [0.8.9] - 2026-08-04
 
