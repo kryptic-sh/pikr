@@ -606,7 +606,7 @@ mod windows_impl {
         };
 
         // --- Step 2: parallel parse — lnk open + parse + Path::exists() ---
-        let mut entries: Vec<Entry> = {
+        let entries: Vec<Entry> = {
             let _span = tracing::debug_span!("drun_parse", lnk_count = lnk_paths.len()).entered();
             lnk_paths
                 .par_iter()
@@ -633,7 +633,8 @@ mod windows_impl {
 
     /// Dedupe entries by label, keeping the first occurrence — extracted from
     /// `collect` so the first-wins rule is testable without lnk fixtures.
-    fn dedupe_first_wins(entries: Vec<Entry>) -> Vec<Entry> {
+    /// `pub` for the sibling `windows_tests` module (same as `start_menu_roots`).
+    pub fn dedupe_first_wins(entries: Vec<Entry>) -> Vec<Entry> {
         let mut by_label: HashMap<String, Entry> = HashMap::with_capacity(entries.len());
         for e in entries {
             by_label.entry(e.label.clone()).or_insert(e);

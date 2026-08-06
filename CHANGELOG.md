@@ -47,6 +47,10 @@ and this project adheres to
   `Name[sr_RS]` keys it previously skipped.
 - Windows drun dedupes shortcuts present under both Start Menu roots (per-user
   `%APPDATA%` copy wins).
+- Windows build restored: the `write_private_state` fallback,
+  `dedupe_first_wins` visibility and `ExecWait` dead-code allowances that the
+  platform-gated clippy run flagged are fixed, so the smoke / release pipeline
+  compiles again.
 
 ### Performance
 

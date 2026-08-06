@@ -82,6 +82,9 @@ impl Entry {
     /// `ExecWait` twin of [`Entry::exec`] — a must-succeed short pipeline
     /// (the clipboard's `cliphist decode | wl-copy`) whose exit status the
     /// accept path must observe. Args are supplied via [`Entry::with_args`].
+    /// Unix-only in practice: nothing on Windows calls it (see the `ExecWait`
+    /// variant's note), so silence the dead-code lint there.
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn exec_wait(label: impl Into<String>, program: impl Into<String>) -> Self {
         Self {
             label: label.into(),
@@ -94,6 +97,7 @@ impl Entry {
         }
     }
 
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn with_args(mut self, args: Vec<String>) -> Self {
         match &mut self.payload {
             Payload::Exec { args: a, .. } | Payload::ExecWait { args: a, .. } => *a = args,
@@ -113,6 +117,11 @@ pub enum Payload {
     /// error if the child fails or exits non-zero. Used for short,
     /// must-succeed pipelines (the clipboard's `cliphist decode | wl-copy`)
     /// where a detached spawn would silently drop a missing `wl-copy`.
+    /// Constructed only by the Unix clipboard mode (`modes/clipboard.rs`
+    /// `unix_impl`); it must exist on every platform because `execute` and
+    /// the frecency `payload_key` match it exhaustively. On Windows builds
+    /// nothing constructs it, so silence the dead-code lint there.
+    #[cfg_attr(windows, allow(dead_code))]
     ExecWait { program: String, args: Vec<String> },
     /// Write a string directly to the system clipboard (no subprocess).
     /// Constructed only by the Windows clipboard mode (`modes/clipboard.rs`

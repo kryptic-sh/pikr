@@ -7,7 +7,6 @@ pub mod keys;
 pub mod matcher;
 pub mod state;
 
-use std::io::Write;
 use std::path::Path;
 
 /// Write `text` to `path` with owner-only permissions (0600), creating or
@@ -16,10 +15,12 @@ use std::path::Path;
 /// world-readable on a multi-user host. `std::fs::write` would create the
 /// file 0644 under a normal umask.
 ///
-/// Unix-only: the state dirs (`history.rs` / `frecency.rs` `state_file_path`)
-/// are unix-only, so on other targets nothing ever calls this.
+/// On non-unix targets `state_file_path` (`history.rs` / `frecency.rs`)
+/// resolves to `None`, so nothing reaches this at runtime; the plain-write
+/// fallback below only exists to keep the call sites compiling.
 #[cfg(unix)]
 pub(crate) fn write_private_state(path: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
     let mut f = std::fs::OpenOptions::new()
@@ -34,6 +35,13 @@ pub(crate) fn write_private_state(path: &Path, text: &str) -> std::io::Result<()
     // permissions.
     f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     Ok(())
+}
+
+#[cfg(not(unix))]
+pub(crate) fn write_private_state(path: &Path, text: &str) -> std::io::Result<()> {
+    // No owner-only mode concept off unix; plain write. Unreachable while
+    // `state_file_path` returns `None` on these targets — see the doc comment.
+    std::fs::write(path, text)
 }
 
 #[cfg(all(test, unix))]
