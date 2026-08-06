@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.8.11] - 2026-08-06
+
 ### Changed
 
 - Dependencies updated to latest stable: dirs 6, emojis 0.9, evalexpr 11 (stays
@@ -1015,7 +1017,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.10...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.11...main
+[0.8.11]: https://github.com/kryptic-sh/pikr/compare/v0.8.10...v0.8.11
 [0.8.10]: https://github.com/kryptic-sh/pikr/compare/v0.8.9...v0.8.10
 [0.8.9]: https://github.com/kryptic-sh/pikr/compare/v0.8.8...v0.8.9
 [0.8.8]: https://github.com/kryptic-sh/pikr/compare/v0.8.7...v0.8.8
