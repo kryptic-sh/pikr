@@ -137,12 +137,16 @@ fn payload_key(payload: &Payload) -> String {
     match payload {
         Payload::Stdout(s) => s.clone(),
         Payload::Exec { program, args } | Payload::ExecWait { program, args } => {
-            // Length-prefix every component so the key is injective over all
-            // byte strings: a program or arg containing U+001F (legal in a
-            // Unix path, and shlex splits on whitespace only, so it survives
-            // inside .desktop args too) can never collide with a different
-            // program/arg split. The `{len}:` prefix fixes each boundary
-            // unambiguously regardless of what the components contain.
+            // Length-prefix every component so the key is injective within
+            // the Exec/ExecWait variants: a program or arg containing U+001F
+            // (legal in a Unix path, and shlex splits on whitespace only, so
+            // it survives inside .desktop args too) can never collide with a
+            // different program/arg split. The `{len}:` prefix fixes each
+            // boundary unambiguously regardless of what the components
+            // contain. NOT injective across Payload variants — e.g.
+            // Stdout("2:ab") and Exec{program:"ab"} share the key — but each
+            // mode emits a single variant today, so the cross-variant
+            // collision is unreachable.
             let mut key = format!("{}:{program}", program.len());
             for arg in args {
                 // write! into a String is infallible; `let _ =` consumes the
