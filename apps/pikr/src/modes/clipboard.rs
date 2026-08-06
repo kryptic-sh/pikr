@@ -70,7 +70,10 @@ mod unix_impl {
             label: preview_label(&preview),
             description: None,
             icon: None,
-            payload: Payload::Exec {
+            // ExecWait, not Exec: the accept path must observe the pipeline's
+            // exit — a missing wl-copy (or a failed decode) otherwise fails
+            // silently and the user's selection never reaches the clipboard.
+            payload: Payload::ExecWait {
                 program: "sh".to_string(),
                 args: vec!["-c".to_string(), format!("cliphist decode {id} | wl-copy")],
             },
@@ -151,13 +154,13 @@ mod tests {
         let (id, preview) = parse_line("42\thello world").unwrap();
         let entry = make_entry(id, preview);
         match &entry.payload {
-            Payload::Exec { program, args } => {
+            Payload::ExecWait { program, args } => {
                 assert_eq!(program, "sh");
                 assert_eq!(args[0], "-c");
                 assert!(args[1].contains("cliphist decode 42"));
                 assert!(args[1].contains("wl-copy"));
             }
-            _ => panic!("expected Exec payload"),
+            other => panic!("expected ExecWait payload, got {other:?}"),
         }
     }
 
@@ -182,11 +185,11 @@ mod tests {
         assert_eq!(entry.label, format!("{}é…", "a".repeat(PREVIEW_MAX - 1)));
         assert_eq!(entry.label.chars().count(), PREVIEW_MAX + 1);
         match entry.payload {
-            Payload::Exec { program, args } => {
+            Payload::ExecWait { program, args } => {
                 assert_eq!(program, "sh");
                 assert_eq!(args, ["-c", "cliphist decode 42 | wl-copy"]);
             }
-            payload => panic!("expected Exec payload, got {payload:?}"),
+            payload => panic!("expected ExecWait payload, got {payload:?}"),
         }
     }
 

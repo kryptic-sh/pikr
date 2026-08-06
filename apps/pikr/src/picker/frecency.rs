@@ -79,7 +79,7 @@ impl Usage {
                 return;
             }
         };
-        if let Err(e) = std::fs::write(&path, text) {
+        if let Err(e) = crate::picker::write_private_state(&path, &text) {
             tracing::warn!(error = %e, path = %path.display(), "write usage");
         }
     }
@@ -134,7 +134,7 @@ pub(crate) fn entry_keys(entries: &[Arc<Entry>]) -> Vec<String> {
 fn payload_key(payload: &Payload) -> String {
     match payload {
         Payload::Stdout(s) => s.clone(),
-        Payload::Exec { program, args } => {
+        Payload::Exec { program, args } | Payload::ExecWait { program, args } => {
             // Length-prefix every component so the key is injective over all
             // byte strings: a program or arg containing U+001F (legal in a
             // Unix path, and shlex splits on whitespace only, so it survives

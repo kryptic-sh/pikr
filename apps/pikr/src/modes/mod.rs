@@ -81,6 +81,11 @@ pub enum Payload {
     Stdout(String),
     /// Spawn `program` with `args` detached from pikr.
     Exec { program: String, args: Vec<String> },
+    /// Spawn `program` with `args` and wait for it to exit, returning an
+    /// error if the child fails or exits non-zero. Used for short,
+    /// must-succeed pipelines (the clipboard's `cliphist decode | wl-copy`)
+    /// where a detached spawn would silently drop a missing `wl-copy`.
+    ExecWait { program: String, args: Vec<String> },
     /// Write a string directly to the system clipboard (no subprocess).
     SetClipboard(String),
 }
@@ -99,6 +104,7 @@ pub fn execute(payload: &Payload) -> Result<()> {
             Ok(())
         }
         Payload::Exec { program, args } => spawn_detached(program, args),
+        Payload::ExecWait { program, args } => spawn_and_wait(program, args),
         Payload::SetClipboard(text) => set_clipboard(text),
     }
 }
@@ -142,4 +148,87 @@ fn spawn_detached(program: &str, args: &[String]) -> Result<()> {
         .spawn()
         .with_context(|| format!("spawn {program}"))?;
     Ok(())
+}
+
+/// Spawn `program` with `args` and wait for it to exit, returning an error
+/// when the child fails to start or exits non-zero.
+///
+/// The clipboard accept path uses this for its `sh -c "cliphist decode | wl-copy"`
+/// pipeline: a missing `wl-copy` (or a decode failure) otherwise fails
+/// silently — the user selects an entry and nothing reaches the clipboard.
+/// Stderr is inherited so the child's own error message ("wl-copy: command
+/// not found") shows in the terminal that launched pikr; stdout is nulled —
+/// the pipeline's stdout is nothing, and a stray child must not print into
+/// the launcher's terminal.
+fn spawn_and_wait(program: &str, args: &[String]) -> Result<()> {
+    let status = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .status()
+        .with_context(|| format!("spawn {program}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("{program} exited with {status}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Payload, spawn_and_wait};
+
+    fn args(s: &[&str]) -> Vec<String> {
+        s.iter().map(|a| a.to_string()).collect()
+    }
+
+    #[test]
+    fn spawn_and_wait_ok_on_success() {
+        let r = spawn_and_wait("sh", &args(&["-c", "exit 0"]));
+        assert!(r.is_ok(), "exit 0 must succeed: {r:?}");
+    }
+
+    #[test]
+    fn spawn_and_wait_errs_on_nonzero_exit() {
+        // The clipboard pipe's failure mode: wl-copy missing → sh exits 127.
+        let r = spawn_and_wait("sh", &args(&["-c", "exit 3"]));
+        let err = r.expect_err("non-zero exit must surface as an error");
+        assert!(err.to_string().contains("exited with"), "got: {err}");
+    }
+
+    #[test]
+    fn spawn_and_wait_errs_on_missing_program() {
+        let r = spawn_and_wait("no-such-binary-xyz-12345", &[]);
+        assert!(r.is_err(), "missing program must fail, not silently pass");
+    }
+
+    #[test]
+    fn execwait_parity_with_exec_in_payload_key() {
+        // ExecWait and Exec with identical program+args must share one usage
+        // key (frecency): the clipboard's sh -c pipeline and a plain exec of
+        // the same command are the "same" launch for ranking purposes.
+        let exec = Payload::Exec {
+            program: "sh".into(),
+            args: args(&["-c", "cliphist decode 42 | wl-copy"]),
+        };
+        let wait = Payload::ExecWait {
+            program: "sh".into(),
+            args: args(&["-c", "cliphist decode 42 | wl-copy"]),
+        };
+        let exec_key =
+            crate::picker::frecency::entry_keys(&[std::sync::Arc::new(crate::modes::Entry {
+                label: "x".into(),
+                description: None,
+                icon: None,
+                payload: exec,
+            })]);
+        let wait_key =
+            crate::picker::frecency::entry_keys(&[std::sync::Arc::new(crate::modes::Entry {
+                label: "x".into(),
+                description: None,
+                icon: None,
+                payload: wait,
+            })]);
+        assert_eq!(exec_key, wait_key);
+    }
 }
