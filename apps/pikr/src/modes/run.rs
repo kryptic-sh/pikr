@@ -119,13 +119,27 @@ fn scan_dir(dir: &Path, names: &mut BTreeSet<String>) {
         let Ok(ft) = entry.file_type() else {
             continue;
         };
-        if !ft.is_file() {
-            continue;
-        }
-        let Ok(meta) = entry.metadata() else {
+        let entry_path = entry.path();
+        // Symlinks: `DirEntry::metadata()` does NOT follow the link, so both
+        // the is_file check and the mode bits would come from the link itself
+        // (mode 0o777 on Linux) — a link to a non-executable would wrongly
+        // pass. Pay one following `fs::metadata` (which resolves the target)
+        // per symlink; the ~d_type fast path above keeps the other entries
+        // stat-free.
+        let meta = if ft.is_file() {
+            match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            }
+        } else if ft.is_symlink() {
+            // Dangling links (target gone) error out → skipped.
+            match std::fs::metadata(&entry_path) {
+                Ok(m) if m.is_file() => m,
+                _ => continue,
+            }
+        } else {
             continue;
         };
-        let entry_path = entry.path();
         if !is_executable(&entry_path, &meta) {
             continue;
         }
@@ -166,6 +180,41 @@ mod tests {
         scan_dir(dir.path(), &mut names);
 
         assert_eq!(names, BTreeSet::from(["executable".to_string()]));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn scan_dir_follows_symlinked_executables() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let real_exec = dir.path().join("real-exec");
+        let real_non_exec = dir.path().join("real-non-exec");
+        std::fs::write(&real_exec, b"#!/bin/sh").unwrap();
+        std::fs::write(&real_non_exec, b"data").unwrap();
+        let mut permissions = std::fs::metadata(&real_exec).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&real_exec, permissions).unwrap();
+
+        // Link to an executable, link to a non-executable, dangling link.
+        let link_exec = dir.path().join("link-exec");
+        let link_non_exec = dir.path().join("link-non-exec");
+        let link_dangling = dir.path().join("link-dangling");
+        symlink(&real_exec, &link_exec).unwrap();
+        symlink(&real_non_exec, &link_non_exec).unwrap();
+        symlink(dir.path().join("does-not-exist"), &link_dangling).unwrap();
+
+        let mut names = BTreeSet::new();
+        scan_dir(dir.path(), &mut names);
+
+        // `link-exec` must appear (DirEntry::file_type() reports the link as a
+        // symlink, not a file — the old code dropped every $PATH symlink, so
+        // sh/python/awk never showed up); the non-executable and dangling
+        // links must not.
+        assert_eq!(
+            names,
+            BTreeSet::from(["real-exec".to_string(), "link-exec".to_string()])
+        );
     }
 
     #[test]
