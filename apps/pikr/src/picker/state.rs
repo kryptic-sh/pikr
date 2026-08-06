@@ -3,9 +3,8 @@
 use clap::ValueEnum;
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum VimMode {
-    #[default]
     Normal,
     Insert,
     /// Range-select over the result list. `v` / `V` / `<C-v>` enter from
@@ -85,12 +84,6 @@ impl PickerState {
         // prefix must not silently wrap back to a small number in release.
         let next = cur.saturating_mul(10).saturating_add(d as usize);
         self.count.set(Some(next));
-    }
-}
-
-impl Default for PickerState {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

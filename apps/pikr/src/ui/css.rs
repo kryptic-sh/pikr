@@ -23,13 +23,12 @@ use crate::config::Theme;
 /// `count_bg`) mirror the `blend()` calls that were inline in
 /// `ui/view.rs` before the CSS migration.
 pub fn build_stylesheet(theme: &Theme) -> Stylesheet {
-    let bg = parse_hex(&theme.bg);
-    let fg = parse_hex(&theme.fg);
     let accent = parse_hex(&theme.accent);
     let muted = parse_hex(&theme.muted);
     let selected_bg = parse_hex(&theme.selected_bg);
+    // The ex bar and status bar share the same derived background.
     let ex_bg = blend_hex(muted, selected_bg, 0.15);
-    let status_bg = blend_hex(muted, selected_bg, 0.15);
+    let status_bg = ex_bg;
     let count_bg = blend_hex(accent, selected_bg, 0.25);
 
     let css = include_str!("styles/default.css")
@@ -43,11 +42,6 @@ pub fn build_stylesheet(theme: &Theme) -> Stylesheet {
         .replace("{count_bg}", &hex(count_bg))
         .replace("{font_family}", &theme.font)
         .replace("{font_size}", &theme.font_size.to_string());
-
-    // Discard `fg` from the bg dance above so unused warnings don't fire —
-    // it's reserved for future class entries that will need the foreground.
-    let _ = fg;
-    let _ = bg;
 
     parse(&css).unwrap_or_else(|err| {
         tracing::error!(?err, "default.css failed to parse — using empty stylesheet");

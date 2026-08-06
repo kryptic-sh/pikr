@@ -274,12 +274,11 @@ fn entry_row(
             // the matched indices in accent. desc_positions are indices into
             // the original `d` string — shift by 1 to account for the
             // leading "(" we prepend.
-            let body: String = d.clone();
             let shifted: Vec<u32> = desc_positions.iter().map(|p| p + 1).collect();
             // Compose ( + body + ) and run through highlighted_label so it
             // emits the same per-char spans the title uses (matched = accent,
             // unmatched = muted via the default color we set on the wrapper).
-            let wrapped = format!("({body})");
+            let wrapped = format!("({d})");
             let sheet_desc = Arc::clone(&sheet);
             highlighted_label(
                 wrapped,

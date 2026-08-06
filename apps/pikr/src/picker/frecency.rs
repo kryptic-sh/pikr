@@ -9,6 +9,7 @@
 //! pickers don't cross-contaminate (drun won't bias ssh ordering).
 
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -144,7 +145,9 @@ fn payload_key(payload: &Payload) -> String {
             // unambiguously regardless of what the components contain.
             let mut key = format!("{}:{program}", program.len());
             for arg in args {
-                key.push_str(&format!("\u{1f}{}:{arg}", arg.len()));
+                // write! into a String is infallible; `let _ =` consumes the
+                // Result so the must-use lint stays quiet without a panic.
+                let _ = write!(key, "\u{1f}{}:{arg}", arg.len());
             }
             key
         }
