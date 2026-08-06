@@ -119,6 +119,12 @@ fn blend(over: Color, under: Color, t: f32) -> Color {
     Color::from_rgb8(r, g, b)
 }
 
+/// Hover background for rows and the input bar: a light accent tint over the
+/// panel bg, distinct from the deeper selected_bg cursor row.
+fn hover_bg(accent: Color, selected_bg: Color) -> Color {
+    blend(accent, selected_bg, 0.18)
+}
+
 // ─── Match-highlight helpers ─────────────────────────────────────────────────
 
 /// Render `label_str` with the `positions` codepoints painted in `accent`
@@ -291,7 +297,7 @@ fn entry_row(
 
     let click_payload = entry.payload.clone();
 
-    let hover_bg = blend(accent, selected_bg, 0.18);
+    let hover_bg = hover_bg(accent, selected_bg);
     // Visual-range bg: tinted toward accent so it reads as "selected" but
     // stays distinct from the cursor row (which keeps the deeper selected_bg
     // and the accent border).
@@ -579,7 +585,7 @@ fn status_bar(
     let mode_name_label = Label::derived(move || {
         let _ = rev.get();
         let s = state_mode.lock().unwrap();
-        format!("{:?}", s.cli_mode).to_lowercase()
+        s.cli_mode.key()
     })
     .style(move |s| {
         crate::ui::css::apply(s, &sheet_mode_name, "label", &["mode-name"]).margin_left(10.0)
@@ -677,7 +683,7 @@ impl AppState {
         // also benefits — that's when you want the launcher to show the
         // app you actually launch every day first.
         let now = std::time::SystemTime::now();
-        let mode_key = crate::picker::frecency::mode_key(self.cli_mode);
+        let mode_key = self.cli_mode.key();
         for m in &mut ranked {
             let bonus = self
                 .usage
@@ -722,22 +728,20 @@ impl AppState {
             })
             .collect();
 
+        let mk_entry = |expr: String, result: String| {
+            Arc::new(Entry {
+                label: format!("{expr} = {result}"),
+                description: None,
+                icon: None,
+                payload: crate::modes::Payload::Stdout(result),
+            })
+        };
         let mut entries: Vec<Arc<Entry>> = Vec::with_capacity(history.len() + 1);
         if let Some((expr, result)) = live_eval.as_ref() {
-            entries.push(Arc::new(Entry {
-                label: format!("{expr} = {result}"),
-                description: None,
-                icon: None,
-                payload: crate::modes::Payload::Stdout(result.clone()),
-            }));
+            entries.push(mk_entry(expr.clone(), result.clone()));
         }
         for (expr, result) in &history {
-            entries.push(Arc::new(Entry {
-                label: format!("{expr} = {result}"),
-                description: None,
-                icon: None,
-                payload: crate::modes::Payload::Stdout(result.clone()),
-            }));
+            entries.push(mk_entry(expr.clone(), result.clone()));
         }
         self.entries = entries;
         self.usage_keys = crate::picker::frecency::entry_keys(&self.entries);
@@ -774,8 +778,7 @@ impl AppState {
                 .skip(live_offset)
                 .map(|e| (e.label.as_str(), e.description.as_deref()))
                 .collect();
-            let mut ranked = self.matcher.rank(&pairs, query);
-            ranked.sort_by(|a, b| b.score.cmp(&a.score).then(a.index.cmp(&b.index)));
+            let ranked = self.matcher.rank(&pairs, query);
             for mut m in ranked {
                 m.index += live_offset;
                 matches.push(m);
@@ -1055,7 +1058,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
         cur
     });
 
-    let hover_bg = blend(accent, selected_bg, 0.18);
+    let hover_bg = hover_bg(accent, selected_bg);
     let sheet_input = Arc::clone(&sheet);
     let input_row = Stack::horizontal((prompt_label, query_view)).style(move |s| {
         // Geometry + bg + radius from `.input-row` in default.css. Inline

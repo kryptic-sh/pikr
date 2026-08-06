@@ -5,7 +5,9 @@
 //!   Full per-item history requires Windows 10 1809+ WinRT (future work).
 //! - Other targets: returns an empty list.
 
-use super::{Entry, Mode, Payload};
+#[cfg(windows)]
+use super::Payload;
+use super::{Entry, Mode};
 use anyhow::Result;
 
 #[derive(Default)]
@@ -35,7 +37,7 @@ impl Mode for Clipboard {
 
 #[cfg(unix)]
 mod unix_impl {
-    use super::{Entry, Payload, Result, preview_label};
+    use super::{Entry, Result, preview_label};
 
     pub fn collect() -> Result<Vec<Entry>> {
         let output = match std::process::Command::new("cliphist").arg("list").output() {
@@ -62,18 +64,13 @@ mod unix_impl {
     }
 
     pub fn make_entry(id: u64, preview: String) -> Entry {
-        Entry {
-            label: preview_label(&preview),
-            description: None,
-            icon: None,
-            // ExecWait, not Exec: the accept path must observe the pipeline's
-            // exit — a missing wl-copy (or a failed decode) otherwise fails
-            // silently and the user's selection never reaches the clipboard.
-            payload: Payload::ExecWait {
-                program: "sh".to_string(),
-                args: vec!["-c".to_string(), format!("cliphist decode {id} | wl-copy")],
-            },
-        }
+        // ExecWait, not Exec: the accept path must observe the pipeline's
+        // exit — a missing wl-copy (or a failed decode) otherwise fails
+        // silently and the user's selection never reaches the clipboard.
+        Entry::exec_wait(preview_label(&preview), "sh").with_args(vec![
+            "-c".to_string(),
+            format!("cliphist decode {id} | wl-copy"),
+        ])
     }
 }
 

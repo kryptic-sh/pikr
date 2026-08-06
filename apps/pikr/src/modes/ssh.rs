@@ -1,7 +1,7 @@
 //! ssh mode — SSH host picker from `~/.ssh/config` (and `/etc/ssh/ssh_config`
 //! on Unix).
 
-use super::{Entry, Mode, Payload};
+use super::{Entry, Mode};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
@@ -147,15 +147,7 @@ fn make_entry(
         (None, None) => None,
     };
     let args = build_terminal_args(terminal, &host);
-    Entry {
-        label: host,
-        description,
-        icon: None,
-        payload: Payload::Exec {
-            program: terminal.to_string(),
-            args,
-        },
-    }
+    Entry::exec_with(host, terminal.to_string(), args, description, None)
 }
 
 /// Build the argv for the chosen terminal to run `ssh <host>`.
@@ -259,9 +251,7 @@ fn is_tool_installed(name: &str) -> bool {
     if name.contains('/') || name.contains('\\') {
         // Path-like `$TERMINAL` value ("/usr/bin/alacritty"): probe the
         // path directly, not via PATH joins.
-        return std::fs::metadata(name)
-            .map(|m| m.is_file() && is_executable(Path::new(name), &m))
-            .unwrap_or(false);
+        return is_executable_file(Path::new(name));
     }
     let Some(path) = std::env::var_os("PATH") else {
         return false;
@@ -274,9 +264,7 @@ fn probe_in_path(path_var: &std::ffi::OsStr, name: &str) -> bool {
     std::env::split_paths(path_var).any(|dir| {
         candidate_names(name).iter().any(|candidate| {
             let path = dir.join(candidate);
-            std::fs::metadata(&path)
-                .map(|m| m.is_file() && is_executable(&path, &m))
-                .unwrap_or(false)
+            is_executable_file(&path)
         })
     })
 }
@@ -316,6 +304,15 @@ fn is_executable(path: &Path, meta: &std::fs::Metadata) -> bool {
         let _ = (path, meta);
         true
     }
+}
+
+/// A regular file that is executable — shared probe used by the
+/// path-like `$TERMINAL` branch of `is_tool_installed` and by every
+/// `probe_in_path` candidate.
+fn is_executable_file(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .map(|m| m.is_file() && is_executable(path, &m))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

@@ -92,13 +92,7 @@ mod unix_impl {
 
             let icon = de.icon().map(|s| s.to_string());
             let id = de.appid.clone();
-            let mut entry = Entry::exec(label, program).with_args(args);
-            if let Some(d) = description {
-                entry = entry.with_description(d);
-            }
-            if let Some(i) = icon {
-                entry = entry.with_icon(i);
-            }
+            let entry = Entry::exec_with(label, program, args, description, icon);
             insert_first(&mut by_id, id, entry);
         }
 
@@ -223,14 +217,7 @@ mod unix_impl {
 
     impl From<CachedEntry> for Entry {
         fn from(c: CachedEntry) -> Self {
-            let mut e = Entry::exec(c.label, c.program).with_args(c.args);
-            if let Some(d) = c.description {
-                e = e.with_description(d);
-            }
-            if let Some(i) = c.icon {
-                e = e.with_icon(i);
-            }
-            e
+            Entry::exec_with(c.label, c.program, c.args, c.description, c.icon)
         }
     }
 
@@ -452,14 +439,7 @@ mod windows_impl {
 
     impl From<CachedEntry> for Entry {
         fn from(c: CachedEntry) -> Self {
-            let mut e = Entry::exec(c.label, c.target).with_args(c.args);
-            if let Some(d) = c.description {
-                e = e.with_description(d);
-            }
-            if let Some(icon) = c.icon_path {
-                e = e.with_icon(icon);
-            }
-            e
+            Entry::exec_with(c.label, c.target, c.args, c.description, c.icon_path)
         }
     }
 
@@ -704,24 +684,27 @@ mod windows_impl {
             .and_then(shlex::split)
             .unwrap_or_default();
 
-        let mut entry = Entry::exec(label, target.clone()).with_args(args);
-
         // Parent folder name as description if non-empty and not the root
         // "Programs" folder itself.
-        if !parent_name.is_empty() && !parent_name.eq_ignore_ascii_case("Programs") {
-            entry = entry.with_description(parent_name);
-        }
+        let description = (!parent_name.is_empty()
+            && !parent_name.eq_ignore_ascii_case("Programs"))
+        .then(|| parent_name.clone());
 
         // Resolve and cache the icon for the target executable.  The first
         // call per target does a Win32 SHGetFileInfoW + GetDIBits round-trip
         // and writes a PNG to %LOCALAPPDATA%\pikr\icon-cache\; subsequent
         // calls return the cached path directly.  Failure is non-fatal —
         // the entry is still shown without an icon.
-        if let Some(icon_path) = super::icons_windows::icon_for(target_path) {
-            entry = entry.with_icon(icon_path.to_string_lossy().into_owned());
-        }
+        let icon = super::icons_windows::icon_for(target_path)
+            .map(|icon_path| icon_path.to_string_lossy().into_owned());
 
-        Some(entry)
+        Some(Entry::exec_with(
+            label,
+            target.clone(),
+            args,
+            description,
+            icon,
+        ))
     }
 }
 
@@ -853,10 +836,20 @@ mod tests {
         let locales = vec!["en_US".to_string()];
         let mtime: u64 = 1_700_000_000;
         let entries = vec![
-            Entry::exec("Firefox", "firefox").with_args(vec!["-new-window".to_string()]),
-            Entry::exec("Alacritty", "alacritty")
-                .with_description("Terminal emulator".to_string())
-                .with_icon("utilities-terminal".to_string()),
+            Entry::exec_with(
+                "Firefox",
+                "firefox",
+                vec!["-new-window".to_string()],
+                None,
+                None,
+            ),
+            Entry::exec_with(
+                "Alacritty",
+                "alacritty",
+                Vec::new(),
+                Some("Terminal emulator".to_string()),
+                Some("utilities-terminal".to_string()),
+            ),
         ];
 
         write_cache(&dirs, &locales, mtime, &entries, &path);
@@ -1055,9 +1048,20 @@ mod windows_tests {
 
         let mtime: u64 = 1_700_000_000;
         let entries = vec![
-            super::super::Entry::exec("Firefox", "C:\\Program Files\\Firefox\\firefox.exe"),
-            super::super::Entry::exec("Notepad", "C:\\Windows\\notepad.exe")
-                .with_description("Windows Accessories".to_string()),
+            super::super::Entry::exec_with(
+                "Firefox",
+                "C:\\Program Files\\Firefox\\firefox.exe",
+                Vec::new(),
+                None,
+                None,
+            ),
+            super::super::Entry::exec_with(
+                "Notepad",
+                "C:\\Windows\\notepad.exe",
+                Vec::new(),
+                Some("Windows Accessories".to_string()),
+                None,
+            ),
         ];
 
         write_cache(mtime, &entries, &path);

@@ -57,20 +57,48 @@ impl Entry {
         }
     }
 
-    pub fn with_description(mut self, d: impl Into<String>) -> Self {
-        self.description = Some(d.into());
-        self
+    /// Exec entry with every field supplied up front — the four drun
+    /// construction sites (unix collect, unix/windows cache restore,
+    /// windows `parse_lnk`) all followed `exec(...).with_args(...)` with the
+    /// same conditional description/icon dance; this collapses it to one call.
+    pub fn exec_with(
+        label: impl Into<String>,
+        program: impl Into<String>,
+        args: Vec<String>,
+        description: Option<String>,
+        icon: Option<String>,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            description,
+            icon,
+            payload: Payload::Exec {
+                program: program.into(),
+                args,
+            },
+        }
+    }
+
+    /// `ExecWait` twin of [`Entry::exec`] — a must-succeed short pipeline
+    /// (the clipboard's `cliphist decode | wl-copy`) whose exit status the
+    /// accept path must observe. Args are supplied via [`Entry::with_args`].
+    pub fn exec_wait(label: impl Into<String>, program: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            description: None,
+            icon: None,
+            payload: Payload::ExecWait {
+                program: program.into(),
+                args: Vec::new(),
+            },
+        }
     }
 
     pub fn with_args(mut self, args: Vec<String>) -> Self {
-        if let Payload::Exec { args: a, .. } = &mut self.payload {
-            *a = args;
+        match &mut self.payload {
+            Payload::Exec { args: a, .. } | Payload::ExecWait { args: a, .. } => *a = args,
+            _ => {}
         }
-        self
-    }
-
-    pub fn with_icon(mut self, icon: impl Into<String>) -> Self {
-        self.icon = Some(icon.into());
         self
     }
 }

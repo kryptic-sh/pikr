@@ -72,7 +72,7 @@ impl History {
         if q.is_empty() {
             return;
         }
-        let list = self.modes.entry(mode_key(mode)).or_default();
+        let list = self.modes.entry(mode.key()).or_default();
         list.retain(|h| h != q);
         list.insert(0, q.to_string());
         if list.len() > HISTORY_CAP {
@@ -83,10 +83,7 @@ impl History {
     /// Lookup the `index`-th most recent entry for `mode`. `index = 0` →
     /// most recent. Returns `None` past the end.
     pub fn get(&self, mode: CliMode, index: usize) -> Option<&str> {
-        self.modes
-            .get(&mode_key(mode))?
-            .get(index)
-            .map(String::as_str)
+        self.modes.get(&mode.key())?.get(index).map(String::as_str)
     }
 
     /// Most-recent-first slice of every stored entry for `mode`, for callers
@@ -94,19 +91,15 @@ impl History {
     /// expressions as result rows).
     pub fn list(&self, mode: CliMode) -> &[String] {
         self.modes
-            .get(&mode_key(mode))
+            .get(&mode.key())
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }
 
     /// Number of entries stored for `mode`.
     pub fn len(&self, mode: CliMode) -> usize {
-        self.modes.get(&mode_key(mode)).map_or(0, Vec::len)
+        self.modes.get(&mode.key()).map_or(0, Vec::len)
     }
-}
-
-fn mode_key(mode: CliMode) -> String {
-    format!("{mode:?}").to_lowercase()
 }
 
 fn state_file_path() -> Option<PathBuf> {

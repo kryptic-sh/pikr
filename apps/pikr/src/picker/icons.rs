@@ -59,6 +59,15 @@ pub const GENERIC_FALLBACK_NAMES: &[&str] = &[
 #[cfg(unix)]
 const FALLBACK_THEMES: &[&str] = &["Adwaita", "Papirus", "breeze", "hicolor"];
 
+/// A 32 px, scale-1 freedesktop icon lookup — the shared starting point for
+/// the primary and fallback-theme lookups in [`IconCache::resolve`]. Takes
+/// the name as a parameter (not a capture) so the returned builder can borrow
+/// it for the `.with_theme(t).find()` chain.
+#[cfg(unix)]
+fn icon_lookup(name: &str) -> freedesktop_icons::LookupBuilder<'_> {
+    freedesktop_icons::lookup(name).with_size(32).with_scale(1)
+}
+
 impl IconCache {
     /// Create an empty cache.
     pub fn new() -> Self {
@@ -98,19 +107,11 @@ impl IconCache {
             // shows no icon and the cache stores the miss.
             #[cfg(unix)]
             {
-                freedesktop_icons::lookup(name_or_path)
-                    .with_size(32)
-                    .with_scale(1)
-                    .find()
-                    .or_else(|| {
-                        FALLBACK_THEMES.iter().find_map(|theme| {
-                            freedesktop_icons::lookup(name_or_path)
-                                .with_size(32)
-                                .with_scale(1)
-                                .with_theme(theme)
-                                .find()
-                        })
-                    })
+                icon_lookup(name_or_path).find().or_else(|| {
+                    FALLBACK_THEMES
+                        .iter()
+                        .find_map(|theme| icon_lookup(name_or_path).with_theme(theme).find())
+                })
             }
             #[cfg(not(unix))]
             {

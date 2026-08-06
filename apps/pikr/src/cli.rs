@@ -74,6 +74,15 @@ pub enum Mode {
     Calc,
 }
 
+impl Mode {
+    /// Lowercase the Debug repr — the key under which frecency/history store
+    /// this mode, matching the status bar's mode-name label and staying
+    /// stable across `Mode` reorderings.
+    pub(crate) fn key(self) -> String {
+        format!("{self:?}").to_lowercase()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

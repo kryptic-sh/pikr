@@ -93,7 +93,7 @@ impl Usage {
         let key = payload_key(payload);
         let entry = self
             .modes
-            .entry(mode_key(cli_mode))
+            .entry(cli_mode.key())
             .or_default()
             .entry(key)
             .or_default();
@@ -152,12 +152,6 @@ fn payload_key(payload: &Payload) -> String {
     }
 }
 
-/// Lowercase the Debug repr — matches the status bar's mode label and stays
-/// stable across `CliMode` reorderings.
-pub(crate) fn mode_key(mode: CliMode) -> String {
-    format!("{mode:?}").to_lowercase()
-}
-
 fn unix_seconds(t: SystemTime) -> i64 {
     match t.duration_since(UNIX_EPOCH) {
         Ok(d) => d.as_secs() as i64,
@@ -207,7 +201,7 @@ mod tests {
         let usage = Usage::default();
         let payload = Payload::Stdout("never-seen".into());
         assert_eq!(
-            usage.bonus(&mode_key(CliMode::Drun), &payload, SystemTime::now()),
+            usage.bonus(&CliMode::Drun.key(), &payload, SystemTime::now()),
             0
         );
     }
@@ -220,7 +214,7 @@ mod tests {
             args: vec!["%U".into()],
         };
         usage.record(CliMode::Drun, &payload);
-        let bonus = usage.bonus(&mode_key(CliMode::Drun), &payload, SystemTime::now());
+        let bonus = usage.bonus(&CliMode::Drun.key(), &payload, SystemTime::now());
         assert!(bonus > 0, "freshly-accepted entry must get a bonus");
     }
 
@@ -236,8 +230,8 @@ mod tests {
         usage.record(CliMode::Drun, &payload);
         let now = SystemTime::now();
         let key = payload_key(&payload);
-        let via_payload = usage.bonus(&mode_key(CliMode::Drun), &payload, now);
-        let via_key = usage.bonus_for_key(&mode_key(CliMode::Drun), &key, now);
+        let via_payload = usage.bonus(&CliMode::Drun.key(), &payload, now);
+        let via_key = usage.bonus_for_key(&CliMode::Drun.key(), &key, now);
         assert_eq!(via_payload, via_key);
         assert!(via_key > 0, "recorded payload must get a bonus");
     }
@@ -247,11 +241,11 @@ mod tests {
         let mut usage = Usage::default();
         let payload = Payload::Stdout("foo".into());
         usage.record(CliMode::Run, &payload);
-        let one = usage.bonus(&mode_key(CliMode::Run), &payload, SystemTime::now());
+        let one = usage.bonus(&CliMode::Run.key(), &payload, SystemTime::now());
         for _ in 0..4 {
             usage.record(CliMode::Run, &payload);
         }
-        let five = usage.bonus(&mode_key(CliMode::Run), &payload, SystemTime::now());
+        let five = usage.bonus(&CliMode::Run.key(), &payload, SystemTime::now());
         assert!(
             five > one,
             "5 accepts should outweigh 1 (got {one} vs {five})"
@@ -286,9 +280,9 @@ mod tests {
         let mut usage = Usage::default();
         let payload = Payload::Stdout("foo".into());
         usage.record(CliMode::Drun, &payload);
-        assert!(usage.bonus(&mode_key(CliMode::Drun), &payload, SystemTime::now()) > 0);
+        assert!(usage.bonus(&CliMode::Drun.key(), &payload, SystemTime::now()) > 0);
         assert_eq!(
-            usage.bonus(&mode_key(CliMode::Ssh), &payload, SystemTime::now()),
+            usage.bonus(&CliMode::Ssh.key(), &payload, SystemTime::now()),
             0
         );
     }
@@ -356,7 +350,7 @@ mod tests {
         usage.record(CliMode::Emoji, &payload);
         let text = toml::to_string(&usage).unwrap();
         let back: Usage = toml::from_str(&text).unwrap();
-        assert!(back.bonus(&mode_key(CliMode::Emoji), &payload, SystemTime::now()) > 0);
+        assert!(back.bonus(&CliMode::Emoji.key(), &payload, SystemTime::now()) > 0);
     }
 
     #[test]
