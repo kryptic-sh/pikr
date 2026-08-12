@@ -37,6 +37,11 @@ ignore = [
     # ttf-parser — unmaintained, pulled transitively via the floem font
     # stack. No CVE, no safe upgrade published. Revisit with floem.
     "RUSTSEC-2026-0192",
+    # bitmaps — unmaintained (repo archived 2026-05-03), pulled transitively
+    # via imbl 7 (floem's persistent vector; also a direct pikr dep). No CVE
+    # and no safe upgrade published. Revisit when the floem tree moves off
+    # imbl.
+    "RUSTSEC-2026-0247",
 ]
 
 [licenses]
