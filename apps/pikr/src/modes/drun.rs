@@ -381,7 +381,7 @@ mod unix_impl {
                 std::fs::create_dir_all(parent)?;
             }
             let text = toml::to_string_pretty(&cached).map_err(std::io::Error::other)?;
-            std::fs::write(path, text)
+            crate::picker::write_private_state(path, &text)
         };
         if let Err(e) = write() {
             tracing::warn!("drun cache write failed: {e}");
@@ -557,8 +557,8 @@ mod windows_impl {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let json = serde_json::to_vec_pretty(&cached).map_err(std::io::Error::other)?;
-            std::fs::write(path, json)
+            let json = serde_json::to_string_pretty(&cached).map_err(std::io::Error::other)?;
+            crate::picker::write_private_state(path, &json)
         };
         if let Err(e) = write() {
             tracing::warn!("drun cache write failed: {e}");
@@ -931,6 +931,30 @@ mod tests {
             }
             _ => panic!("expected Exec payload"),
         }
+    }
+
+    #[test]
+    fn cache_written_0600_like_state_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("drun-cache.toml");
+        // Pre-create at 0644 (as an older pikr under a default umask would) —
+        // the write must re-chmod to 0600, matching history/usage state files.
+        std::fs::write(&path, b"stale").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let dirs = vec![std::path::PathBuf::from("/usr/share/applications")];
+        let locales = vec!["en_US".to_string()];
+        let entries = vec![Entry::exec("TestApp", "testapp")];
+
+        write_cache(&dirs, &locales, 1, &entries, &path);
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "drun cache must follow the 0600 state-file policy"
+        );
     }
 
     #[test]

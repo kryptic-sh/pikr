@@ -8,6 +8,12 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Security
+
+- drun cache file now written 0600 like the history/usage state files, closing
+  the only divergence from the codebase's state-file permission policy (was 0644
+  under a default umask).
+
 ## [0.8.11] - 2026-08-06
 
 ### Changed

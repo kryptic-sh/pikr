@@ -246,23 +246,15 @@ hostname/user) on a `Match` keyword, or document Match blocks as unsupported.
 ## audit review 2026-08-06 (evening sweep)
 
 Whole-codebase security audit (clean tree, evening re-run). Verdict: no
-critical/high/medium/low findings; overall risk low. One new hardening item
-(drun cache 0644 — the only divergence from the state-file 0600 policy). Both
-hardening items verified by the orchestrator at the cited lines (the perms one
+critical/high/medium/low findings; overall risk low. The drun cache 0644 finding
+(the only divergence from the state-file 0600 policy) was FIXED 2026-08-12: both
+`write_cache` arms now route through `picker::write_private_state`, with
+regression test `cache_written_0600_like_state_files`. The remaining hardening
+item was verified by the orchestrator at the cited lines (the perms one
 empirically on this host).
 
 ### Hardening (correct today, fragile — not defects)
 
-- **`modes/drun.rs:379-389` — drun cache written via `std::fs::write` (0644)
-  while history/usage deliberately use the 0600 `write_private_state`
-  (`picker/mod.rs:22-38`).** Verified on this host: `drun-cache.toml` sits at
-  0644 (and stays there — no re-chmod path), while `history.toml`/`usage.toml`
-  are re-chmod'd to 0600 on next save; the 0700 `~/.local/state` parent keeps
-  nothing actually world-readable. On a host with a permissive state-home parent
-  the cache is world-readable, diverging from the codebase's own documented 0600
-  policy. Payload is installed-app metadata (labels, programs, args) — marginal
-  sensitivity. One-line fix: route `write_cache` through
-  `picker::write_private_state`. Top fix from this pass.
 - **`drun_icons_windows.rs:185-186` — `stride = width * 4` u32 multiply, then
   `vec![0u8; (stride * height) as usize]`.** A wrap under-allocates the
   `GetDIBits` buffer (unsafe overflow); a non-wrap huge value OOM-aborts. GDI
@@ -321,10 +313,10 @@ empirically on this host).
   the `hicon_to_png` stride analysis is code-traced only.
 - Summary: 0 findings (0/0/0/0). Overall risk low — every execution path is
   argv-based, the cross-domain inputs (clipboard, dmenu stdin) are handled
-  safely, and the tracked items remain the only knowns. Fix first: (1) drun
-  cache through `write_private_state` (one line), (2) `checked_mul` + dimension
-  cap in `hicon_to_png` if Windows CI ever lands, (3) tracked dmenu stdin cap /
-  cache re-validation if the threat model tightens.
+  safely, and the tracked items remain the only knowns. Fix first (1) — drun
+  cache through `write_private_state` — DONE 2026-08-12. Remaining: (2)
+  `checked_mul` + dimension cap in `hicon_to_png` if Windows CI ever lands, (3)
+  tracked dmenu stdin cap / cache re-validation if the threat model tightens.
 
 ## tidy review 2026-08-06
 
