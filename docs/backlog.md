@@ -480,9 +480,13 @@ profiles. No code changed.
   died on `git push: Could not read from remote repository` (exit 128) in both
   tag runs (31093225592, 31096381308) — the aur.archlinux.org maintenance window
   signature that also cost v0.8.7–v0.8.9. GitHub release, scoop-bucket, and
-  brew-tap published for both. Recovery is the documented `workflow_dispatch` on
-  the tag (`gh workflow run ci.yml --ref v0.8.11` etc.) once the outage clears —
-  the publish chain is idempotent. Verify by watching the dispatch run to the
-  `aur-bin` job green, then
-  `curl -fsSL https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=pikr-bin`
-  showing pkgver 0.8.11.
+  brew-tap published for both. **RESOLVED 2026-08-13 — backfill NOT run,
+  deliberately:** the outage cleared (v0.8.12's `Publish pikr-bin to AUR`
+  succeeded), but the documented `workflow_dispatch` recovery
+  (`gh workflow run ci.yml --ref v0.8.11`) is now UNSAFE: the aur-bin step's
+  only idempotence check is `git diff --cached --quiet` against the AUR head,
+  which pushes whenever the rendered PKGBUILD differs — there is no
+  version-ordering guard. With the head now at pkgver 0.8.12, dispatching for
+  v0.8.10/v0.8.11 would DOWNGRADE the AUR package. It is also moot: 0.8.12 is
+  strictly newer and supersedes both. If AUR backfill for older tags is ever
+  wanted, the step first needs a "skip when remote pkgver >= tag version" guard.
