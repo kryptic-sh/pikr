@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.8.12] - 2026-08-13
+
 ### Security
 
 - drun cache file now written 0600 like the history/usage state files, closing
@@ -1023,7 +1025,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.11...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.12...main
+[0.8.12]: https://github.com/kryptic-sh/pikr/compare/v0.8.11...v0.8.12
 [0.8.11]: https://github.com/kryptic-sh/pikr/compare/v0.8.10...v0.8.11
 [0.8.10]: https://github.com/kryptic-sh/pikr/compare/v0.8.9...v0.8.10
 [0.8.9]: https://github.com/kryptic-sh/pikr/compare/v0.8.8...v0.8.9
