@@ -155,7 +155,7 @@ fn payload_key(payload: &Payload) -> String {
             }
             key
         }
-        Payload::SetClipboard(text) => text.clone(),
+        Payload::SetClipboard(text) | Payload::ShellApp(text) => text.clone(),
     }
 }
 

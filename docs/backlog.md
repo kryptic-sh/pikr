@@ -91,9 +91,11 @@ four low findings. Findings 1-2 and 4 re-verified by the orchestrator (finding 1
 empirically: evalexpr probe crashes the 8 MB stack at ~100k chars of nested
 parens, survives at 80k); finding 3 is Windows-only, code-traced, not
 runtime-verified. Findings 1, 2, 4 FIXED 2026-08-06 (calc cap `b65c2d9`, field
-codes `c7d1c14`, 0600 state `081faf4`/`acc5e0c`); finding 3 addressed via the
-documented trust note in `start_menu_roots` (`9cc7dfb`) — a same-user-only
-filter on the all-users root remains open if the threat model tightens.
+codes `c7d1c14`, 0600 state `081faf4`/`acc5e0c`); finding 3 (all-users Start
+Menu writable → planted shortcut) CLOSED 2026-09-15: `icacls` on a Windows 11
+host shows `BUILTIN\Users:(RX)` on `%ProgramData%\...\Start Menu\Programs`, so
+only admins can plant there. drun now lists `shell:AppsFolder` — exactly what
+Start itself launches — so pikr adds no path Start does not already expose.
 
 ### Cleared
 

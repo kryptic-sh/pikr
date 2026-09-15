@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 pub mod calc;
 pub mod clipboard;
 pub mod dmenu;
-// drun: XDG `.desktop` launcher on Unix; Start Menu `.lnk` walker on Windows.
+// drun: XDG `.desktop` launcher on Unix; `shell:AppsFolder` on Windows.
 pub mod drun;
 pub mod emoji;
 // run walks $PATH (Unix: executable-bit filter; Windows: PATHEXT extension
@@ -57,10 +57,10 @@ impl Entry {
         }
     }
 
-    /// Exec entry with every field supplied up front — the four drun
-    /// construction sites (unix collect, unix/windows cache restore,
-    /// windows `parse_lnk`) all followed `exec(...).with_args(...)` with the
-    /// same conditional description/icon dance; this collapses it to one call.
+    /// Exec entry with every field supplied up front — the unix drun
+    /// construction sites (collect and cache restore) all followed
+    /// `exec(...).with_args(...)` with the same conditional description/icon
+    /// dance; this collapses it to one call.
     pub fn exec_with(
         label: impl Into<String>,
         program: impl Into<String>,
@@ -130,6 +130,14 @@ pub enum Payload {
     /// builds nothing constructs it, so silence the dead-code lint there.
     #[cfg_attr(not(windows), allow(dead_code))]
     SetClipboard(String),
+    /// Activate a `shell:AppsFolder` item by its app id (AppUserModelID,
+    /// known-folder path, or protocol URL) the way Start does. Constructed
+    /// only by the Windows drun collector (`modes/drun_windows.rs`); it must
+    /// exist on every platform because `execute` and the frecency
+    /// `payload_key` match it exhaustively. On non-Windows builds nothing
+    /// constructs it, so silence the dead-code lint there.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    ShellApp(String),
 }
 
 pub trait Mode {
@@ -147,6 +155,23 @@ pub fn execute(payload: &Payload) -> Result<()> {
         Payload::Exec { program, args } => spawn_detached(program, args),
         Payload::ExecWait { program, args } => spawn_and_wait(program, args),
         Payload::SetClipboard(text) => set_clipboard(text),
+        Payload::ShellApp(app_id) => launch_shell_app(app_id),
+    }
+}
+
+/// Activate the `shell:AppsFolder` item `app_id`. Only Windows has an
+/// AppsFolder; elsewhere the payload is never built, and executing one anyway
+/// is an error rather than a silent no-op.
+fn launch_shell_app(app_id: &str) -> Result<()> {
+    #[cfg(windows)]
+    {
+        drun::launch(app_id)
+    }
+    #[cfg(not(windows))]
+    {
+        Err(anyhow::anyhow!(
+            "cannot launch {app_id}: shell apps exist only on Windows"
+        ))
     }
 }
 
