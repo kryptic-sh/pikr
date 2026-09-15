@@ -76,15 +76,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
 
     // ── Normal picker path ─────────────────────────────────────────────────
 
-    anyhow::ensure!(
-        cli.kb_custom.len() <= crate::cli::KB_CUSTOM_MAX,
-        "--kb-custom: at most {} bindings (exit codes {}–{})",
-        crate::cli::KB_CUSTOM_MAX,
-        crate::cli::KB_CUSTOM_EXIT_BASE,
-        crate::cli::KB_CUSTOM_EXIT_BASE + crate::cli::KB_CUSTOM_MAX as i32 - 1,
-    );
-
-    let chosen_mode = if cli.dmenu { Mode::Dmenu } else { cli.show };
+    let chosen_mode = cli.chosen_mode();
     tracing::info!(?chosen_mode, "pikr starting");
 
     let mut mode: Box<dyn modes::Mode> = match chosen_mode {

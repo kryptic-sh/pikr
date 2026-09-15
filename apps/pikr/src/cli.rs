@@ -1,6 +1,7 @@
 //! CLI surface.
 
-use clap::{ArgAction, Parser, ValueEnum};
+use clap::error::ErrorKind;
+use clap::{ArgAction, CommandFactory, Parser, ValueEnum};
 use std::path::PathBuf;
 
 pub use crate::picker::keyspec::KbCustom;
@@ -82,7 +83,6 @@ pub struct Cli {
     #[arg(
         long = "kb-custom",
         value_name = "KEY[=PROMPT]",
-        requires = "dmenu",
         action = ArgAction::Append
     )]
     pub kb_custom: Vec<KbCustom>,
@@ -91,8 +91,66 @@ pub struct Cli {
     /// goes while stdin is still being written, e.g. `--loading Scanning…`.
     /// Rows appear once stdin closes; accepting is disabled until then.
     /// Without it pikr reads all of stdin before opening.
-    #[arg(long = "loading", value_name = "TEXT", requires = "dmenu")]
+    #[arg(long = "loading", value_name = "TEXT")]
     pub loading: Option<String>,
+}
+
+impl Cli {
+    /// The mode pikr opens in: `--dmenu` wins over `--show`.
+    pub fn chosen_mode(&self) -> Mode {
+        if self.dmenu { Mode::Dmenu } else { self.show }
+    }
+
+    /// Cross-argument checks the derive can't express. `requires = "dmenu"`
+    /// would reject `--show dmenu`, so the dmenu-only flags are checked here
+    /// against the chosen mode. Failures are clap errors: `.exit()` prints
+    /// them with usage and exits 2, like any other bad argument.
+    pub fn validate(self) -> Result<Self, clap::Error> {
+        let fail = |kind: ErrorKind, msg: String| Err(Cli::command().error(kind, msg));
+
+        if self.chosen_mode() != Mode::Dmenu {
+            if !self.kb_custom.is_empty() {
+                return fail(
+                    ErrorKind::MissingRequiredArgument,
+                    "--kb-custom requires --dmenu or --show dmenu".into(),
+                );
+            }
+            if self.loading.is_some() {
+                return fail(
+                    ErrorKind::MissingRequiredArgument,
+                    "--loading requires --dmenu or --show dmenu".into(),
+                );
+            }
+        }
+
+        if self.kb_custom.len() > KB_CUSTOM_MAX {
+            return fail(
+                ErrorKind::TooManyValues,
+                format!(
+                    "--kb-custom: at most {KB_CUSTOM_MAX} bindings (exit codes {}–{})",
+                    KB_CUSTOM_EXIT_BASE,
+                    KB_CUSTOM_EXIT_BASE + KB_CUSTOM_MAX as i32 - 1,
+                ),
+            );
+        }
+
+        for (i, binding) in self.kb_custom.iter().enumerate() {
+            let key = &binding.key;
+            if let Some(earlier) = self.kb_custom[..i].iter().find(|e| e.key.overlaps(key)) {
+                let msg = if earlier.key == *key {
+                    format!("--kb-custom: `{key}` is bound more than once")
+                } else {
+                    format!(
+                        "--kb-custom: `{}` and `{key}` match the same key press",
+                        earlier.key
+                    )
+                };
+                return fail(ErrorKind::ValueValidation, msg);
+            }
+        }
+
+        Ok(self)
+    }
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,9 +179,14 @@ mod tests {
     use clap::Parser;
 
     fn parse(args: &[&str]) -> Cli {
+        try_parse(args).unwrap()
+    }
+
+    /// Parse plus [`Cli::validate`], as `main` does.
+    fn try_parse(args: &[&str]) -> Result<Cli, clap::Error> {
         let mut full = vec!["pikr"];
         full.extend_from_slice(args);
-        Cli::parse_from(full)
+        Cli::try_parse_from(full).and_then(Cli::validate)
     }
 
     // ── --password / -P ───────────────────────────────────────────────────
@@ -256,8 +319,11 @@ mod tests {
 
     #[test]
     fn loading_requires_dmenu() {
-        let err = Cli::try_parse_from(["pikr", "--loading", "x"]).unwrap_err();
-        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+        let err = try_parse(&["--loading", "x"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+        assert_eq!(err.exit_code(), 2);
+        let err = try_parse(&["--show", "drun", "--loading", "x"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
     }
 
     #[test]
@@ -268,13 +334,66 @@ mod tests {
 
     #[test]
     fn kb_custom_requires_dmenu() {
-        let err = Cli::try_parse_from(["pikr", "--kb-custom", "Shift+Delete"]).unwrap_err();
-        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+        let err = try_parse(&["--kb-custom", "Shift+Delete"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+        assert_eq!(err.exit_code(), 2);
+    }
+
+    #[test]
+    fn dmenu_flags_accept_show_dmenu() {
+        let cli = parse(&["--show", "dmenu", "--kb-custom", "F2", "--loading", "…"]);
+        assert_eq!(cli.chosen_mode(), Mode::Dmenu);
+        assert_eq!(cli.kb_custom.len(), 1);
+        assert_eq!(cli.loading.as_deref(), Some("…"));
     }
 
     #[test]
     fn kb_custom_rejects_bad_key() {
-        assert!(Cli::try_parse_from(["pikr", "-d", "--kb-custom", "Shift+Nope"]).is_err());
+        assert!(try_parse(&["-d", "--kb-custom", "Shift+Nope"]).is_err());
+    }
+
+    /// `-d` plus `n` distinct bindings: `Alt+F1`…`Alt+F12`, then `Ctrl+F1`….
+    fn with_bindings(n: usize) -> Result<Cli, clap::Error> {
+        let keys: Vec<String> = (0..n)
+            .map(|i| format!("{}+F{}", if i < 12 { "Alt" } else { "Ctrl" }, i % 12 + 1))
+            .collect();
+        let mut args = vec!["-d"];
+        for k in &keys {
+            args.extend(["--kb-custom", k.as_str()]);
+        }
+        try_parse(&args)
+    }
+
+    #[test]
+    fn kb_custom_limit_is_19() {
+        assert_eq!(with_bindings(19).unwrap().kb_custom.len(), 19);
+        let err = with_bindings(20).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::TooManyValues);
+        assert_eq!(err.exit_code(), 2);
+    }
+
+    #[test]
+    fn kb_custom_rejects_duplicate_binding() {
+        let err =
+            try_parse(&["-d", "--kb-custom", "Ctrl+d", "--kb-custom", "ctrl+D=Sure?"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ValueValidation);
+        assert!(
+            err.to_string().contains("`Ctrl+d` is bound more than once"),
+            "{err}"
+        );
+        // A different modifier set is a different binding.
+        assert!(try_parse(&["-d", "--kb-custom", "Ctrl+d", "--kb-custom", "Alt+d"]).is_ok());
+    }
+
+    #[test]
+    fn kb_custom_rejects_overlapping_symbol_bindings() {
+        let err =
+            try_parse(&["-d", "--kb-custom", "Ctrl+?", "--kb-custom", "Ctrl+Shift+?"]).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("`Ctrl+?` and `Ctrl+Shift+?` match the same key press"),
+            "{err}"
+        );
     }
 
     // ── Combined flags ────────────────────────────────────────────────────

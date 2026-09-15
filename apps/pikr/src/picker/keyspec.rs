@@ -66,6 +66,15 @@ impl KeySpec {
         matches!(self.key, SpecKey::Char(c) if !c.is_alphabetic())
     }
 
+    /// True when some key press matches both specs, so which binding fires
+    /// would depend on flag order rather than on the key.
+    pub fn overlaps(&self, other: &KeySpec) -> bool {
+        self.key == other.key
+            && (self.ctrl, self.alt, self.meta) == (other.ctrl, other.alt, other.meta)
+            // An optional Shift matches the shifted press either spec accepts.
+            && (self.shift == other.shift || self.shift_is_optional())
+    }
+
     /// The built-in key a binding would take over, if any: bare Escape
     /// (cancel), bare Enter (accept), or a printable character without
     /// Ctrl, Alt or Super (typing, and Normal-mode commands such as `g`).
@@ -329,6 +338,19 @@ mod tests {
     fn letters_keep_exact_shift() {
         let spec: KeySpec = "Ctrl+d".parse().unwrap();
         assert!(!spec.matches(&Key::Character("D".into()), mods(true, true, false, false)));
+    }
+
+    #[test]
+    fn overlapping_specs() {
+        let spec = |s: &str| s.parse::<KeySpec>().unwrap();
+        assert!(spec("Ctrl+d").overlaps(&spec("ctrl+D")));
+        assert!(!spec("Ctrl+d").overlaps(&spec("Ctrl+Shift+d")));
+        assert!(!spec("Delete").overlaps(&spec("Shift+Delete")));
+        // Both match Ctrl+Shift+? on a US keyboard.
+        assert!(spec("Ctrl+?").overlaps(&spec("Ctrl+Shift+?")));
+        assert!(spec("Ctrl+Shift+?").overlaps(&spec("Ctrl+?")));
+        assert!(!spec("Ctrl+?").overlaps(&spec("Alt+?")));
+        assert!(!spec("F1").overlaps(&spec("F2")));
     }
 
     #[test]
