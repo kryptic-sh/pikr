@@ -65,6 +65,22 @@ impl KeySpec {
     fn shift_is_optional(&self) -> bool {
         matches!(self.key, SpecKey::Char(c) if !c.is_alphabetic())
     }
+
+    /// The built-in key a binding would take over, if any: bare Escape
+    /// (cancel), bare Enter (accept), or a printable character without
+    /// Ctrl, Alt or Super (typing, and Normal-mode commands such as `g`).
+    /// Shift alone doesn't help a character: `Shift+x` types `X`.
+    fn shadowed_builtin(&self) -> Option<&'static str> {
+        if self.ctrl || self.alt || self.meta {
+            return None;
+        }
+        match self.key {
+            SpecKey::Char(c) if !c.is_control() => Some("typing into the query"),
+            SpecKey::Named(NamedKey::Escape) if !self.shift => Some("cancel"),
+            SpecKey::Named(NamedKey::Enter) if !self.shift => Some("accept"),
+            _ => None,
+        }
+    }
 }
 
 impl FromStr for KeySpec {
@@ -81,14 +97,21 @@ impl FromStr for KeySpec {
 
         // Split on `+`, but let a trailing `+` be the key itself (`+`, `Ctrl++`).
         let (mods, key) = if s == "+" {
-            ("", "+")
+            (None, "+")
         } else if let Some(head) = s.strip_suffix("++") {
-            (head, "+")
+            (Some(head), "+")
         } else {
-            s.rsplit_once('+').unwrap_or(("", s))
+            match s.rsplit_once('+') {
+                Some((head, key)) => (Some(head), key),
+                None => (None, s),
+            }
         };
 
-        for m in mods.split('+').filter(|m| !m.is_empty()) {
+        for m in mods.into_iter().flat_map(|mods| mods.split('+')) {
+            // `Ctrl++d` and `+d` are typos, not `Ctrl+d` and `d`.
+            if m.is_empty() {
+                return Err(format!("empty modifier in `{s}`"));
+            }
             let flag = match m.to_ascii_lowercase().as_str() {
                 "ctrl" | "control" => &mut spec.ctrl,
                 "shift" => &mut spec.shift,
@@ -173,10 +196,13 @@ impl FromStr for KbCustom {
             }
             other => other.map(str::to_owned),
         };
-        Ok(KbCustom {
-            key: key.parse()?,
-            confirm,
-        })
+        let key: KeySpec = key.parse()?;
+        if let Some(builtin) = key.shadowed_builtin() {
+            return Err(format!(
+                "`{key}` would shadow {builtin}; add a modifier such as `Alt+{key}`"
+            ));
+        }
+        Ok(KbCustom { key, confirm })
     }
 }
 
@@ -306,6 +332,18 @@ mod tests {
     }
 
     #[test]
+    fn rejects_empty_modifier_segments() {
+        for s in ["Ctrl++d", "+d", "++", "Ctrl+++", "Ctrl+", "Ctrl++Alt+d"] {
+            assert!(s.parse::<KeySpec>().is_err(), "{s} must be rejected");
+        }
+        let err = "Ctrl++d".parse::<KeySpec>().unwrap_err();
+        assert!(err.contains("empty modifier"), "{err}");
+        // `+` as the key itself still parses.
+        assert!("Ctrl++".parse::<KeySpec>().is_ok());
+        assert!("+".parse::<KeySpec>().is_ok());
+    }
+
+    #[test]
     fn space_alias() {
         let spec: KeySpec = "Alt+Space".parse().unwrap();
         assert!(spec.matches(&Key::Character(" ".into()), mods(false, false, true, false)));
@@ -345,9 +383,9 @@ mod tests {
 
     #[test]
     fn kb_custom_equals_as_the_key() {
-        let bare: KbCustom = "==Delete?".parse().unwrap();
-        assert!(bare.key.matches(&Key::Character("=".into()), m(NONE)));
-        assert_eq!(bare.confirm.as_deref(), Some("Delete?"));
+        // A bare `=` would shadow typing; the split must still find the key.
+        let bare = "==Delete?".parse::<KbCustom>().unwrap_err();
+        assert!(bare.contains("`=` would shadow typing"), "{bare}");
         let ctrl: KbCustom = "Ctrl+==Delete?".parse().unwrap();
         assert!(
             ctrl.key
@@ -356,6 +394,35 @@ mod tests {
         assert_eq!(ctrl.confirm.as_deref(), Some("Delete?"));
         let no_prompt: KbCustom = "Ctrl+=".parse().unwrap();
         assert_eq!(no_prompt.confirm, None);
+    }
+
+    #[test]
+    fn kb_custom_rejects_keys_that_shadow_builtins() {
+        for (s, builtin) in [
+            ("Escape", "cancel"),
+            ("Esc=Sure?", "cancel"),
+            ("Return", "accept"),
+            ("Enter", "accept"),
+            ("g", "typing"),
+            ("?", "typing"),
+            ("Space", "typing"),
+            ("Shift+x", "typing"),
+        ] {
+            let err = s.parse::<KbCustom>().unwrap_err();
+            assert!(err.contains(builtin), "{s}: {err}");
+        }
+        for s in [
+            "Alt+1",
+            "Ctrl+g",
+            "Super+Space",
+            "Shift+Return",
+            "Ctrl+Escape",
+            "Shift+Delete",
+            "Right",
+            "F2",
+        ] {
+            assert!(s.parse::<KbCustom>().is_ok(), "{s} must stay allowed");
+        }
     }
 
     #[test]
