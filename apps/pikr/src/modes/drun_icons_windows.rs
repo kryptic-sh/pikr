@@ -1,67 +1,73 @@
-//! Win32 icon resolution for drun targets.
+//! Win32 icon resolution for drun entries.
 //!
-//! Extracts the icon for a given `.exe` / target path via `SHGetFileInfoW`,
-//! converts the `HICON` to RGBA pixel data via `GetDIBits`, encodes the
-//! result as a PNG, and caches it at
-//! `%LOCALAPPDATA%\pikr\icon-cache\<sha256(target)>.png`.
+//! Asks each `shell:AppsFolder` item for its icon through
+//! `IShellItemImageFactory` — the same source Start uses, so packaged apps and
+//! shortcuts without an on-disk target get their real icon — converts the
+//! bitmap to RGBA via `GetDIBits`, encodes it as PNG, and caches it at
+//! `%LOCALAPPDATA%\pikr\icon-cache\<sha256(app id)>.png`.
 //!
-//! Subsequent runs skip the `SHGetFileInfoW` round-trip entirely and
-//! return the cached path.  Cache invalidation is keyed solely by the
-//! target path string — uninstall + reinstall of the same exe at the same
-//! path keeps the stale icon; users can `rm -rf` the cache directory to
-//! force regeneration.
+//! Subsequent runs skip extraction and return the cached path. Cache
+//! invalidation is keyed solely by the app id — an app that changes its icon
+//! keeps the stale one; deleting the cache directory forces regeneration.
 //!
-//! When icon extraction fails (broken exe, no embedded resource, odd path,
-//! permission error) `icon_for` falls back to Windows' generic-app icon,
-//! cached once at `%LOCALAPPDATA%\pikr\icon-cache\__fallback__.png`.
+//! When extraction fails `icon_for_app` falls back to Windows' generic-app
+//! icon, cached once at `%LOCALAPPDATA%\pikr\icon-cache\__fallback__.png`.
 #![allow(unsafe_code)]
 
 use std::path::{Path, PathBuf};
+use windows::Win32::Graphics::Gdi::HBITMAP;
+use windows::Win32::UI::Shell::IShellItem;
 
-/// Return the path to a cached PNG icon for `target`.
+/// Requested icon edge in pixels. Rows render icons at 24 px; a 32 px source
+/// downscales cleanly (the same request size the unix theme lookup uses).
+const ICON_PX: i32 = 32;
+
+/// Return the path to a cached PNG icon for the AppsFolder `item` whose
+/// parsing name is `app_id`.
 ///
-/// Returns `Some(path)` on success (cache hit or freshly written).
-/// When extraction fails, falls back to the Windows generic-app icon
-/// (also cached on disk).  Returns `None` only if even the fallback
-/// cannot be produced.
-pub fn icon_for(target: &Path) -> Option<PathBuf> {
-    let cache_path = icon_cache_path(target)?;
+/// Returns `Some(path)` on success (cache hit or freshly written). When
+/// extraction fails, falls back to the Windows generic-app icon (also cached
+/// on disk). Returns `None` only if even the fallback cannot be produced.
+pub fn icon_for_app(item: &IShellItem, app_id: &str) -> Option<PathBuf> {
+    let cache_path = icon_cache_path(app_id)?;
     if cache_path.exists() {
         return Some(cache_path);
     }
-    if let Some(bytes) = extract_icon_png(target) {
+    if let Some(bytes) = extract_item_icon_png(item) {
         write_atomically(&cache_path, &bytes).ok()?;
         return Some(cache_path);
     }
-    // Extraction failed (no icon resource, odd path, permission).  Fall
-    // back to the Windows generic-app icon so the picker row still has
-    // a visible slot.
+    // Extraction failed. Fall back to the generic-app icon so the picker row
+    // still has a visible slot.
     fallback_icon_path()
 }
 
-/// Derive the on-disk path for `target`'s cached PNG.
+/// `%LOCALAPPDATA%\pikr\icon-cache`, created if missing.
+fn cache_dir() -> Option<PathBuf> {
+    let dir = dirs::data_local_dir()?.join("pikr").join("icon-cache");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+/// Derive the on-disk path for `key`'s cached PNG.
 ///
-/// The filename is the lower-hex SHA-256 of the target's UTF-8 string
-/// representation, which keeps filenames short, filesystem-safe, and
-/// deterministic.
-fn icon_cache_path(target: &Path) -> Option<PathBuf> {
+/// The filename is the lower-hex SHA-256 of `key`, which keeps filenames
+/// short, filesystem-safe, and deterministic — app ids contain `\`, `!` and
+/// `://`.
+fn icon_cache_path(key: &str) -> Option<PathBuf> {
     use sha2::{Digest, Sha256};
-    let hash = Sha256::digest(target.to_string_lossy().as_bytes());
+    let hash = Sha256::digest(key.as_bytes());
     let hash_hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-    let cache_dir = dirs::data_local_dir()?.join("pikr").join("icon-cache");
-    std::fs::create_dir_all(&cache_dir).ok()?;
-    Some(cache_dir.join(format!("{hash_hex}.png")))
+    Some(cache_dir()?.join(format!("{hash_hex}.png")))
 }
 
 /// Return the path to the cached generic-app fallback PNG.
 ///
 /// Extracts and writes `__fallback__.png` on first call; subsequent calls
-/// return the cached path immediately.  Regenerated whenever the file is
+/// return the cached path immediately. Regenerated whenever the file is
 /// missing (e.g. after a manual cache wipe).
 fn fallback_icon_path() -> Option<PathBuf> {
-    let cache_dir = dirs::data_local_dir()?.join("pikr").join("icon-cache");
-    let _ = std::fs::create_dir_all(&cache_dir);
-    let fallback = cache_dir.join("__fallback__.png");
+    let fallback = cache_dir()?.join("__fallback__.png");
     if fallback.exists() {
         return Some(fallback);
     }
@@ -73,12 +79,14 @@ fn fallback_icon_path() -> Option<PathBuf> {
 /// Write `bytes` to a uniquely named sibling temp file, then rename it over
 /// `path`.
 ///
-/// Icons are extracted from a rayon `par_iter`, and several entries share one
-/// target (and every miss shares `__fallback__.png`). A plain `fs::write`
-/// truncates in place, so a concurrent writer — or a reader that saw
-/// `exists()` — could observe a half-written PNG. Renaming a complete file
-/// means readers only ever see the old file or the new one.
-fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+/// Several entries can share one cache file (every miss shares
+/// `__fallback__.png`), and several pikr processes can fill the caches at
+/// once — including the drun app-list cache, whose background refresh can be
+/// cut off by pikr exiting. A plain `fs::write` truncates in place, so a
+/// concurrent writer, a reader that saw `exists()`, or the next launch after a
+/// kill could observe a half-written file. Renaming a complete file means
+/// readers only ever see the old file or the new one.
+pub(super) fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -96,6 +104,27 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         // fine; Windows refuses to replace a file another handle has open.
         if path.exists() { Ok(()) } else { Err(e) }
     })
+}
+
+/// Render `item`'s icon (never a content thumbnail) to PNG bytes.
+fn extract_item_icon_png(item: &IShellItem) -> Option<Vec<u8>> {
+    use windows::Win32::Foundation::SIZE;
+    use windows::Win32::Graphics::Gdi::DeleteObject;
+    use windows::Win32::UI::Shell::{IShellItemImageFactory, SIIGBF_ICONONLY};
+    use windows::core::Interface;
+
+    let factory: IShellItemImageFactory = item.cast().ok()?;
+    let size = SIZE {
+        cx: ICON_PX,
+        cy: ICON_PX,
+    };
+    let hbm = unsafe { factory.GetImage(size, SIIGBF_ICONONLY) }.ok()?;
+    let png = hbitmap_to_png(hbm);
+    // GetImage hands the caller ownership of the bitmap.
+    unsafe {
+        let _ = DeleteObject(hbm.into());
+    }
+    png
 }
 
 /// Ask the shell for the generic `.exe` icon via `SHGFI_USEFILEATTRIBUTES`.
@@ -143,59 +172,59 @@ fn extract_generic_app_icon_png() -> Option<Vec<u8>> {
     png
 }
 
-/// Convert a caller-owned `HICON` to PNG bytes.
-///
-/// Steps:
-/// 1. `GetIconInfo`  — retrieves `hbmColor` / `hbmMask`.
-/// 2. `GetObjectW`   — reads width / height from the `BITMAP` struct.
-/// 3. `GetDIBits`    — copies pixel data as 32 bpp BGRA, top-down.
-/// 4. BGRA → RGBA swap in-place.
-/// 5. Encode with `image::RgbaImage` → PNG bytes.
-/// 6. `DeleteObject` the bitmaps.
+/// Convert a caller-owned `HICON` to PNG bytes via its colour bitmap.
 ///
 /// Does **not** call `DestroyIcon` on `hicon` — ownership stays with the
-/// caller so both `extract_icon_png` and `extract_generic_app_icon_png` can
-/// destroy it in their own cleanup paths.
-///
-/// Returns `None` on any step failure.
+/// caller. The colour and mask bitmaps `GetIconInfo` creates are deleted here.
 fn hicon_to_png(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option<Vec<u8>> {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::Graphics::Gdi::{
-        BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DeleteObject, GetDC,
-        GetDIBits, GetObjectW, ReleaseDC,
-    };
+    use windows::Win32::Graphics::Gdi::DeleteObject;
     use windows::Win32::UI::WindowsAndMessaging::{GetIconInfo, ICONINFO};
 
-    // --- Step 1: GetIconInfo ---
     let mut icon_info: ICONINFO = unsafe { std::mem::zeroed() };
-    if unsafe { GetIconInfo(hicon, &mut icon_info) }.is_err() {
+    unsafe { GetIconInfo(hicon, &mut icon_info) }.ok()?;
+
+    let png = hbitmap_to_png(icon_info.hbmColor);
+    unsafe {
+        if !icon_info.hbmColor.is_invalid() {
+            let _ = DeleteObject(icon_info.hbmColor.into());
+        }
+        if !icon_info.hbmMask.is_invalid() {
+            let _ = DeleteObject(icon_info.hbmMask.into());
+        }
+    }
+    png
+}
+
+/// Copy a bitmap's pixels out as 32 bpp and encode them as PNG bytes.
+///
+/// Steps:
+/// 1. `GetObjectW` — reads width / height from the `BITMAP` struct.
+/// 2. `GetDIBits`  — copies pixel data as 32 bpp BGRA, top-down.
+/// 3. BGRA → RGBA swap in-place.
+/// 4. Encode with `image::RgbaImage` → PNG bytes.
+///
+/// Leaves `hbm` alive; the caller owns it. Returns `None` on any step failure.
+fn hbitmap_to_png(hbm: HBITMAP) -> Option<Vec<u8>> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{
+        BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, GetDC, GetDIBits, GetObjectW,
+        ReleaseDC,
+    };
+
+    if hbm.is_invalid() {
         return None;
     }
 
-    let hbm_color = icon_info.hbmColor;
-    let hbm_mask = icon_info.hbmMask;
-
-    // Helper closure: clean up bitmap handles before returning.
-    let cleanup = || unsafe {
-        if !hbm_color.is_invalid() {
-            let _ = DeleteObject(hbm_color.into());
-        }
-        if !hbm_mask.is_invalid() {
-            let _ = DeleteObject(hbm_mask.into());
-        }
-    };
-
-    // --- Step 2: GetObjectW to read bitmap dimensions ---
+    // --- Step 1: GetObjectW to read bitmap dimensions ---
     let mut bm: BITMAP = unsafe { std::mem::zeroed() };
     let got = unsafe {
         GetObjectW(
-            hbm_color.into(),
+            hbm.into(),
             std::mem::size_of::<BITMAP>() as i32,
             Some(&mut bm as *mut BITMAP as *mut core::ffi::c_void),
         )
     };
     if got == 0 {
-        cleanup();
         return None;
     }
 
@@ -203,19 +232,14 @@ fn hicon_to_png(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option
     // buffer size must be computed without wrapping — a wrapped product
     // would under-allocate and let GDI write past the end.
     let (Ok(width), Ok(height)) = (u32::try_from(bm.bmWidth), u32::try_from(bm.bmHeight)) else {
-        cleanup();
         return None;
     };
-    let Some(len) = (width as usize)
+    let len = (width as usize)
         .checked_mul(height as usize)
         .and_then(|n| n.checked_mul(4))
-        .filter(|&n| n > 0)
-    else {
-        cleanup();
-        return None;
-    };
+        .filter(|&n| n > 0)?;
 
-    // --- Step 3: GetDIBits — fills pixels as 32 bpp BGRA, top-down ---
+    // --- Step 2: GetDIBits — fills pixels as 32 bpp BGRA, top-down ---
     //
     // Negative biHeight forces top-down scan order (row 0 = top of image),
     // which matches `image::RgbaImage::from_raw` expectations.
@@ -244,7 +268,7 @@ fn hicon_to_png(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option
     let rows_copied = unsafe {
         GetDIBits(
             hdc,
-            hbm_color,
+            hbm,
             0,
             height,
             Some(pixels.as_mut_ptr().cast()),
@@ -254,78 +278,23 @@ fn hicon_to_png(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option
     };
     unsafe { ReleaseDC(Some(HWND::default()), hdc) };
 
-    cleanup();
-
     if rows_copied == 0 {
         return None;
     }
 
-    // --- Step 4: BGRA → RGBA ---
+    // --- Step 3: BGRA → RGBA ---
     // `GetDIBits` returns pixels in BGRA order (Windows GDI convention);
     // `image::RgbaImage` expects RGBA.  Swap B ↔ R channels in-place.
     for px in pixels.as_chunks_mut::<4>().0 {
         px.swap(0, 2); // B ↔ R
     }
 
-    // --- Step 5: Encode as PNG ---
+    // --- Step 4: Encode as PNG ---
     use image::ImageFormat;
     let img = image::RgbaImage::from_raw(width, height, pixels)?;
     let mut buf = std::io::Cursor::new(Vec::new());
     img.write_to(&mut buf, ImageFormat::Png).ok()?;
     Some(buf.into_inner())
-}
-
-/// Extract the large icon for `target` via Win32 and encode it as PNG bytes.
-///
-/// Steps:
-/// 1. `SHGetFileInfoW` — fills an `SHFILEINFOW` with the shell-assigned `HICON`.
-/// 2. Delegates GDI conversion to `hicon_to_png`.
-/// 3. `DestroyIcon` for the caller-owned handle.
-///
-/// Returns `None` on any step failure so the caller degrades gracefully.
-fn extract_icon_png(target: &Path) -> Option<Vec<u8>> {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-    use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
-    use windows::Win32::UI::Shell::{SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW};
-    use windows::Win32::UI::WindowsAndMessaging::DestroyIcon;
-
-    // Convert target path to a null-terminated UTF-16 string.
-    let wide: Vec<u16> = OsStr::new(target)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
-    // --- Step 1: SHGetFileInfoW ---
-    // dwFileAttributes is only consulted when SHGFI_USEFILEATTRIBUTES is set;
-    // we leave it zeroed (no special file attributes passed).
-    let mut shfi: SHFILEINFOW = unsafe { std::mem::zeroed() };
-    let result = unsafe {
-        SHGetFileInfoW(
-            windows::core::PCWSTR(wide.as_ptr()),
-            FILE_FLAGS_AND_ATTRIBUTES(0),
-            Some(&mut shfi),
-            std::mem::size_of::<SHFILEINFOW>() as u32,
-            SHGFI_ICON | SHGFI_LARGEICON,
-        )
-    };
-    if result == 0 {
-        return None;
-    }
-
-    let hicon = shfi.hIcon;
-    if hicon.is_invalid() {
-        return None;
-    }
-
-    // --- Step 2: delegate GDI conversion ---
-    let png = hicon_to_png(hicon);
-    // SHGetFileInfoW returns a caller-owned HICON; destroy it regardless of
-    // whether conversion succeeded.
-    unsafe {
-        let _ = DestroyIcon(hicon);
-    }
-    png
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -334,20 +303,19 @@ fn extract_icon_png(target: &Path) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
-    /// The cache path for a given input string must be stable across calls.
+    /// The cache path for a given key must be stable across calls.
     #[test]
     fn icon_cache_path_is_stable() {
-        let target = Path::new(r"C:\Windows\System32\notepad.exe");
-        let p1 = icon_cache_path(target);
-        let p2 = icon_cache_path(target);
+        let key = "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App";
         assert_eq!(
-            p1, p2,
+            icon_cache_path(key),
+            icon_cache_path(key),
             "cache path must be deterministic for the same input"
         );
     }
 
-    /// Concurrent writers of one cache file (same target in the rayon walk)
-    /// must never expose a partial file to a reader.
+    /// Concurrent writers of one cache file must never expose a partial file
+    /// to a reader.
     #[test]
     fn write_atomically_never_exposes_partial_file() {
         const LEN: usize = 256 * 1024;
@@ -379,43 +347,18 @@ mod tests {
         });
     }
 
-    /// Different targets must produce different cache paths.
+    /// Different keys must produce different cache paths.
     #[test]
-    fn icon_cache_path_differs_for_different_targets() {
-        let a = icon_cache_path(Path::new(r"C:\Windows\System32\notepad.exe"));
-        let b = icon_cache_path(Path::new(r"C:\Windows\System32\calc.exe"));
-        assert_ne!(a, b, "different targets must hash to different cache paths");
-    }
-
-    /// Extract the icon for notepad.exe and verify the result is a valid PNG.
-    ///
-    /// Skipped when notepad.exe is absent (sandboxed CI runners).
-    #[test]
-    fn icon_for_notepad_produces_png() {
-        let notepad = Path::new(r"C:\Windows\System32\notepad.exe");
-        if !notepad.exists() {
-            return; // sandboxed CI — skip gracefully
-        }
-        let path = icon_for(notepad).expect("icon_for notepad.exe must succeed");
-        assert!(path.exists(), "cached PNG must exist on disk");
-        let bytes = std::fs::read(&path).expect("must be able to read cached PNG");
-        // PNG magic bytes: \x89PNG\r\n\x1a\n
-        assert_eq!(
-            &bytes[..8],
-            b"\x89PNG\r\n\x1a\n",
-            "file must start with PNG magic"
-        );
-        // Second call must hit the on-disk cache (same path returned).
-        let path2 = icon_for(notepad).expect("second call must also succeed");
-        assert_eq!(path, path2, "cache path must be stable across calls");
+    fn icon_cache_path_differs_for_different_keys() {
+        let a = icon_cache_path("Microsoft.WindowsNotepad_8wekyb3d8bbwe!App");
+        let b = icon_cache_path("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App");
+        assert_ne!(a, b, "different keys must hash to different cache paths");
     }
 
     /// `fallback_icon_path` must return a path and the file must be a valid
     /// PNG once written.
     ///
-    /// Skipped gracefully when `dirs::data_local_dir()` returns `None`
-    /// (odd sandbox / non-Windows builds running the test via cfg(test)).
-    #[cfg(all(test, windows))]
+    /// Skipped gracefully when `dirs::data_local_dir()` returns `None`.
     #[test]
     fn fallback_icon_path_returns_a_path() {
         let Some(path) = fallback_icon_path() else {
@@ -434,27 +377,5 @@ mod tests {
         // Second call must hit the on-disk cache (file already present).
         let path2 = fallback_icon_path().expect("second call must also return Some");
         assert_eq!(path, path2, "fallback path must be stable across calls");
-    }
-
-    /// When given a nonexistent / iconless path, `icon_for` must return
-    /// `Some` (the fallback) rather than `None`, so the picker row always
-    /// has an icon slot filled.
-    ///
-    /// Skipped gracefully when `dirs::data_local_dir()` returns `None`.
-    #[cfg(all(test, windows))]
-    #[test]
-    fn icon_for_unknown_path_falls_back() {
-        // A path that cannot have an embedded icon resource.
-        let path = Path::new(r"C:\nonexistent\thing.bat");
-        let result = icon_for(path);
-        // If data_local_dir is unavailable the fallback itself returns None;
-        // that is the only acceptable None here.
-        if dirs::data_local_dir().is_none() {
-            return;
-        }
-        assert!(
-            result.is_some(),
-            "icon_for an unknown/iconless path must return Some (fallback)"
-        );
     }
 }

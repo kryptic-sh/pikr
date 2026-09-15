@@ -25,6 +25,21 @@ and this project adheres to
 - `Left`/`Right`/`Home`/`End` bindings fire only when the query caret can't move
   that way, so binding them doesn't break caret movement while editing.
 
+### Changed
+
+- Windows drun now lists the apps in Start's "All apps" (`shell:AppsFolder`)
+  instead of walking Start Menu `.lnk` files, and launches them through the
+  shell as Start does. Packaged Store apps (Notepad, Calculator, Terminal,
+  PowerShell 7…) and protocol launchers such as Steam games now appear, and
+  entries the `.lnk` walker silently dropped are back: shortcuts without an
+  on-disk LinkInfo target (Command Prompt, Task Manager, Registry Editor) and
+  MSI-advertised shortcuts (LibreOffice). Icons come from the shell too, so
+  packaged apps show their real icon. Because the shell takes well over 100 ms
+  to build that list, the previous launch's list is shown from
+  `%LOCALAPPDATA%\pikr\drun-apps.toml` while a background refresh updates it, so
+  an app installed or removed appears one launch later. The old
+  `drun-cache.json` there is no longer used and can be deleted.
+
 ### Fixed
 
 - Windows: the config file, query history and frecency now persist. pikr read

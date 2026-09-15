@@ -85,13 +85,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS release builds are still produced for the Homebrew tap but
-        # exercising them under runtime tests adds little value while
-        # gettext-sys / floem display-detection break the matrix. Windows
-        # runs the suite so its `#[cfg(windows)]` arms (drun Start Menu
-        # collector, icon extraction, run-mode PATHEXT) are compiled and
-        # executed somewhere — a Linux run never builds them.
-        os: [ubuntu-latest, windows-latest]
+        # All three shipped platforms run the suite: each OS has
+        # `#[cfg]`-gated arms (Windows drun AppsFolder collector and icon
+        # extraction, run-mode PATHEXT; unix XDG drun and state files) that
+        # no other OS's run compiles, let alone executes.
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
       # See clippy job for rationale on the gtk-rs / glib-sys system deps.

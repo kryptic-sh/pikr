@@ -15,7 +15,8 @@ Shipping. Latest release on
 ## Modes
 
 - `dmenu` — read entries from stdin, print selection to stdout
-- `drun` — XDG `.desktop` application launcher
+- `drun` — application launcher (XDG `.desktop` files; on Windows, the apps in
+  Start, including Store apps)
 - `run` — `$PATH` executable runner
 - `ssh` — pick a host from `~/.ssh/config` / `~/.ssh/known_hosts`
 - `emoji` — searchable Unicode emoji picker (output via stdout)
