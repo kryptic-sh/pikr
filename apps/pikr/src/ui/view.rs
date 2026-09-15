@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use floem::ui_events::keyboard::{Key, KeyboardEvent, NamedKey};
+use floem::ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey};
 use floem::{
     IntoView, ViewId,
     event::listener::{
@@ -305,19 +305,7 @@ fn entry_row(
     let visual_bg = blend(accent, selected_bg, 0.35);
     // Confirm card for `--kb-custom KEY=PROMPT`, pinned to the right edge of
     // the highlighted row while a confirmation is pending.
-    let sheet_card = Arc::clone(&sheet);
-    let card = Label::derived(move || {
-        confirm_sig
-            .get()
-            .map(|c| format!("{}  \u{21B5}", c.prompt))
-            .unwrap_or_default()
-    })
-    .style(move |s| {
-        let shown = selected_sig.get() == mi && confirm_sig.get().is_some();
-        crate::ui::css::apply(s, &sheet_card, "label", &["confirm-card"])
-            .flex_shrink(0.0_f32)
-            .apply_if(!shown, |s| s.display(floem::style::Display::None))
-    });
+    let card = confirm_card(confirm_sig, move || selected_sig.get() == mi, &sheet);
     let spacer = Container::new(Empty::new()).style(|s| s.flex_grow(1.0_f32));
 
     let sheet_row = Arc::clone(&sheet);
@@ -386,6 +374,28 @@ fn entry_row(
             }
             std::process::exit(0);
         })
+}
+
+/// The `--kb-custom KEY=PROMPT` confirm card: the pending prompt, shown while
+/// a confirmation is open and `on_this_row` holds for the row it sits in.
+fn confirm_card(
+    confirm_sig: RwSignal<Option<ConfirmCard>>,
+    on_this_row: impl Fn() -> bool + 'static,
+    sheet: &Arc<crate::ui::css::Sheet>,
+) -> impl IntoView {
+    let sheet = Arc::clone(sheet);
+    Label::derived(move || {
+        confirm_sig
+            .get()
+            .map(|c| format!("{}  \u{21B5}", c.prompt))
+            .unwrap_or_default()
+    })
+    .style(move |s| {
+        let shown = on_this_row() && confirm_sig.get().is_some();
+        crate::ui::css::apply(s, &sheet, "label", &["confirm-card"])
+            .flex_shrink(0.0_f32)
+            .apply_if(!shown, |s| s.display(floem::style::Display::None))
+    })
 }
 
 // ─── Query-text helpers ──────────────────────────────────────────────────────
@@ -483,8 +493,9 @@ pub(crate) fn mask_password(enabled: bool, text: &str) -> String {
 }
 
 /// Empty-state hint for a query with no matching rows. With `--password` the
-/// query is never echoed — not even masked, since a masked echo still leaks
-/// the length.
+/// query is left out: echoing it would print the secret in plain text right
+/// under the masked query bar. A masked echo would only repeat the bar's ●
+/// run, so the hint just says there are no results.
 pub(crate) fn empty_state_text(query: &str, password: bool) -> String {
     if query.is_empty() {
         "No entries.".to_owned()
@@ -671,12 +682,61 @@ pub struct ConfirmCard {
     pub prompt: String,
 }
 
-/// Left/Right/Home/End bindings would otherwise steal query-caret movement.
-/// Let them fire only when the caret can't move in that direction: Right and
-/// End at the end of the query, Left and Home at its start.
-fn caret_would_move(key: &crate::picker::keyspec::KeySpec, cursor: usize, len: usize) -> bool {
-    ((key.is_named(NamedKey::ArrowRight) || key.is_named(NamedKey::End)) && cursor < len)
-        || ((key.is_named(NamedKey::ArrowLeft) || key.is_named(NamedKey::Home)) && cursor > 0)
+/// True when `key` would move the query caret in `mode` from `cursor` (of
+/// `len` chars): Left/Right in Insert and Normal, Home/End in Insert only
+/// (Normal-mode Home/End jump the list). A binding on such a key yields to
+/// the caret, so it fires only once the caret can't move that way.
+fn caret_would_move(
+    key: &crate::picker::keyspec::KeySpec,
+    mode: VimMode,
+    cursor: usize,
+    len: usize,
+) -> bool {
+    let (insert, normal) = (mode == VimMode::Insert, mode == VimMode::Normal);
+    let right = ((insert || normal) && key.is_named(NamedKey::ArrowRight))
+        || (insert && key.is_named(NamedKey::End));
+    let left = ((insert || normal) && key.is_named(NamedKey::ArrowLeft))
+        || (insert && key.is_named(NamedKey::Home));
+    (right && cursor < len) || (left && cursor > 0)
+}
+
+/// The `--kb-custom` action a key press triggers, if any. Bindings belong to
+/// dmenu, so they stop applying after `:mode` switches away from it. An
+/// unmodified binding on a caret key yields while the caret can still move
+/// (see [`caret_would_move`]); a modified one such as `Alt+Right` always
+/// fires. `caret` is the query cursor and the query length, in chars.
+fn kb_custom_action(
+    bindings: &[crate::picker::keyspec::KbCustom],
+    cli_mode: CliMode,
+    vim_mode: VimMode,
+    key: &Key,
+    mods: Modifiers,
+    caret: (usize, usize),
+) -> Option<Action> {
+    if cli_mode != CliMode::Dmenu {
+        return None;
+    }
+    let i = bindings.iter().position(|b| {
+        b.key.matches(key, mods)
+            && (b.key.has_modifiers() || !caret_would_move(&b.key, vim_mode, caret.0, caret.1))
+    })?;
+    Some(if bindings[i].confirm.is_some() {
+        Action::ConfirmKbCustom(i)
+    } else {
+        Action::AcceptKbCustom(i)
+    })
+}
+
+/// Actions ignored while `--loading` rows are still pending. With no rows
+/// yet, dmenu's no-match fallthrough would print the typed query.
+fn needs_loaded_rows(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::Accept
+            | Action::AcceptCustom
+            | Action::AcceptKbCustom(_)
+            | Action::ConfirmKbCustom(_)
+    )
 }
 
 /// Rows an accept acts on: the anchored range in Visual mode, otherwise just
@@ -729,7 +789,7 @@ pub struct AppState {
     pub loading: Option<String>,
     /// Entries still being read from stdin (`--loading`). Taken once by
     /// `picker_view`, which swaps them in when they arrive.
-    pub pending_entries: Option<std::sync::mpsc::Receiver<Arc<Vec<Entry>>>>,
+    pub pending_entries: Option<std::sync::mpsc::Receiver<modes::dmenu::LoadedEntries>>,
 }
 
 impl AppState {
@@ -742,6 +802,7 @@ impl AppState {
         );
         if matches!(self.cli_mode, CliMode::Calc) {
             self.rerank_calc(&query);
+            self.hide_match_positions_if_password();
             return;
         }
         let pairs: Vec<(&str, Option<&str>)> = self
@@ -767,6 +828,21 @@ impl AppState {
         self.matches = ranked;
         self.matches.truncate(self.max_results);
         self.picker.clamp_selected(self.matches.len());
+        self.hide_match_positions_if_password();
+    }
+
+    /// `-P`: painting the matched characters would show which typed
+    /// characters are in each row, spelling out the secret. Rows render as
+    /// plain labels instead.
+    fn hide_match_positions_if_password(&mut self) {
+        if !self.password {
+            return;
+        }
+        let none: Rc<Vec<u32>> = Rc::new(Vec::new());
+        for m in &mut self.matches {
+            m.positions = Rc::clone(&none);
+            m.desc_positions = Rc::clone(&none);
+        }
     }
 
     /// Calc-mode rerank: build a row list from on-disk history plus the live
@@ -802,20 +878,26 @@ impl AppState {
             })
             .collect();
 
-        let mk_entry = |expr: String, result: String| {
+        // `masked` hides both sides of the label; the payload keeps the result.
+        let mk_entry = |expr: &str, result: &str, masked: bool| {
             Arc::new(Entry {
-                label: format!("{expr} = {result}"),
+                label: format!(
+                    "{} = {}",
+                    mask_password(masked, expr),
+                    mask_password(masked, result)
+                ),
                 description: None,
                 icon: None,
-                payload: crate::modes::Payload::Stdout(result),
+                payload: crate::modes::Payload::Stdout(result.to_owned()),
             })
         };
         let mut entries: Vec<Arc<Entry>> = Vec::with_capacity(history.len() + 1);
         if let Some((expr, result)) = live_eval.as_ref() {
-            entries.push(mk_entry(expr.clone(), result.clone()));
+            // -P: the live row is the typed secret and its value.
+            entries.push(mk_entry(expr, result, self.password));
         }
         for (expr, result) in &history {
-            entries.push(mk_entry(expr.clone(), result.clone()));
+            entries.push(mk_entry(expr, result, false));
         }
         self.entries = entries;
         self.usage_keys = crate::picker::frecency::entry_keys(&self.entries);
@@ -987,8 +1069,15 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
         let arrived = ChannelSignal::new(rx);
         let state_loaded = Arc::clone(&state);
         Effect::new(move |_| {
-            let Some(entries) = arrived.get() else {
-                return;
+            let entries = match arrived.get() {
+                None => return,
+                Some(Ok(entries)) => entries,
+                // Same outcome as a read error without --loading: report it
+                // and exit non-zero rather than showing an empty list.
+                Some(Err(e)) => {
+                    eprintln!("pikr: reading stdin: {e}");
+                    std::process::exit(1);
+                }
             };
             // Batched like the rerank effect: the subscribers `rerank` wakes
             // re-lock AppState, so the guard must drop before they run.
@@ -1244,12 +1333,18 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
     let state_empty_style = Arc::clone(&state);
     let sheet_empty_text = Arc::clone(&sheet);
     let sheet_empty_row = Arc::clone(&sheet);
-    let empty_msg = Stack::horizontal((Label::derived(move || {
-        let _ = rev.get();
-        let s = state_empty.lock().unwrap();
-        empty_state_text(&s.picker.query.get(), s.password)
-    })
-    .style(move |s| crate::ui::css::apply(s, &sheet_empty_text, "label", &["empty-row-text"])),))
+    // A confirm card opened with no matching row sits here instead.
+    let empty_card = confirm_card(confirm_sig, || true, &sheet);
+    let empty_msg = Stack::horizontal((
+        Label::derived(move || {
+            let _ = rev.get();
+            let s = state_empty.lock().unwrap();
+            empty_state_text(&s.picker.query.get(), s.password)
+        })
+        .style(move |s| crate::ui::css::apply(s, &sheet_empty_text, "label", &["empty-row-text"])),
+        Container::new(Empty::new()).style(|s| s.flex_grow(1.0_f32)),
+        empty_card,
+    ))
     .style(move |s| {
         let _ = rev.get();
         let visible = state_empty_style.lock().unwrap().matches.is_empty();
@@ -1430,22 +1525,13 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
                 query_cursor_sig.get_untracked(),
                 query_sig.get_untracked().chars().count(),
             );
-            let edits_query = matches!(vim_mode, VimMode::Insert | VimMode::Normal);
             let action = if let Some(card) = &pending {
                 Some(Action::AcceptKbCustom(card.binding))
             } else if ex_open.is_some() {
                 None
-            } else if let Some(i) = s.kb_custom.iter().position(|b| {
-                b.key.matches(key, ke.modifiers)
-                    && !(edits_query && caret_would_move(&b.key, caret.0, caret.1))
-            }) {
-                Some(if s.kb_custom[i].confirm.is_some() {
-                    Action::ConfirmKbCustom(i)
-                } else {
-                    Action::AcceptKbCustom(i)
-                })
             } else {
-                key_to_action(&s.picker, key, ctrl, shift)
+                kb_custom_action(&s.kb_custom, s.cli_mode, vim_mode, key, ke.modifiers, caret)
+                    .or_else(|| key_to_action(&s.picker, key, ctrl, shift))
             };
             (vim_mode, ex_open, total, g_pending, action)
         };
@@ -1538,17 +1624,8 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
             return EventPropagation::Continue;
         };
 
-        // Rows haven't arrived yet (--loading): nothing to accept. Without this
-        // dmenu's no-match fallthrough would print the typed query.
-        if loading_sig.get_untracked().is_some()
-            && matches!(
-                action,
-                Action::Accept
-                    | Action::AcceptCustom
-                    | Action::AcceptKbCustom(_)
-                    | Action::ConfirmKbCustom(_)
-            )
-        {
+        // Rows haven't arrived yet (--loading): nothing to accept.
+        if loading_sig.get_untracked().is_some() && needs_loaded_rows(&action) {
             return EventPropagation::Stop;
         }
 
@@ -1704,15 +1781,15 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
                 std::process::exit(0);
             }
             Action::ConfirmKbCustom(index) => {
-                // Nothing highlighted, nothing to confirm.
-                if total > 0 {
-                    let prompt = state_key.lock().unwrap().kb_custom[index].confirm.clone();
-                    if let Some(prompt) = prompt {
-                        confirm_sig.set(Some(ConfirmCard {
-                            binding: index,
-                            prompt,
-                        }));
-                    }
+                // With no matching row the card sits in the empty-state row,
+                // and confirming prints the typed query like an unprompted
+                // binding does.
+                let prompt = state_key.lock().unwrap().kb_custom[index].confirm.clone();
+                if let Some(prompt) = prompt {
+                    confirm_sig.set(Some(ConfirmCard {
+                        binding: index,
+                        prompt,
+                    }));
                 }
             }
             Action::AcceptKbCustom(index) => {
@@ -1886,11 +1963,98 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
 #[cfg(test)]
 mod tests {
     use super::{
-        caret_would_move, char_idx_to_byte, empty_state_text, mask_password, move_down_selection,
-        parse_color, rerank_if_query_changed, row_key, with_cursor, word_boundary_back,
+        Action, AppState, CliMode, Entry, Key, Modifiers, NamedKey, caret_would_move,
+        char_idx_to_byte, empty_state_text, kb_custom_action, mask_password, move_down_selection,
+        needs_loaded_rows, parse_color, rerank_if_query_changed, row_key, selection_range,
+        with_cursor, word_boundary_back,
     };
+    use crate::modes::Payload;
     use crate::picker::state::VimMode;
+    use floem::reactive::SignalUpdate;
     use std::cell::Cell;
+    use std::sync::{Arc, Mutex};
+
+    /// An `AppState` with in-memory usage/history and no disk state, for
+    /// driving `rerank` without a window.
+    fn app_state(cli_mode: CliMode, labels: &[&str], password: bool) -> AppState {
+        let entries: Vec<Arc<Entry>> = labels.iter().map(|l| Arc::new(Entry::stdout(*l))).collect();
+        let theme = crate::config::Theme::default();
+        AppState {
+            picker: crate::picker::state::PickerState::new(),
+            usage_keys: crate::picker::frecency::entry_keys(&entries),
+            entries,
+            matches: Vec::new(),
+            g_pending: false,
+            cli_mode,
+            prompt: String::new(),
+            max_results: 256,
+            stylesheet: Arc::new(crate::ui::css::build_stylesheet(&theme)),
+            theme,
+            matcher: crate::picker::matcher::Matcher::new(),
+            password,
+            usage: Default::default(),
+            history: Default::default(),
+            calc_results: Default::default(),
+            icons: Arc::new(Mutex::new(crate::picker::icons::IconCache::new())),
+            kb_custom: Vec::new(),
+            loading: None,
+            pending_entries: None,
+        }
+    }
+
+    fn ranked_with_query(mut state: AppState, query: &str) -> AppState {
+        state.picker.query.set(query.to_owned());
+        state.rerank();
+        state
+    }
+
+    // ── -P / --password rendering ─────────────────────────────────────────
+
+    #[test]
+    fn password_calc_live_row_masks_expression_and_result() {
+        let s = ranked_with_query(app_state(CliMode::Calc, &[], true), "6*7");
+        let live = &s.entries[s.matches[0].index];
+        assert!(!live.label.contains("6*7"), "label: {}", live.label);
+        assert!(!live.label.contains("42"), "label: {}", live.label);
+        assert_eq!(live.label, "\u{25CF}\u{25CF}\u{25CF} = \u{25CF}\u{25CF}");
+        // The accepted value is still the real result.
+        assert!(matches!(&live.payload, Payload::Stdout(r) if r == "42"));
+
+        let plain = ranked_with_query(app_state(CliMode::Calc, &[], false), "6*7");
+        assert_eq!(plain.entries[0].label, "6*7 = 42");
+    }
+
+    #[test]
+    fn password_rows_carry_no_match_highlights() {
+        let labels = ["hunter2", "hunt", "other"];
+        let plain = ranked_with_query(app_state(CliMode::Dmenu, &labels, false), "hun");
+        assert!(
+            plain.matches.iter().any(|m| !m.positions.is_empty()),
+            "without -P the rows are highlighted"
+        );
+
+        let masked = ranked_with_query(app_state(CliMode::Dmenu, &labels, true), "hun");
+        assert_eq!(masked.matches.len(), plain.matches.len());
+        for m in &masked.matches {
+            assert!(m.positions.is_empty() && m.desc_positions.is_empty());
+        }
+    }
+
+    #[test]
+    fn password_calc_history_rows_carry_no_match_highlights() {
+        let calc_state = |password| {
+            let mut s = app_state(CliMode::Calc, &[], password);
+            s.history.push(CliMode::Calc, "12+30");
+            s.calc_results.insert("12+30".into(), "42".into());
+            ranked_with_query(s, "12")
+        };
+        let plain = calc_state(false);
+        assert!(plain.matches.iter().any(|m| !m.positions.is_empty()));
+
+        let masked = calc_state(true);
+        assert_eq!(masked.matches.len(), plain.matches.len());
+        assert!(masked.matches.iter().all(|m| m.positions.is_empty()));
+    }
 
     #[test]
     fn initial_query_reranks_once() {
@@ -2130,32 +2294,163 @@ mod tests {
 
     // ── caret_would_move tests ────────────────────────────────────────────
 
+    fn spec(s: &str) -> crate::picker::keyspec::KeySpec {
+        s.parse().unwrap()
+    }
+
     #[test]
     fn right_binding_fires_only_at_query_end() {
-        let right: crate::picker::keyspec::KeySpec = "Right".parse().unwrap();
-        assert!(!caret_would_move(&right, 0, 0), "empty query");
-        assert!(!caret_would_move(&right, 3, 3), "caret at end");
+        let right = spec("Right");
+        let insert = VimMode::Insert;
+        assert!(!caret_would_move(&right, insert, 0, 0), "empty query");
+        assert!(!caret_would_move(&right, insert, 3, 3), "caret at end");
         assert!(
-            caret_would_move(&right, 1, 3),
+            caret_would_move(&right, insert, 1, 3),
             "caret mid-query moves instead"
         );
-        let end: crate::picker::keyspec::KeySpec = "End".parse().unwrap();
-        assert!(caret_would_move(&end, 0, 2));
+        assert!(caret_would_move(&spec("End"), insert, 0, 2));
     }
 
     #[test]
     fn left_binding_fires_only_at_query_start() {
-        let left: crate::picker::keyspec::KeySpec = "Left".parse().unwrap();
-        assert!(!caret_would_move(&left, 0, 3));
-        assert!(caret_would_move(&left, 2, 3));
-        let home: crate::picker::keyspec::KeySpec = "Home".parse().unwrap();
-        assert!(caret_would_move(&home, 1, 3));
+        let insert = VimMode::Insert;
+        assert!(!caret_would_move(&spec("Left"), insert, 0, 3));
+        assert!(caret_would_move(&spec("Left"), insert, 2, 3));
+        assert!(caret_would_move(&spec("Home"), insert, 1, 3));
     }
 
     #[test]
     fn other_bindings_ignore_the_caret() {
-        let del: crate::picker::keyspec::KeySpec = "Shift+Delete".parse().unwrap();
-        assert!(!caret_would_move(&del, 1, 3));
+        assert!(!caret_would_move(
+            &spec("Shift+Delete"),
+            VimMode::Insert,
+            1,
+            3
+        ));
+    }
+
+    #[test]
+    fn normal_mode_home_end_move_the_list_not_the_caret() {
+        let normal = VimMode::Normal;
+        assert!(!caret_would_move(&spec("Home"), normal, 1, 3));
+        assert!(!caret_would_move(&spec("End"), normal, 1, 3));
+        // h/l and Left/Right still move the caret in Normal mode.
+        assert!(caret_would_move(&spec("Right"), normal, 1, 3));
+        assert!(caret_would_move(&spec("Left"), normal, 1, 3));
+        // Visual mode has no caret motions at all.
+        assert!(!caret_would_move(&spec("Right"), VimMode::Visual, 1, 3));
+    }
+
+    // ── kb_custom_action tests ────────────────────────────────────────────
+
+    fn bindings(specs: &[&str]) -> Vec<crate::picker::keyspec::KbCustom> {
+        specs.iter().map(|s| s.parse().unwrap()).collect()
+    }
+
+    fn named(k: NamedKey) -> Key {
+        Key::Named(k)
+    }
+
+    #[test]
+    fn kb_custom_picks_binding_and_confirm_variant() {
+        let b = bindings(&["F2", "Shift+Delete=Sure?"]);
+        let none = Modifiers::empty();
+        let act = |key: &Key, mods| {
+            kb_custom_action(&b, CliMode::Dmenu, VimMode::Insert, key, mods, (0, 0))
+        };
+        assert_eq!(
+            act(&named(NamedKey::F2), none),
+            Some(Action::AcceptKbCustom(0))
+        );
+        assert_eq!(
+            act(&named(NamedKey::Delete), Modifiers::SHIFT),
+            Some(Action::ConfirmKbCustom(1))
+        );
+        assert_eq!(act(&named(NamedKey::Delete), none), None);
+    }
+
+    #[test]
+    fn kb_custom_applies_only_in_dmenu_mode() {
+        let b = bindings(&["F2"]);
+        let f2 = named(NamedKey::F2);
+        let none = Modifiers::empty();
+        for mode in [CliMode::Drun, CliMode::Calc, CliMode::Emoji] {
+            assert_eq!(
+                kb_custom_action(&b, mode, VimMode::Insert, &f2, none, (0, 0)),
+                None,
+                "{mode:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn kb_custom_caret_guard_is_insert_home_end_only() {
+        let b = bindings(&["Home"]);
+        let home = named(NamedKey::Home);
+        let none = Modifiers::empty();
+        // Mid-query in Insert, Home moves the caret: the binding yields.
+        assert_eq!(
+            kb_custom_action(&b, CliMode::Dmenu, VimMode::Insert, &home, none, (1, 3)),
+            None
+        );
+        // In Normal, Home jumps the list, so the binding fires mid-query.
+        assert_eq!(
+            kb_custom_action(&b, CliMode::Dmenu, VimMode::Normal, &home, none, (1, 3)),
+            Some(Action::AcceptKbCustom(0))
+        );
+    }
+
+    #[test]
+    fn kb_custom_modified_caret_key_always_fires() {
+        let b = bindings(&["Alt+Right"]);
+        let right = named(NamedKey::ArrowRight);
+        assert_eq!(
+            kb_custom_action(
+                &b,
+                CliMode::Dmenu,
+                VimMode::Insert,
+                &right,
+                Modifiers::ALT,
+                (1, 3)
+            ),
+            Some(Action::AcceptKbCustom(0))
+        );
+    }
+
+    // ── needs_loaded_rows / selection_range tests ─────────────────────────
+
+    #[test]
+    fn accepts_wait_for_loaded_rows() {
+        for action in [
+            Action::Accept,
+            Action::AcceptCustom,
+            Action::AcceptKbCustom(0),
+            Action::ConfirmKbCustom(0),
+        ] {
+            assert!(needs_loaded_rows(&action), "{action:?}");
+        }
+        for action in [
+            Action::InsertChar('a'),
+            Action::Backspace,
+            Action::MoveDown(1),
+            Action::Cancel,
+        ] {
+            assert!(!needs_loaded_rows(&action), "{action:?}");
+        }
+    }
+
+    #[test]
+    fn selection_range_visual_spans_anchor_to_cursor() {
+        assert_eq!(selection_range(VimMode::Visual, Some(1), 3), [1, 2, 3]);
+        assert_eq!(selection_range(VimMode::Visual, Some(3), 1), [1, 2, 3]);
+        assert_eq!(selection_range(VimMode::Visual, Some(2), 2), [2]);
+    }
+
+    #[test]
+    fn selection_range_outside_visual_is_the_cursor_row() {
+        assert_eq!(selection_range(VimMode::Visual, None, 4), [4]);
+        assert_eq!(selection_range(VimMode::Normal, Some(1), 4), [4]);
+        assert_eq!(selection_range(VimMode::Insert, None, 0), [0]);
     }
 
     // ── empty_state_text tests ────────────────────────────────────────────

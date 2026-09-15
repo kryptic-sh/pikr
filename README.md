@@ -60,10 +60,11 @@ echo -e "a\nb\nc" | pikr --dmenu
 
 ### Custom accept keys (dmenu)
 
-`--kb-custom KEY` adds an alternate key that accepts the highlighted row. The
-row is printed exactly as with Enter, but pikr exits with **10** for the first
-binding, **11** for the second, and so on (up to 19 bindings, like rofi's
-`-kb-custom-N`), so a script can tell which key was pressed:
+`--kb-custom KEY` (with `--dmenu` or `--show dmenu`) adds an alternate key that
+accepts the highlighted row. The row is printed exactly as with Enter, but pikr
+exits with **10** for the first binding, **11** for the second, and so on (up to
+19 bindings, like rofi's `-kb-custom-N`), so a script can tell which key was
+pressed:
 
 ```sh
 choice=$(printf 'home\nwork\n' | pikr --dmenu --kb-custom Shift+Delete)
@@ -77,14 +78,31 @@ esac
 key: a single character, `Delete`, `Backspace`, `Insert`, `Return`, `Tab`,
 `Escape`, `Space`, `Left`/`Right`/`Up`/`Down`, `Home`, `End`, `PageUp`,
 `PageDown`, or `F1`–`F12`. Modifiers match exactly (`Delete` does not fire on
-`Shift+Delete`), and bindings take precedence over the built-in keymap. With no
-matching row the typed query is printed, as with Enter. Custom accepts don't
+`Shift+Delete`), with one exception: many layouts type a symbol such as `?` or
+`+` with Shift, so for a non-letter character Shift is ignored unless you name
+it. `Ctrl+?` fires with or without Shift held; `Ctrl+Shift+?` requires it. With
+no matching row the typed query is printed, as with Enter. Custom accepts don't
 update frecency or query history.
 
+Bindings take precedence over the built-in keymap, but only while the picker is
+in dmenu mode (not after `:drun` and the like). Because of that precedence pikr
+refuses a binding that would take over a built-in key: bare `Escape` (cancel),
+bare `Return` (accept), or a printable character, `Space` included, without
+`Ctrl`, `Alt` or `Super` (typing, and Normal-mode commands such as `g`).
+Modified forms like `Alt+1` are fine. Binding the same key twice and empty
+modifier segments (`Ctrl++d`, `+d`) are errors too; `Ctrl++` binds Ctrl and the
+`+` key. These errors exit 2, like any other bad argument.
+
+Unmodified `Left` and `Right` bindings fire only when the query caret can't move
+that way (`Right` at the end of the query, `Left` at its start), and so do
+`Home` and `End` in Insert mode, so they don't take over caret movement while
+editing. In Normal mode `Home` and `End` move the list, so bindings on them
+always fire, as do modified bindings such as `Alt+Right`.
+
 Append `=PROMPT` to ask first. The key then opens a confirm card showing
-`PROMPT` at the right edge of the highlighted row: Enter accepts with the
-binding's exit code, Esc or Left dismisses, and other keys are ignored while it
-is open.
+`PROMPT` at the right edge of the highlighted row (or of the "No results" row
+when nothing matches): Enter accepts with the binding's exit code, Esc or Left
+dismisses, and other keys are ignored while it is open.
 
 ```sh
 choice=$(nmcli -g ssid dev wifi list | pikr --dmenu --kb-custom 'Right=Forget?')
@@ -96,15 +114,13 @@ choice=$(nmcli -g ssid dev wifi list | pikr --dmenu --kb-custom 'Right=Forget?')
 By default pikr reads all of stdin before opening. For a slow producer,
 `--loading TEXT` opens the window immediately and shows `TEXT` centred where the
 list will appear; the rows fill in once stdin closes. Typing works meanwhile,
-but accepting is disabled until the rows arrive.
+but accepting is disabled until the rows arrive. If reading stdin fails (for
+example on invalid UTF-8), pikr prints the error and exits 1, as it does without
+`--loading`.
 
 ```sh
 slow_scan | pikr --dmenu --loading 'Scanning…'
 ```
-
-`Left`, `Right`, `Home` and `End` bindings fire only when the query caret can't
-move that way (`Right` and `End` at the end of the query, `Left` and `Home` at
-its start), so they don't take over caret movement while editing.
 
 ## Keybindings (planned)
 

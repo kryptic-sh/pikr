@@ -50,6 +50,6 @@ fn main() -> Result<()> {
         )
         .init();
 
-    let cli = cli::Cli::parse();
+    let cli = cli::Cli::parse().validate().unwrap_or_else(|e| e.exit());
     app::run(cli, startup_started)
 }

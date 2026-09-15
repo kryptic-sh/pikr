@@ -10,20 +10,30 @@ and this project adheres to
 
 ### Added
 
-- `--kb-custom KEY` (dmenu): alternate accept keys. The highlighted row is
-  printed as with Enter, but pikr exits 10 for the first binding, 11 for the
-  second, up to 19 bindings — rofi's `-kb-custom-N` convention — so scripts can
-  offer a second action per row (forget, delete, copy). Keys are chords such as
-  `Shift+Delete`, `Ctrl+d` or `F2`, matched with exact modifiers and taking
-  precedence over the built-in keymap. Custom accepts skip frecency and history.
+- `--kb-custom KEY` (with `--dmenu` or `--show dmenu`): alternate accept keys.
+  The highlighted row is printed as with Enter, but pikr exits 10 for the first
+  binding, 11 for the second, up to 19 bindings — rofi's `-kb-custom-N`
+  convention — so scripts can offer a second action per row (forget, delete,
+  copy). Keys are chords such as `Shift+Delete`, `Ctrl+d` or `F2`, matched with
+  exact modifiers, except that Shift is optional on a non-letter symbol unless
+  named, so `Ctrl+?` fires where `?` is typed with Shift. Bindings take
+  precedence over the built-in keymap while the picker is in dmenu mode. Custom
+  accepts skip frecency and history.
+- `--kb-custom` rejects, with exit code 2, a binding that would shadow a
+  built-in key (bare `Escape` or `Return`, or a printable character without
+  `Ctrl`, `Alt` or `Super`), the same key bound twice, and empty modifier
+  segments such as `Ctrl++d`. `Ctrl++` still binds Ctrl and the `+` key.
 - `--kb-custom KEY=PROMPT`: show `PROMPT` in a confirm card on the highlighted
   row before accepting. Enter accepts with the binding's exit code; Esc or Left
-  dismisses.
+  dismisses. With no matching row the card opens on the empty-state row and
+  Enter prints the typed query, as an unprompted binding does.
 - `--loading TEXT` (dmenu): open immediately and show `TEXT` centred in the list
   area while stdin is still being written; rows appear when it closes, and
-  accepting is disabled until then.
-- `Left`/`Right`/`Home`/`End` bindings fire only when the query caret can't move
-  that way, so binding them doesn't break caret movement while editing.
+  accepting is disabled until then. A stdin read error exits 1, as it does
+  without `--loading`.
+- Unmodified `Left`/`Right` bindings, and `Home`/`End` bindings in Insert mode,
+  fire only when the query caret can't move that way, so binding them doesn't
+  break caret movement while editing.
 
 ### Changed
 
@@ -60,6 +70,11 @@ and this project adheres to
   matching rows it printed `No results for "<query>"`, showing the masked secret
   in plain text directly beneath the masked input. It now reads `No results`,
   without the text or its length.
+- `-P` / `--password` in calc mode: the live row labelled the typed expression
+  and its result in plain text (`<expr> = <result>`). Both sides are now masked;
+  the printed result is unchanged.
+- `-P` / `--password`: result rows no longer highlight the characters the query
+  matched, which showed which typed characters each row contains.
 
 ## [0.8.12] - 2026-08-13
 
