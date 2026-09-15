@@ -5,12 +5,12 @@
 //! bonus computed as `count · exp(-Δt / HALF_LIFE)` — heavily-used recent
 //! entries surface above rarely-used ones with equal text match.
 //!
-//! Stored at `$XDG_STATE_HOME/pikr/usage.toml`. Per-mode tables so different
-//! pickers don't cross-contaminate (drun won't bias ssh ordering).
+//! Stored as `usage.toml` in pikr's state dir (see
+//! [`crate::picker::state_file_path`]). Per-mode tables so different pickers
+//! don't cross-contaminate (drun won't bias ssh ordering).
 
 use std::collections::HashMap;
 use std::fmt::Write;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -47,11 +47,11 @@ pub struct Usage {
 }
 
 impl Usage {
-    /// Read the usage table from `$XDG_STATE_HOME/pikr/usage.toml`. Missing
+    /// Read the usage table from `usage.toml` in the state dir. Missing
     /// file / parse error / no state dir all collapse to an empty `Usage` —
     /// frecency is a soft optimisation, never a hard dependency.
     pub fn load() -> Self {
-        let Some(path) = state_file_path() else {
+        let Some(path) = crate::picker::state_file_path("usage.toml") else {
             return Self::default();
         };
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -60,11 +60,11 @@ impl Usage {
         toml::from_str(&text).unwrap_or_default()
     }
 
-    /// Persist to `$XDG_STATE_HOME/pikr/usage.toml`. Best-effort; errors are
+    /// Persist to `usage.toml` in the state dir. Best-effort; errors are
     /// logged via tracing but never surfaced — losing frecency state on a
     /// disk-full / permission-denied is preferable to crashing the launcher.
     pub fn save(&self) {
-        let Some(path) = state_file_path() else {
+        let Some(path) = crate::picker::state_file_path("usage.toml") else {
             return;
         };
         if let Some(parent) = path.parent()
@@ -178,21 +178,6 @@ fn score_bonus(entry: &UsageEntry, now_secs: i64) -> u16 {
     let decay = (-dt / half_life_secs).exp2();
     let bonus = (entry.count as f64) * decay * BONUS_SCALE;
     bonus.clamp(0.0, u16::MAX as f64) as u16
-}
-
-fn state_file_path() -> Option<PathBuf> {
-    // XDG state dir on unix; persistence is dropped on non-unix targets
-    // for now (frecency rebuilds from XDG order on every launch).
-    // Followup: route through `dirs::data_dir()` on macOS / Windows.
-    #[cfg(unix)]
-    {
-        let dirs = xdg::BaseDirectories::with_prefix("pikr");
-        dirs.place_state_file("usage.toml").ok()
-    }
-    #[cfg(not(unix))]
-    {
-        None
-    }
 }
 
 #[cfg(test)]

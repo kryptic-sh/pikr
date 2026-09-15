@@ -69,22 +69,10 @@ impl Config {
     pub fn load(path: Option<&Path>) -> Result<Self> {
         let path = match path {
             Some(p) => p.to_path_buf(),
-            None => {
-                // XDG config lookup on unix; non-unix falls back to
-                // in-memory defaults until we route through `dirs`.
-                #[cfg(unix)]
-                {
-                    let dirs = xdg::BaseDirectories::with_prefix("pikr");
-                    match dirs.place_config_file("config.toml") {
-                        Ok(p) => p,
-                        Err(_) => return Ok(Self::default()),
-                    }
-                }
-                #[cfg(not(unix))]
-                {
-                    return Ok(Self::default());
-                }
-            }
+            None => match default_path() {
+                Some(p) => p,
+                None => return Ok(Self::default()),
+            },
         };
         if !path.exists() {
             return Ok(Self::default());
@@ -107,9 +95,35 @@ impl Config {
     }
 }
 
+/// The config file read when `--config` is not given:
+/// `$XDG_CONFIG_HOME/pikr/config.toml` on unix (macOS included), and
+/// `%APPDATA%\pikr\config.toml` on Windows. `None` when the platform has no
+/// config directory.
+fn default_path() -> Option<std::path::PathBuf> {
+    #[cfg(unix)]
+    {
+        xdg::BaseDirectories::with_prefix("pikr")
+            .place_config_file("config.toml")
+            .ok()
+    }
+    #[cfg(not(unix))]
+    {
+        dirs::config_dir().map(|dir| dir.join("pikr").join("config.toml"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every shipped platform must have a config location; a `None` here
+    /// silently ignores the user's config file.
+    #[test]
+    fn default_path_resolves_under_a_pikr_dir() {
+        let path = default_path().expect("config dir must resolve");
+        assert!(path.is_absolute(), "got {}", path.display());
+        assert!(path.ends_with("pikr/config.toml"), "got {}", path.display());
+    }
 
     fn load_with(config_toml: &str) -> Config {
         let dir = tempfile::tempdir().unwrap();

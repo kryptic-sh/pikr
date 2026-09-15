@@ -6,11 +6,11 @@
 //! duplicates are deduped (newer occurrence wins), capped at [`HISTORY_CAP`]
 //! per mode.
 //!
-//! Stored at `$XDG_STATE_HOME/pikr/history.toml`. Per-mode lists so emoji
-//! recall doesn't pollute drun.
+//! Stored as `history.toml` in pikr's state dir (see
+//! [`crate::picker::state_file_path`]). Per-mode lists so emoji recall doesn't
+//! pollute drun.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -29,10 +29,10 @@ pub struct History {
 }
 
 impl History {
-    /// Read from `$XDG_STATE_HOME/pikr/history.toml`. Missing file / parse
+    /// Read from `history.toml` in the state dir. Missing file / parse
     /// error / no state dir all collapse to an empty `History`.
     pub fn load() -> Self {
-        let Some(path) = state_file_path() else {
+        let Some(path) = crate::picker::state_file_path("history.toml") else {
             return Self::default();
         };
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -43,7 +43,7 @@ impl History {
 
     /// Persist. Best-effort; warnings via `tracing` on failure.
     pub fn save(&self) {
-        let Some(path) = state_file_path() else {
+        let Some(path) = crate::picker::state_file_path("history.toml") else {
             return;
         };
         if let Some(parent) = path.parent()
@@ -99,20 +99,6 @@ impl History {
     /// Number of entries stored for `mode`.
     pub fn len(&self, mode: CliMode) -> usize {
         self.modes.get(&mode.key()).map_or(0, Vec::len)
-    }
-}
-
-fn state_file_path() -> Option<PathBuf> {
-    // See `frecency::state_file_path` — same unix-only gate; history is
-    // session-scoped on macOS / Windows until we route through `dirs`.
-    #[cfg(unix)]
-    {
-        let dirs = xdg::BaseDirectories::with_prefix("pikr");
-        dirs.place_state_file("history.toml").ok()
-    }
-    #[cfg(not(unix))]
-    {
-        None
     }
 }
 

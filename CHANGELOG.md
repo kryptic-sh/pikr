@@ -27,6 +27,11 @@ and this project adheres to
 
 ### Fixed
 
+- Windows: the config file, query history and frecency now persist. pikr read
+  no config file and kept history and usage in memory only, so every launch
+  started from defaults and forgot which entries were used most. They now live
+  at `%APPDATA%\pikr\config.toml` and `%LOCALAPPDATA%\pikr\{history,usage}.toml`
+  (unchanged XDG paths elsewhere).
 - Windows drun icons: cached PNGs under `%LOCALAPPDATA%\pikr\icon-cache` are now
   written to a temp file and renamed into place. The parallel Start Menu walk
   could interleave two writes to the same file (a shared target, or the generic

@@ -8,7 +8,25 @@ pub mod keyspec;
 pub mod matcher;
 pub mod state;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Where pikr persists the state file `name` (query history, frecency):
+/// `$XDG_STATE_HOME/pikr/<name>` on unix (macOS included), and
+/// `%LOCALAPPDATA%\pikr\<name>` on Windows, beside the drun caches. `None`
+/// when the platform has no such directory. The parent directory may not
+/// exist yet; savers create it.
+pub(crate) fn state_file_path(name: &str) -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        xdg::BaseDirectories::with_prefix("pikr")
+            .place_state_file(name)
+            .ok()
+    }
+    #[cfg(not(unix))]
+    {
+        dirs::data_local_dir().map(|dir| dir.join("pikr").join(name))
+    }
+}
 
 /// Write `text` to `path` with owner-only permissions (0600), creating or
 /// truncating. Used for persisted query history and frecency keys — both can
@@ -16,9 +34,9 @@ use std::path::Path;
 /// world-readable on a multi-user host. `std::fs::write` would create the
 /// file 0644 under a normal umask.
 ///
-/// On non-unix targets `state_file_path` (`history.rs` / `frecency.rs`)
-/// resolves to `None`, so nothing reaches this at runtime; the plain-write
-/// fallback below only exists to keep the call sites compiling.
+/// Off unix there is no mode to set, so the fallback below is a plain write.
+/// On Windows [`state_file_path`] lands under `%LOCALAPPDATA%`, whose
+/// inherited ACL already grants only the user, SYSTEM and Administrators.
 #[cfg(unix)]
 pub(crate) fn write_private_state(path: &Path, text: &str) -> std::io::Result<()> {
     use std::io::Write;
@@ -40,9 +58,22 @@ pub(crate) fn write_private_state(path: &Path, text: &str) -> std::io::Result<()
 
 #[cfg(not(unix))]
 pub(crate) fn write_private_state(path: &Path, text: &str) -> std::io::Result<()> {
-    // No owner-only mode concept off unix; plain write. Unreachable while
-    // `state_file_path` returns `None` on these targets — see the doc comment.
+    // No owner-only mode concept off unix; see the doc comment.
     std::fs::write(path, text)
+}
+
+#[cfg(test)]
+mod state_path_tests {
+    use super::state_file_path;
+
+    /// Every shipped platform must persist state; a `None` here silently
+    /// turns history and frecency into per-session memory.
+    #[test]
+    fn state_file_path_resolves_under_a_pikr_dir() {
+        let path = state_file_path("usage.toml").expect("state dir must resolve");
+        assert!(path.is_absolute(), "got {}", path.display());
+        assert!(path.ends_with("pikr/usage.toml"), "got {}", path.display());
+    }
 }
 
 #[cfg(all(test, unix))]

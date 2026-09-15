@@ -122,8 +122,8 @@ Normal mode:
 
 ## Config
 
-`$XDG_CONFIG_HOME/pikr/config.toml`. No file is auto-written; in-memory defaults
-are used when absent.
+`$XDG_CONFIG_HOME/pikr/config.toml` (`%APPDATA%\pikr\config.toml` on Windows).
+No file is auto-written; in-memory defaults are used when absent.
 
 ```toml
 max_results = 256
