@@ -483,8 +483,9 @@ pub(crate) fn mask_password(enabled: bool, text: &str) -> String {
 }
 
 /// Empty-state hint for a query with no matching rows. With `--password` the
-/// query is never echoed — not even masked, since a masked echo still leaks
-/// the length.
+/// query is left out: echoing it would print the secret in plain text right
+/// under the masked query bar. A masked echo would only repeat the bar's ●
+/// run, so the hint just says there are no results.
 pub(crate) fn empty_state_text(query: &str, password: bool) -> String {
     if query.is_empty() {
         "No entries.".to_owned()
@@ -742,6 +743,7 @@ impl AppState {
         );
         if matches!(self.cli_mode, CliMode::Calc) {
             self.rerank_calc(&query);
+            self.hide_match_positions_if_password();
             return;
         }
         let pairs: Vec<(&str, Option<&str>)> = self
@@ -767,6 +769,21 @@ impl AppState {
         self.matches = ranked;
         self.matches.truncate(self.max_results);
         self.picker.clamp_selected(self.matches.len());
+        self.hide_match_positions_if_password();
+    }
+
+    /// `-P`: painting the matched characters would show which typed
+    /// characters are in each row, spelling out the secret. Rows render as
+    /// plain labels instead.
+    fn hide_match_positions_if_password(&mut self) {
+        if !self.password {
+            return;
+        }
+        let none: Rc<Vec<u32>> = Rc::new(Vec::new());
+        for m in &mut self.matches {
+            m.positions = Rc::clone(&none);
+            m.desc_positions = Rc::clone(&none);
+        }
     }
 
     /// Calc-mode rerank: build a row list from on-disk history plus the live
@@ -802,20 +819,26 @@ impl AppState {
             })
             .collect();
 
-        let mk_entry = |expr: String, result: String| {
+        // `masked` hides both sides of the label; the payload keeps the result.
+        let mk_entry = |expr: &str, result: &str, masked: bool| {
             Arc::new(Entry {
-                label: format!("{expr} = {result}"),
+                label: format!(
+                    "{} = {}",
+                    mask_password(masked, expr),
+                    mask_password(masked, result)
+                ),
                 description: None,
                 icon: None,
-                payload: crate::modes::Payload::Stdout(result),
+                payload: crate::modes::Payload::Stdout(result.to_owned()),
             })
         };
         let mut entries: Vec<Arc<Entry>> = Vec::with_capacity(history.len() + 1);
         if let Some((expr, result)) = live_eval.as_ref() {
-            entries.push(mk_entry(expr.clone(), result.clone()));
+            // -P: the live row is the typed secret and its value.
+            entries.push(mk_entry(expr, result, self.password));
         }
         for (expr, result) in &history {
-            entries.push(mk_entry(expr.clone(), result.clone()));
+            entries.push(mk_entry(expr, result, false));
         }
         self.entries = entries;
         self.usage_keys = crate::picker::frecency::entry_keys(&self.entries);
@@ -1885,12 +1908,98 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
 
 #[cfg(test)]
 mod tests {
+    use super::{AppState, CliMode, Entry};
     use super::{
         caret_would_move, char_idx_to_byte, empty_state_text, mask_password, move_down_selection,
         parse_color, rerank_if_query_changed, row_key, with_cursor, word_boundary_back,
     };
+    use crate::modes::Payload;
     use crate::picker::state::VimMode;
+    use floem::reactive::SignalUpdate;
     use std::cell::Cell;
+    use std::sync::{Arc, Mutex};
+
+    /// An `AppState` with in-memory usage/history and no disk state, for
+    /// driving `rerank` without a window.
+    fn app_state(cli_mode: CliMode, labels: &[&str], password: bool) -> AppState {
+        let entries: Vec<Arc<Entry>> = labels.iter().map(|l| Arc::new(Entry::stdout(*l))).collect();
+        let theme = crate::config::Theme::default();
+        AppState {
+            picker: crate::picker::state::PickerState::new(),
+            usage_keys: crate::picker::frecency::entry_keys(&entries),
+            entries,
+            matches: Vec::new(),
+            g_pending: false,
+            cli_mode,
+            prompt: String::new(),
+            max_results: 256,
+            stylesheet: Arc::new(crate::ui::css::build_stylesheet(&theme)),
+            theme,
+            matcher: crate::picker::matcher::Matcher::new(),
+            password,
+            usage: Default::default(),
+            history: Default::default(),
+            calc_results: Default::default(),
+            icons: Arc::new(Mutex::new(crate::picker::icons::IconCache::new())),
+            kb_custom: Vec::new(),
+            loading: None,
+            pending_entries: None,
+        }
+    }
+
+    fn ranked_with_query(mut state: AppState, query: &str) -> AppState {
+        state.picker.query.set(query.to_owned());
+        state.rerank();
+        state
+    }
+
+    // ── -P / --password rendering ─────────────────────────────────────────
+
+    #[test]
+    fn password_calc_live_row_masks_expression_and_result() {
+        let s = ranked_with_query(app_state(CliMode::Calc, &[], true), "6*7");
+        let live = &s.entries[s.matches[0].index];
+        assert!(!live.label.contains("6*7"), "label: {}", live.label);
+        assert!(!live.label.contains("42"), "label: {}", live.label);
+        assert_eq!(live.label, "\u{25CF}\u{25CF}\u{25CF} = \u{25CF}\u{25CF}");
+        // The accepted value is still the real result.
+        assert!(matches!(&live.payload, Payload::Stdout(r) if r == "42"));
+
+        let plain = ranked_with_query(app_state(CliMode::Calc, &[], false), "6*7");
+        assert_eq!(plain.entries[0].label, "6*7 = 42");
+    }
+
+    #[test]
+    fn password_rows_carry_no_match_highlights() {
+        let labels = ["hunter2", "hunt", "other"];
+        let plain = ranked_with_query(app_state(CliMode::Dmenu, &labels, false), "hun");
+        assert!(
+            plain.matches.iter().any(|m| !m.positions.is_empty()),
+            "without -P the rows are highlighted"
+        );
+
+        let masked = ranked_with_query(app_state(CliMode::Dmenu, &labels, true), "hun");
+        assert_eq!(masked.matches.len(), plain.matches.len());
+        for m in &masked.matches {
+            assert!(m.positions.is_empty() && m.desc_positions.is_empty());
+        }
+    }
+
+    #[test]
+    fn password_calc_history_rows_carry_no_match_highlights() {
+        let calc_state = |password| {
+            let mut s = app_state(CliMode::Calc, &[], password);
+            s.history.push(CliMode::Calc, "12+30");
+            s.calc_results.insert("12+30".into(), "42".into());
+            ranked_with_query(s, "12")
+        };
+        let plain = calc_state(false);
+        assert!(plain.matches.iter().any(|m| !m.positions.is_empty()));
+
+        let masked = calc_state(true);
+        assert_eq!(masked.matches.len(), plain.matches.len());
+        assert!(masked.matches.iter().all(|m| m.positions.is_empty()));
+    }
 
     #[test]
     fn initial_query_reranks_once() {
