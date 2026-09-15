@@ -616,6 +616,32 @@ fn kb_custom_confirm_blocks_navigation() {
     );
 }
 
+/// With no matching row a prompted binding still opens its card, and Enter
+/// prints the typed query with the binding's exit code, as an unprompted
+/// binding does.
+#[test]
+fn kb_custom_confirm_with_no_match_prints_query() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let pikr = Pikr::spawn(
+        &sway,
+        &["--dmenu", "--filter", "zzz", "--kb-custom", "Right=Forget?"],
+        Some("apple\nbanana\ncherry\n"),
+    )
+    .unwrap();
+    let out = pikr
+        .wait_with_retry(Duration::from_secs(15), Duration::from_millis(1000), || {
+            let _ = Wtype::new(&sway)
+                .keys(&[Key::F12, Key::Right, Key::Return])
+                .send();
+        })
+        .unwrap();
+    assert_eq!(out.exit_code, Some(10), "stderr:\n{}", out.stderr);
+    assert_eq!(out.stdout.trim(), "zzz");
+}
+
 // ── --loading ───────────────────────────────────────────────────────────────
 
 /// With `--loading`, rows read on the background thread still land and

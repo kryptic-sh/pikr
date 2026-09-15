@@ -30,6 +30,11 @@ impl KeySpec {
         self.key == SpecKey::Named(named)
     }
 
+    /// True when the spec names any modifier.
+    pub fn has_modifiers(&self) -> bool {
+        self.ctrl || self.shift || self.alt || self.meta
+    }
+
     /// True when `key` pressed with `mods` is this chord. Modifiers must match
     /// exactly, so `Delete` does not fire on `Shift+Delete` and vice versa.
     /// The one exception is Shift on a non-alphabetic character (see

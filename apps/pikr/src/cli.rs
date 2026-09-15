@@ -78,8 +78,9 @@ pub struct Cli {
     /// `Shift+Delete`, `Ctrl+d`, `Alt+Right` or `F2`; bindings take
     /// precedence over the built-in keymap. `KEY=PROMPT` shows PROMPT in a
     /// confirm card on the highlighted row first: Enter accepts, Esc or Left
-    /// dismisses. Left/Right/Home/End bindings fire only when the query
-    /// caret can't move that way, so they don't steal caret movement.
+    /// dismisses. Unmodified bindings on keys that move the query caret
+    /// (Left/Right, and Home/End in Insert mode) fire only when the caret
+    /// can't move that way, so they don't steal caret movement.
     #[arg(
         long = "kb-custom",
         value_name = "KEY[=PROMPT]",
