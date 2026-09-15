@@ -789,7 +789,7 @@ pub struct AppState {
     pub loading: Option<String>,
     /// Entries still being read from stdin (`--loading`). Taken once by
     /// `picker_view`, which swaps them in when they arrive.
-    pub pending_entries: Option<std::sync::mpsc::Receiver<Arc<Vec<Entry>>>>,
+    pub pending_entries: Option<std::sync::mpsc::Receiver<modes::dmenu::LoadedEntries>>,
 }
 
 impl AppState {
@@ -1069,8 +1069,15 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
         let arrived = ChannelSignal::new(rx);
         let state_loaded = Arc::clone(&state);
         Effect::new(move |_| {
-            let Some(entries) = arrived.get() else {
-                return;
+            let entries = match arrived.get() {
+                None => return,
+                Some(Ok(entries)) => entries,
+                // Same outcome as a read error without --loading: report it
+                // and exit non-zero rather than showing an empty list.
+                Some(Err(e)) => {
+                    eprintln!("pikr: reading stdin: {e}");
+                    std::process::exit(1);
+                }
             };
             // Batched like the rerank effect: the subscribers `rerank` wakes
             // re-lock AppState, so the guard must drop before they run.

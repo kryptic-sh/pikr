@@ -34,19 +34,32 @@ pub(crate) fn read_entries(reader: impl BufRead) -> io::Result<Vec<Entry>> {
     Ok(entries)
 }
 
+/// What the `--loading` reader sends when stdin closes: the entries, or the
+/// read error as text (the UI's channel signal needs a `Clone` value, which
+/// `io::Error` isn't).
+pub type LoadedEntries = std::result::Result<Arc<Vec<Entry>>, String>;
+
 /// `--loading`: read stdin on a background thread so the window can open
-/// before the producer finishes. The entries arrive once, when stdin closes.
-pub fn read_stdin_in_background() -> Result<mpsc::Receiver<Arc<Vec<Entry>>>> {
+/// before the producer finishes. The result arrives once, when stdin closes.
+pub fn read_stdin_in_background() -> Result<mpsc::Receiver<LoadedEntries>> {
     require_piped_stdin()?;
+    Ok(read_in_background(|| io::stdin().lock()))
+}
+
+/// Read the lines of `open()` on a new thread and send the outcome, so a
+/// read error reaches the UI instead of passing for an empty list.
+fn read_in_background<R: BufRead>(
+    open: impl FnOnce() -> R + Send + 'static,
+) -> mpsc::Receiver<LoadedEntries> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let entries = read_entries(io::stdin().lock()).unwrap_or_else(|e| {
-            eprintln!("pikr: reading stdin: {e}");
-            Vec::new()
-        });
-        let _ = tx.send(Arc::new(entries));
+        let loaded = read_entries(open())
+            .map(Arc::new)
+            .map_err(|e| e.to_string());
+        // A closed receiver means the window is already gone.
+        let _ = tx.send(loaded);
     });
-    Ok(rx)
+    rx
 }
 
 #[cfg(test)]
@@ -79,5 +92,20 @@ mod tests {
     #[test]
     fn invalid_utf8_is_an_error() {
         assert!(read_entries(io::Cursor::new(b"ok\n\xff\xfe\n".to_vec())).is_err());
+    }
+
+    #[test]
+    fn background_read_sends_entries() {
+        let rx = read_in_background(|| io::Cursor::new("a\n\nb\n"));
+        let entries = rx.recv().unwrap().unwrap();
+        let labels: Vec<&str> = entries.iter().map(|e| e.label.as_str()).collect();
+        assert_eq!(labels, ["a", "b"]);
+    }
+
+    #[test]
+    fn background_read_error_is_sent_not_an_empty_list() {
+        let rx = read_in_background(|| io::Cursor::new(b"ok\n\xff\xfe\n".to_vec()));
+        let err = rx.recv().unwrap().unwrap_err();
+        assert!(err.contains("UTF-8"), "{err}");
     }
 }
