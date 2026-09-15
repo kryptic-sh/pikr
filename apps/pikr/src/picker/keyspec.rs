@@ -32,10 +32,15 @@ impl KeySpec {
 
     /// True when `key` pressed with `mods` is this chord. Modifiers must match
     /// exactly, so `Delete` does not fire on `Shift+Delete` and vice versa.
+    /// The one exception is Shift on a non-alphabetic character (see
+    /// [`KeySpec::shift_is_optional`]).
     pub fn matches(&self, key: &Key, mods: Modifiers) -> bool {
-        if (self.ctrl, self.shift, self.alt, self.meta)
-            != (mods.ctrl(), mods.shift(), mods.alt(), mods.meta())
-        {
+        let shift_ok = if self.shift_is_optional() {
+            mods.shift() || !self.shift
+        } else {
+            mods.shift() == self.shift
+        };
+        if !shift_ok || (self.ctrl, self.alt, self.meta) != (mods.ctrl(), mods.alt(), mods.meta()) {
             return false;
         }
         match (&self.key, key) {
@@ -49,6 +54,16 @@ impl KeySpec {
             }
             _ => false,
         }
+    }
+
+    /// Shift is part of how a symbol such as `?` or `+` is typed on many
+    /// layouts (US `?` is Shift+`/`), so the press arrives with Shift held
+    /// and an exact comparison would never fire. For a non-alphabetic
+    /// character Shift is therefore ignored unless the spec names it, in
+    /// which case it is required. Letters keep exact matching, so `d` and
+    /// `Shift+d` stay distinct.
+    fn shift_is_optional(&self) -> bool {
+        matches!(self.key, SpecKey::Char(c) if !c.is_alphabetic())
     }
 }
 
@@ -255,10 +270,39 @@ mod tests {
 
     #[test]
     fn plus_as_the_key() {
+        // A US keyboard types `+` as Shift+`=`, so the press carries Shift.
+        let plus = Key::Character("+".into());
         let spec: KeySpec = "Ctrl++".parse().unwrap();
-        assert!(spec.matches(&Key::Character("+".into()), mods(true, false, false, false)));
+        assert!(spec.matches(&plus, mods(true, true, false, false)));
         let bare: KeySpec = "+".parse().unwrap();
-        assert!(bare.matches(&Key::Character("+".into()), m(NONE)));
+        assert!(bare.matches(&plus, mods(false, true, false, false)));
+    }
+
+    #[test]
+    fn shifted_symbol_ignores_shift_unless_named() {
+        let question = Key::Character("?".into());
+        let ctrl = mods(true, false, false, false);
+        let ctrl_shift = mods(true, true, false, false);
+
+        let spec: KeySpec = "Ctrl+?".parse().unwrap();
+        assert!(spec.matches(&question, ctrl_shift), "US layout: Shift+/");
+        assert!(spec.matches(&question, ctrl), "layout with an unshifted ?");
+
+        let explicit: KeySpec = "Ctrl+Shift+?".parse().unwrap();
+        assert!(explicit.matches(&question, ctrl_shift));
+        assert!(
+            !explicit.matches(&question, ctrl),
+            "named Shift is required"
+        );
+
+        // Other modifiers stay exact.
+        assert!(!spec.matches(&question, mods(true, true, true, false)));
+    }
+
+    #[test]
+    fn letters_keep_exact_shift() {
+        let spec: KeySpec = "Ctrl+d".parse().unwrap();
+        assert!(!spec.matches(&Key::Character("D".into()), mods(true, true, false, false)));
     }
 
     #[test]
