@@ -66,6 +66,19 @@ and this project adheres to
   wiped. The icon bitmap buffer size is also overflow-checked before `GetDIBits`
   fills it.
 
+### Changed
+
+- On Linux, pikr asks wgpu for the GL backend when some DRM card is
+  runtime-suspended and another is awake on a driver whose GL is known to
+  present to a Wayland layer surface (`amdgpu`, `i915`, `nouveau`, `radeon`,
+  `xe`). Vulkan enumeration resumes a parked GPU: on a hybrid laptop that took
+  first paint from 68 ms to 1435 ms on a card that then renders nothing. Every
+  other machine keeps the previous behaviour, including one whose awake card is
+  on NVIDIA's driver — there wgpu enumerates a GL adapter but rejects it as
+  incompatible with the surface, which floem turns into a panic. `WGPU_BACKEND`
+  overrides the choice. (The probe reads `/sys`, so on FreeBSD it finds nothing
+  and the default always applies.)
+
 ### Security
 
 - `-P` / `--password`: the empty-state hint no longer echoes the query. With no

@@ -15,6 +15,9 @@ mod app;
 mod cli;
 mod config;
 mod console_attach;
+// Only the Wayland window path consults it; elsewhere there is no caller.
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+mod gpu;
 mod modes;
 mod picker;
 mod ui;

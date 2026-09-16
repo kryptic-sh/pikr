@@ -12,6 +12,32 @@ use crate::picker::state::PickerState;
 use crate::ui::view::{AppState, message_view, picker_view};
 use anyhow::Result;
 
+/// A Wayland `Application` carrying the backend choice from [`crate::gpu`].
+///
+/// Both Wayland window paths (the picker and the `--message` modal) go through
+/// this so they make the same choice; the non-Wayland arms build their own.
+///
+/// Both outcomes are logged, since the choice depends on a power state that
+/// moves and a slow-start report needs to say which branch ran — at `debug`,
+/// so it needs `RUST_LOG`. floem reads `WGPU_BACKEND` after this and it
+/// replaces either choice, so the log records the backend set that was asked
+/// for, not necessarily the one used.
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+fn wayland_app() -> floem::Application {
+    let mut config = floem::AppConfig::default();
+    match crate::gpu::preferred_backends() {
+        Some(backends) => {
+            tracing::debug!(?backends, "requesting wgpu backends");
+            config = config.wgpu_backends(backends);
+        }
+        // Deliberately not saying why: `None` covers nothing parked, no awake
+        // card on a known-good driver, and a card that could not be read at
+        // all, and the caller cannot tell them apart.
+        None => tracing::debug!("keeping floem's backend default"),
+    }
+    floem::Application::new_wayland_with_config(config)
+}
+
 pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
     let phase_started = Instant::now();
     let cfg = Config::load(cli.config.as_deref())?;
@@ -59,7 +85,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
                 .size(size)
                 .with_transparent(true)
                 .with_layer_shell(layer_cfg);
-            floem::Application::new_wayland()
+            wayland_app()
                 .window(move |_| view(), Some(window_config))
                 .run();
         }
@@ -194,7 +220,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
             .size(size)
             .with_transparent(true)
             .with_layer_shell(layer_cfg);
-        floem::Application::new_wayland()
+        wayland_app()
             .window(move |_| view(), Some(window_config))
             .run();
     }

@@ -64,6 +64,36 @@
   `smoke.rs` already does. Not changed here: found while cutting v0.8.13 and
   unrelated to that release.
 
+## GPU backend selection (`gpu.rs`, 2026-09-16)
+
+- **The driver allow-list is verified on `i915` only.** `GL_SURFACE_DRIVERS`
+  also names `amdgpu`, `nouveau`, `radeon` and `xe`, included because they share
+  Mesa's EGL path, not because any was run. Verified on an Intel UHD + MX550
+  laptop: restricting to GL took first paint from 1435 ms to 65 ms and left the
+  discrete card's `runtime_active_time` unchanged. A wrongly listed driver costs
+  a panic, not a slow start, so this is the entry to re-check first if a report
+  arrives from an AMD machine.
+- **Why NVIDIA's proprietary stack is excluded, for the record.** Not because no
+  GL adapter exists — wgpu enumerates one
+  (`NVIDIA GeForce RTX 2080 Ti/PCIe/ SSE2`, `backend: Gl`) and then rejects it:
+  "not compatible with surface: Failed to retrieve surface capabilities", which
+  floem turns into `AdapterNotFoundError` and panics on. An earlier version of
+  this code claimed the adapter was absent; it is the surface that fails.
+  Whether the same holds for a non-layer-shell window was not tested.
+- **Nothing in CI exercises either branch.** The e2e harness sets
+  `WGPU_BACKEND=gl` on every spawned pikr (`tests/e2e/support/pikr.rs`) and
+  floem reads the environment before the app's choice, so both branches produce
+  an identical instance. GitHub runners also have no DRM cards, so the probe
+  returns `None` there regardless. The unit tests cover the decision function
+  against a synthetic tree; nothing covers the observable the change exists for.
+- **FreeBSD is in the `cfg` but the probe is inert there** — it reads
+  `/sys/class/drm`, which FreeBSD does not provide at that path, so the default
+  always applies. Kept in the arm because `wayland_app()` compiles for it.
+- **The power state is sampled once at startup.** A card that parks after the
+  sample still costs its resume on the next launch, and one that wakes between
+  the sample and instance creation makes the choice stale. Not fixable here
+  without floem retrying adapter acquisition.
+
 ## Hardening (correct today, fragile — not defects)
 
 - Symlinked-dir mtime cache blindness; coarse-granularity same-tick cache
