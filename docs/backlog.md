@@ -44,10 +44,36 @@
   added them to the joint table in `lyr/docs/plan/03-surfaces-and-input.md` (lyr
   f44f1b8). Nothing is scheduled in crcbl yet. Delete this entry when the forks
   are gone.
-- **Open questions to crcbl, unanswered as of 2026-10-15:** whether `crcbl-ui`'s
-  stylesheet covers Pikr's CSS subset, so `hjkl-css` can go (S23); whether a
-  GPU-less path exists (S26); whether `crcbl-ui-render` (S10) goes ahead; and
-  which crates to pin by git rev before the crates.io release.
+- **crcbl's answer (2026-10-15, read-only survey of crcbl `1db97a5b`, not
+  verified from pikr).** These are crcbl's claims and recommendations; the build
+  order is the owner's call.
+  - Present: S19, since `Shell::wait_events(Option<Duration>)` takes a timeout
+    and the blink needs nothing new. Text measurement for S22 (`text_width` in
+    crcbl-ui's `text.rs`).
+  - Partly present: S20 (`set_cursor(CursorIcon)` exists, and the list has hover
+    and click; the scrollbar handle and the wheel path are unverified). S21
+    (fractional scale exists on Wayland, but not yet on layer surfaces). S24 (an
+    image module exists; RGBA upload is likely but unconfirmed).
+  - Missing: S16 transparency, S17 focus and first key (these come with
+    layer-shell), S18 FreeBSD (not in CI), S22 colour emoji and font fallback,
+    S27 Win32 tool window and foreground focus.
+  - S25: exit is pikr breaking out of its own loop. Confirm in the spike.
+  - S26: no CPU renderer exists. crcbl recommends a terminal error naming the
+    missing graphics API rather than a software rasteriser. Owner call.
+  - S23: crcbl-ui's stylesheet (cssparser + taffy) has class selectors, colours,
+    box model, borders, radius, fonts and align/justify. Percent sizes and exact
+    specificity plus source-order cascade are unchecked. Next step: parse
+    `default.css` with crcbl-ui in the spike, and drop `hjkl-css` unless that
+    fails.
+  - S10 (`crcbl-ui-render` split) awaits the owner.
+  - Clipboard: a Win32 backend exists (`win32/clipboard.rs`). A text read has
+    not been run, so `arboard` stays until that's confirmed.
+  - Recommended order: S6 wake; then window kinds (layer surface with keyboard
+    interactivity, and the topmost tool toplevel); then S16; then S17; then S22.
+  - Pinning: git rev pins work today, at CI-green commits only. Crates:
+    crcbl-shell, crcbl-hal, crcbl-ui, crcbl-render (until S10 splits it), and
+    the backends crcbl-vk, crcbl-dx12 and crcbl-mtl.
+  - crcbl's own work right now is its release pipeline (crates.io first).
 - **Prep work that does not wait on crcbl:** pull plain picker state and
   Pikr-owned input types out of the Floem reactive layer in `ui/view.rs`, and a
   backend-neutral computed style out of `ui/css.rs`. Not started.
