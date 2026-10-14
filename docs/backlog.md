@@ -39,13 +39,14 @@
 - **Move the GUI from Floem (and its floem/winit forks) to crcbl.** Decided by
   the owner on 2026-10-15. Plan, requirement list and spike acceptance live in
   `docs/gui-backend-research.md`. Blocked on crcbl: Pikr's spike needs joint
-  rows S1, S6, S9, S10, S11 and S12 plus Pikr-only P1, P2, P4, P7 and P8. P1–P12
-  were sent to crcbl's session on 2026-10-15, and lyr's session was asked to add
-  them to the joint table in `lyr/docs/plan/03-surfaces-and-input.md`. Nothing
-  is scheduled in crcbl yet. Delete this entry when the forks are gone.
+  rows S1, S6, S9, S10, S11 and S12 plus S16, S17, S19, S22 and S23. S16–S27
+  (first sent as P1–P12) were sent to crcbl's session on 2026-10-15, and lyr
+  added them to the joint table in `lyr/docs/plan/03-surfaces-and-input.md` (lyr
+  f44f1b8). Nothing is scheduled in crcbl yet. Delete this entry when the forks
+  are gone.
 - **Open questions to crcbl, unanswered as of 2026-10-15:** whether `crcbl-ui`'s
-  stylesheet covers Pikr's CSS subset, so `hjkl-css` can go (P8); whether a
-  GPU-less path exists (P11); whether `crcbl-ui-render` (S10) goes ahead; and
+  stylesheet covers Pikr's CSS subset, so `hjkl-css` can go (S23); whether a
+  GPU-less path exists (S26); whether `crcbl-ui-render` (S10) goes ahead; and
   which crates to pin by git rev before the crates.io release.
 - **Prep work that does not wait on crcbl:** pull plain picker state and
   Pikr-owned input types out of the Floem reactive layer in `ui/view.rs`, and a

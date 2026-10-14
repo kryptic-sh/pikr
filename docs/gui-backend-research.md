@@ -35,25 +35,25 @@ and AppKit), S9 (XKB, compose, text-input-v3 IME), S10 (UI draw pass without the
 images, virtualised list), S13 (cold start under 500 ms), S14 (AccessKit) and
 S15 (crates.io release with `rust-version`).
 
-Pikr-only requests sent to crcbl on 2026-10-15, to be folded into the joint
-list:
+Requests Pikr added on 2026-10-15, numbered S16–S27 in the joint list (several
+are shared with lyr):
 
 | #   | Requirement                                                                                                |
 | --- | ---------------------------------------------------------------------------------------------------------- |
-| P1  | Per-pixel alpha (transparent) surfaces on layer-shell, Win32 and AppKit, so CSS-rounded corners composite  |
-| P2  | Focus gained/lost on layer surfaces, and no keys dropped between map, configure and focus                  |
-| P3  | FreeBSD Wayland build                                                                                      |
-| P4  | Deadline or timer wake for the caret blink                                                                 |
-| P5  | Pointer on the list: hover, click, cursor shape, discrete and high-res wheel, styleable scrollbar handle   |
-| P6  | Fractional scale (`wp_fractional_scale_v1` + viewporter) on layer surfaces                                 |
-| P7  | Colour emoji (COLR/CBDT/sbix) with per-glyph font fallback, and text-run measurement                       |
-| P8  | The stylesheet subset listed under the existing contract below, through `crcbl-ui` or a `hjkl-css` mapping |
-| P9  | RGBA upload of app-rasterised bitmaps (resvg output, Windows HICON)                                        |
-| P10 | Clean exit from inside the event loop                                                                      |
-| P11 | A GPU-less fallback, or a documented failure mode, for hosts without Vulkan, DX12 or Metal                 |
-| P12 | Win32: tool window kept out of the taskbar and Alt-Tab, taking foreground focus on hotkey launch           |
+| S16 | Per-pixel alpha (transparent) surfaces on layer-shell, Win32 and AppKit, so CSS-rounded corners composite  |
+| S17 | Focus gained/lost on layer surfaces, and no keys dropped between map, configure and focus                  |
+| S18 | FreeBSD Wayland build                                                                                      |
+| S19 | Deadline or timer wake for the caret blink                                                                 |
+| S20 | Pointer on the list: hover, click, cursor shape, discrete and high-res wheel, styleable scrollbar handle   |
+| S21 | Fractional scale (`wp_fractional_scale_v1` + viewporter) on layer surfaces                                 |
+| S22 | Colour emoji (COLR/CBDT/sbix) with per-glyph font fallback, and text-run measurement                       |
+| S23 | The stylesheet subset listed under the existing contract below, through `crcbl-ui` or a `hjkl-css` mapping |
+| S24 | RGBA upload of app-rasterised bitmaps (resvg output, Windows HICON)                                        |
+| S25 | Clean exit from inside the event loop                                                                      |
+| S26 | A GPU-less fallback, or a documented failure mode, for hosts without Vulkan, DX12 or Metal                 |
+| S27 | Win32: tool window kept out of the taskbar and Alt-Tab, taking foreground focus on hotkey launch           |
 
-Pikr's first spike needs S1, P1, P2, S6/P4, S9, S10, S11, P7, S12 and P8.
+Pikr's first spike needs S1, S16, S17, S6/S19, S9, S10, S11, S22, S12 and S23.
 Nothing is scheduled in crcbl yet; the live state is tracked in
 [`backlog.md`](backlog.md).
 
@@ -323,8 +323,8 @@ must demonstrate:
 10. a verified FreeBSD build; and
 11. usable cold startup under 500 ms on the target graphical session.
 
-The spike must also show the Windows and macOS centred topmost window (S8, P12),
-and say what happens on a host without a usable GPU (P11).
+The spike must also show the Windows and macOS centred topmost window (S8, S27),
+and say what happens on a host without a usable GPU (S26).
 
 If the spike passes, follow the migration plan above. If it fails, report the
 gap to crcbl as a joint-list requirement rather than adapting another toolkit.
