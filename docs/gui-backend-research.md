@@ -1,6 +1,74 @@
 # GUI Backend Research
 
-_Status: shelved on 2026-08-04._
+_Status: decided on 2026-10-15 — Pikr migrates to crcbl. Research shelved on
+2026-08-04; the alternatives below are kept as the record of what was
+considered._
+
+## Decision: crcbl
+
+Pikr leaves Floem, the `mxaddict/floem` and `mxaddict/winit` forks, and wayr,
+and renders its GUI on [crcbl](https://github.com/kryptic-sh/crcbl):
+`crcbl-shell` for windows and input, `crcbl-hal` for the GPU, and `crcbl-ui` for
+widgets, text and layout. lyr (the kryptic-sh status bar) makes the same move,
+and both apps' requirements go to crcbl as one joint list, kept in
+[`lyr/docs/plan/03-surfaces-and-input.md`](https://github.com/kryptic-sh/lyr/blob/main/docs/plan/03-surfaces-and-input.md#what-crcbl-must-provide)
+and recorded in crcbl's `docs/backlog.md`.
+
+Why crcbl over the Iced and SCTK paths below:
+
+- one in-house shell and GPU layer on Wayland, Windows and macOS, shared with
+  lyr, instead of a third-party layer-shell event loop or a Pikr-only frontend;
+- layer-shell becomes a general `crcbl-shell` window kind rather than a fork
+  patch, so no fork has to track upstream;
+- `crcbl-ui` already has a virtualised fixed-height list, caret and selection in
+  its text input, images, and a cssparser + taffy stylesheet, and `crcbl-shell`
+  has a clipboard on every backend; and
+- wayr is Wayland-only, so it would still leave Pikr with a separate Windows and
+  macOS path.
+
+### What Pikr needs from crcbl
+
+The joint list rows Pikr depends on: S1 (Wayland layer surfaces), S6
+(cross-thread wake), S8 (centred, borderless, focused, topmost toplevel on Win32
+and AppKit), S9 (XKB, compose, text-input-v3 IME), S10 (UI draw pass without the
+3D renderer), S11 (fonts by family or caller-supplied bytes), S12 (rich spans,
+images, virtualised list), S13 (cold start under 500 ms), S14 (AccessKit) and
+S15 (crates.io release with `rust-version`).
+
+Pikr-only requests sent to crcbl on 2026-10-15, to be folded into the joint
+list:
+
+| #   | Requirement                                                                                                |
+| --- | ---------------------------------------------------------------------------------------------------------- |
+| P1  | Per-pixel alpha (transparent) surfaces on layer-shell, Win32 and AppKit, so CSS-rounded corners composite  |
+| P2  | Focus gained/lost on layer surfaces, and no keys dropped between map, configure and focus                  |
+| P3  | FreeBSD Wayland build                                                                                      |
+| P4  | Deadline or timer wake for the caret blink                                                                 |
+| P5  | Pointer on the list: hover, click, cursor shape, discrete and high-res wheel, styleable scrollbar handle   |
+| P6  | Fractional scale (`wp_fractional_scale_v1` + viewporter) on layer surfaces                                 |
+| P7  | Colour emoji (COLR/CBDT/sbix) with per-glyph font fallback, and text-run measurement                       |
+| P8  | The stylesheet subset listed under the existing contract below, through `crcbl-ui` or a `hjkl-css` mapping |
+| P9  | RGBA upload of app-rasterised bitmaps (resvg output, Windows HICON)                                        |
+| P10 | Clean exit from inside the event loop                                                                      |
+| P11 | A GPU-less fallback, or a documented failure mode, for hosts without Vulkan, DX12 or Metal                 |
+| P12 | Win32: tool window kept out of the taskbar and Alt-Tab, taking foreground focus on hotkey launch           |
+
+Pikr's first spike needs S1, P1, P2, S6/P4, S9, S10, S11, P7, S12 and P8.
+Nothing is scheduled in crcbl yet; the live state is tracked in
+[`backlog.md`](backlog.md).
+
+### Migration plan
+
+1. Wait for the spike set above to land in crcbl, pinned by git revision until
+   crcbl's first crates.io release (S15).
+2. Before touching the frontend, extract plain picker state and Pikr-owned input
+   types out of the Floem reactive layer (`ui/view.rs`), and a backend-neutral
+   computed style from `ui/css.rs`.
+3. Build a disposable crcbl spike that passes the checklist under "Prototype
+   acceptance" below.
+4. Port the picker and `--message` windows to crcbl. Then drop `floem`, the
+   `[patch.crates-io]` fork entries, `imbl`, and, if crcbl's clipboard reads the
+   current text on Win32, `arboard`.
 
 ## Decision constraints
 
@@ -104,9 +172,13 @@ backend widget styles and layout
 
 ## Pure-Rust alternatives
 
+These were researched before crcbl was a candidate. All of them are declined in
+favour of crcbl (see the decision above). They are kept so they are not
+re-proposed without new evidence.
+
 ### Iced with `iced_layershell`
 
-This is the preferred GUI-library candidate for a future prototype.
+This was the preferred GUI-library candidate before crcbl.
 
 Iced supplies a Rust-native application/update model, widgets, shaped text, rich
 spans, images, scrolling, keyboard and pointer input, clipboard support, and
@@ -227,10 +299,17 @@ A Vello/wgpu custom frontend would still require all shell, input, layout, IME,
 clipboard, and accessibility work while adding GPU initialization to the startup
 path. A software-first renderer is a better fit for this fixed, small surface.
 
-## Future prototype plan
+### wayr
 
-When this work resumes, build a disposable Iced spike before changing Pikr's
-production frontend. It must demonstrate:
+[wayr](https://github.com/kryptic-sh/wayr) provides layer-shell, fractional
+scale and text-input-v3, but it is Wayland-only by design, so Pikr would still
+need a separate path for Windows and macOS, plus its own renderer and widgets.
+crcbl covers all three platforms with one shell. Declined on 2026-10-15.
+
+## Prototype acceptance
+
+Before changing Pikr's production frontend, build a disposable crcbl spike. It
+must demonstrate:
 
 1. an unanchored, centered, transparent layer surface;
 2. exclusive keyboard interactivity and reliable first-key delivery;
@@ -244,14 +323,16 @@ production frontend. It must demonstrate:
 10. a verified FreeBSD build; and
 11. usable cold startup under 500 ms on the target graphical session.
 
-If the spike passes, migrate to Iced incrementally after extracting plain picker
-state, Pikr-owned input types, and backend-neutral computed styles. If it fails
-because of intrinsic `iced_layershell` limitations, prototype the narrow SCTK
-software frontend. Do not proceed to another toolkit adapter without identifying
-a concrete advantage over those two paths.
+The spike must also show the Windows and macOS centred topmost window (S8, P12),
+and say what happens on a host without a usable GPU (P11).
+
+If the spike passes, follow the migration plan above. If it fails, report the
+gap to crcbl as a joint-list requirement rather than adapting another toolkit.
 
 ## References
 
+- [crcbl](https://github.com/kryptic-sh/crcbl)
+- [lyr's joint crcbl requirement list](https://github.com/kryptic-sh/lyr/blob/main/docs/plan/03-surfaces-and-input.md#what-crcbl-must-provide)
 - [Floem](https://github.com/lapce/floem)
 - [winit layer-shell proposal](https://github.com/rust-windowing/winit/pull/4044)
 - [Iced](https://github.com/iced-rs/iced)
