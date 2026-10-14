@@ -54,8 +54,8 @@ are shared with lyr):
 | S27 | Win32: tool window kept out of the taskbar and Alt-Tab, taking foreground focus on hotkey launch           |
 
 Pikr's first spike needs S1, S16, S17, S6/S19, S9, S10, S11, S22, S12 and S23.
-Nothing is scheduled in crcbl yet; the live state is tracked in
-[`backlog.md`](backlog.md).
+crcbl builds all of S1–S27 before its first crates.io release (owner decision,
+2026-10-15). The order is tracked in [`backlog.md`](backlog.md).
 
 ### Migration plan
 

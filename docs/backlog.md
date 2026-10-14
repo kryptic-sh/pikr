@@ -42,8 +42,24 @@
   rows S1, S6, S9, S10, S11 and S12 plus S16, S17, S19, S22 and S23. S16–S27
   (first sent as P1–P12) were sent to crcbl's session on 2026-10-15, and lyr
   added them to the joint table in `lyr/docs/plan/03-surfaces-and-input.md` (lyr
-  f44f1b8). Nothing is scheduled in crcbl yet. Delete this entry when the forks
-  are gone.
+  f44f1b8). Delete this entry when the forks are gone.
+- **crcbl schedule (owner decision, relayed by crcbl's session on 2026-10-15).**
+  crcbl's first crates.io release waits until S1–S27 are built and its crate
+  seam is refactored for outside use. Until then pikr pins by git rev, at
+  CI-green commits only. crcbl's backlog holds the ordered program, and pikr's
+  spike rows fall in it as:
+  - Step 1: S10, the UI draw pass in its own crate.
+  - Step 2: S6, S19, S25.
+  - Steps 3–4: S1, S16, S17, S21.
+  - Steps 3, 5 and 6: S8.
+  - Step 8: S11, S12, S22.
+  - Step 9: S9.
+  - Step 10: S23, with a spike against `default.css`.
+  - Last: S14, AccessKit, because it is a new dependency (owner's call).
+
+  crcbl's session will report each row as it lands on its main. Pikr's spike can
+  start once steps 1–4, 8 and 10 have landed; S9 (IME) can follow.
+
 - **crcbl's answer (2026-10-15, read-only survey of crcbl `1db97a5b`, not
   verified from pikr).** These are crcbl's claims and recommendations; the build
   order is the owner's call.
@@ -65,15 +81,11 @@
     specificity plus source-order cascade are unchecked. Next step: parse
     `default.css` with crcbl-ui in the spike, and drop `hjkl-css` unless that
     fails.
-  - S10 (`crcbl-ui-render` split) awaits the owner.
   - Clipboard: a Win32 backend exists (`win32/clipboard.rs`). A text read has
     not been run, so `arboard` stays until that's confirmed.
-  - Recommended order: S6 wake; then window kinds (layer surface with keyboard
-    interactivity, and the topmost tool toplevel); then S16; then S17; then S22.
-  - Pinning: git rev pins work today, at CI-green commits only. Crates:
-    crcbl-shell, crcbl-hal, crcbl-ui, crcbl-render (until S10 splits it), and
-    the backends crcbl-vk, crcbl-dx12 and crcbl-mtl.
-  - crcbl's own work right now is its release pipeline (crates.io first).
+  - Crates to pin: crcbl-shell, crcbl-hal, crcbl-ui, the UI draw-pass crate from
+    S10 (crcbl-render until it lands), and the backends crcbl-vk, crcbl-dx12 and
+    crcbl-mtl.
 - **Prep work that does not wait on crcbl:** pull plain picker state and
   Pikr-owned input types out of the Floem reactive layer in `ui/view.rs`, and a
   backend-neutral computed style out of `ui/css.rs`. Not started.
