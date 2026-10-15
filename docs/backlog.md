@@ -97,11 +97,15 @@
     pikr should print it and exit. Linux uses lavapipe only if Mesa installed
     it.
 
-  Still to come from crcbl:
-  - a scrollbar thumb on an `overflow: scroll` block (in progress; pikr's
-    `.scroll-handle` maps to it once crcbl names the selector);
-  - S18 FreeBSD;
-  - S22 colour emoji.
+  - Scrollbar: on crcbl main at `5bbdd180` (a branch CI pass on that exact
+    commit, per crcbl). `ui.scrollbar(selector, target)` takes the list's key
+    and builds a `scrollbar` track holding one `.scroll-handle`, so pikr's
+    existing rule applies unchanged. The port must place the track, either
+    beside the list in a row block or absolutely over its right edge. The
+    default width is 8px. Vertical only, with dragging but no click-to-page. The
+    handle appears from the second frame.
+
+  Still to come from crcbl: S18 FreeBSD and S22 colour emoji.
 
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
