@@ -87,12 +87,21 @@
   - S20: a CSS `cursor` property plus `Ui::cursor()`.
   - S26 on Windows: D3D12 (or WARP with no GPU) when Vulkan is missing.
 
-  Open, asked on 2026-10-15:
-  - Scrollbars aren't drawn, and pikr styles `.scroll-handle`.
-  - Is a span row wider than its row clipped?
-  - What does a Linux or macOS host without Vulkan get?
+  crcbl's answers on 2026-10-15:
+  - Clipping: `overflow: hidden` on a block clips its children to its padding
+    box (`crates/crcbl-ui/src/tree/clipping_tests.rs`). The default is
+    `visible`, so the port must add `overflow: hidden` to the result row or the
+    label span in `default.css`, or long labels paint past the panel.
+  - No GPU on Linux or macOS: `crcbl::backend::open()` returns
+    `GpuError::NoBackend { tried, last }` with a readable message, not a panic.
+    pikr should print it and exit. Linux uses lavapipe only if Mesa installed
+    it.
 
-  Still to come: S18 FreeBSD and S22 colour emoji.
+  Still to come from crcbl:
+  - a scrollbar thumb on an `overflow: scroll` block (in progress; pikr's
+    `.scroll-handle` maps to it once crcbl names the selector);
+  - S18 FreeBSD;
+  - S22 colour emoji.
 
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
