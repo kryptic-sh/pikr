@@ -57,16 +57,30 @@
   - Step 10: S23, with a spike against `default.css`.
   - Last: S14, AccessKit, because it is a new dependency (owner's call).
 
-  Latest green crcbl rev to pin: `5e669fc4`, as reported by crcbl's session and
+  Latest green crcbl rev to pin: `6483b744`, as reported by crcbl's session and
   not verified from pikr. It contains:
   - S10 as `crcbl-frame` (`UiRenderer::new` / `with_images` without the game
     renderer);
   - S15's `rust-version`;
   - S6 as `Shell::waker()` / `ShellWaker::wake()`;
-  - the window-role API, `WindowDesc::role` and `WindowDesc::transparent`.
+  - the window-role API, `WindowDesc::role` and `WindowDesc::transparent`;
+  - Wayland layer-shell panels;
+  - S11, where `Font::parse` takes runtime bytes.
 
-  Only the headless shell builds panels so far. Wayland, Win32 and AppKit return
-  `Unsupported` until their steps land, in that order. Pikr's launcher maps to
+  S17 was checked under sway: focus on map, the first key after focus, repeat,
+  and on-demand focus loss. Keys typed before the compositor hands over focus go
+  to the previous window, and no client can claim them.
+
+  S16 on Wayland (premultiplied-alpha swapchain) is crcbl `5fd4deeb`, local to
+  crcbl and not pushed yet. Pin that instead once it's green, because the
+  rounded panel needs it.
+
+  Win32 and AppKit panels are CI-verified on crcbl branches but not merged. Open
+  item 9: on Win32 a refused `SetForegroundWindow` is only logged inside crcbl,
+  and the app sees no Focus event. pikr asked on 2026-10-15 for an explicit
+  event, so it doesn't have to guess a timeout.
+
+  Pikr's launcher maps to
   `WindowRole::Panel(PanelDesc { anchor: PanelAnchor::empty(), layer: PanelLayer::Overlay, keyboard: PanelKeyboard::Exclusive, reserve: Reserve::None, .. })`,
   covering S1, S8, S16 and S27. pikr's points went into that API:
   - `PanelDesc.namespace`, where empty means app_id.
