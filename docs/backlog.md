@@ -78,9 +78,21 @@
   and on-demand focus loss. Keys typed before the compositor hands over focus go
   to the previous window, and no client can claim them.
 
-  Next on crcbl: S18 (FreeBSD compile support and a CI job), and S12 per-span
-  styling shown as a row of spans. crcbl-ui has no font-weight; pikr's match
-  highlighting uses colour only, so it doesn't need one.
+  Also on crcbl main at `531903c7` (main's own CI was still running when
+  reported):
+  - S12: match highlighting as a `flex-direction: row` block with one span per
+    run. There's no font-weight and no paragraph wrapping, and pikr needs
+    neither.
+  - S24: `ImageAtlas::unregister(id)`, so per-keystroke icons can be replaced.
+  - S20: a CSS `cursor` property plus `Ui::cursor()`.
+  - S26 on Windows: D3D12 (or WARP with no GPU) when Vulkan is missing.
+
+  Open, asked on 2026-10-15:
+  - Scrollbars aren't drawn, and pikr styles `.scroll-handle`.
+  - Is a span row wider than its row clipped?
+  - What does a Linux or macOS host without Vulkan get?
+
+  Still to come: S18 FreeBSD and S22 colour emoji.
 
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
