@@ -57,29 +57,30 @@
   - Step 10: S23, with a spike against `default.css`.
   - Last: S14, AccessKit, because it is a new dependency (owner's call).
 
-  Latest green crcbl rev to pin: `6483b744`, as reported by crcbl's session and
-  not verified from pikr. It contains:
+  crcbl rev to pin for the spike: `72999dd7`. crcbl's session reports a full CI
+  pass on that exact commit (sway, a real Win32 desktop, a macOS session); not
+  verified from pikr. It contains:
   - S10 as `crcbl-frame` (`UiRenderer::new` / `with_images` without the game
     renderer);
   - S15's `rust-version`;
   - S6 as `Shell::waker()` / `ShellWaker::wake()`;
   - the window-role API, `WindowDesc::role` and `WindowDesc::transparent`;
-  - Wayland layer-shell panels;
-  - S11, where `Font::parse` takes runtime bytes.
+  - S11, where `Font::parse` takes runtime bytes;
+  - panels on Wayland, Win32 and AppKit (S1, S8, S27);
+  - S16 transparency on Wayland and AppKit (premultiplied swapchain, clear to
+    alpha 0);
+  - S3 popups;
+  - item 9;
+  - S23: `default.css`, with placeholders filled as `ui/css.rs` fills them,
+    parses with zero diagnostics after crcbl added the `border` shorthand.
 
   S17 was checked under sway: focus on map, the first key after focus, repeat,
   and on-demand focus loss. Keys typed before the compositor hands over focus go
   to the previous window, and no client can claim them.
 
-  Not on crcbl main yet: crcbl branch `appkit-panels` (tip `2cef1e12`, CI
-  running). It carries:
-  - S16 on Wayland (`5fd4deeb`, a premultiplied-alpha swapchain);
-  - Win32 panels and appbars;
-  - AppKit panels;
-  - item 9.
-
-  crcbl will fast-forward main to that tip once it's green. Pin that rev for the
-  spike, because the rounded panel needs S16.
+  Next on crcbl: S18 (FreeBSD compile support and a CI job), and S12 per-span
+  styling shown as a row of spans. crcbl-ui has no font-weight; pikr's match
+  highlighting uses colour only, so it doesn't need one.
 
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
