@@ -59,13 +59,25 @@
 
   Landed on crcbl main as reported by its session (not verified from pikr): S10
   as the `crcbl-frame` crate, and S15's `rust-version`. Step 3 proposes one
-  `WindowRole::Panel` covering S1, S8, S16 and S27. On 2026-10-15 pikr sent back
-  what it needs from that role: a layer namespace, an explicit size for an
-  unanchored panel, exclusive zone 0 rather than -1, and a compositor-chosen
-  monitor. Also: the first frame on map, no DWM/AppKit chrome, S17 test cases,
-  and Win32 foreground-refusal reporting. crcbl's session will report each row
-  as it lands on its main. Pikr's spike can start once steps 1–4, 8 and 10 have
-  landed; S9 (IME) can follow.
+  `WindowRole::Panel` covering S1, S8, S16 and S27. crcbl accepted pikr's points
+  into that API on 2026-10-15 (the commit is in crcbl's CI gate, not yet on
+  main):
+  - `PanelDesc.namespace`, where empty means app_id.
+  - An unanchored panel requests `WindowDesc.size`, and the granted size arrives
+    as `Resized`.
+  - `Reserve::None` is exclusive zone 0; `Reserve::IgnoreOthers` is -1.
+  - `monitor: None` means the focused output on Wayland, and the monitor under
+    the pointer on Win32 and AppKit.
+  - The Overlay layer is available.
+
+  crcbl's backlog makes each backend step build and test these behaviours:
+  - the first frame arrives on map, with no flash;
+  - no DWM or AppKit chrome;
+  - S17 cases (early keys, focus gained and lost, repeat), in a sway e2e suite;
+  - a refused `SetForegroundWindow` is reported.
+
+  crcbl's session will report each row as it lands on its main. Pikr's spike can
+  start once steps 1–4, 8 and 10 have landed; S9 (IME) can follow.
 
 - **crcbl's answer (2026-10-15, read-only survey of crcbl `1db97a5b`, not
   verified from pikr).** These are crcbl's claims and recommendations; the build
