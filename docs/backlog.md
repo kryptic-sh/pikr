@@ -57,11 +57,18 @@
   - Step 10: S23, with a spike against `default.css`.
   - Last: S14, AccessKit, because it is a new dependency (owner's call).
 
-  Landed on crcbl main as reported by its session (not verified from pikr): S10
-  as the `crcbl-frame` crate, and S15's `rust-version`. Step 3 proposes one
-  `WindowRole::Panel` covering S1, S8, S16 and S27. crcbl accepted pikr's points
-  into that API on 2026-10-15 (the commit is in crcbl's CI gate, not yet on
-  main):
+  Latest green crcbl rev to pin: `5e669fc4`, as reported by crcbl's session and
+  not verified from pikr. It contains:
+  - S10 as `crcbl-frame` (`UiRenderer::new` / `with_images` without the game
+    renderer);
+  - S15's `rust-version`;
+  - S6 as `Shell::waker()` / `ShellWaker::wake()`;
+  - the window-role API, `WindowDesc::role` and `WindowDesc::transparent`.
+
+  Only the headless shell builds panels so far. Wayland, Win32 and AppKit return
+  `Unsupported` until their steps land, in that order. Pikr's launcher maps to
+  `WindowRole::Panel(PanelDesc { anchor: PanelAnchor::empty(), layer: PanelLayer::Overlay, keyboard: PanelKeyboard::Exclusive, reserve: Reserve::None, .. })`,
+  covering S1, S8, S16 and S27. pikr's points went into that API:
   - `PanelDesc.namespace`, where empty means app_id.
   - An unanchored panel requests `WindowDesc.size`, and the granted size arrives
     as `Resized`.
