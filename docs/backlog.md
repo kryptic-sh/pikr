@@ -127,6 +127,22 @@
     today. When pikr adds them, they would come from NSWorkspace through the
     raw-buffer import, not from decoding `.icns`.
 
+  crcbl accepted all six points (2026-10-16). Owner decision on crcbl's side:
+  crcbl writes its own decoders in safe Rust instead of depending on `image`,
+  `zune-jpeg` or `resvg`. Only PNG stays on the `png` crate. SVG is an
+  "icon-theme subset". Order of work: caps and fuzzing, PNG, raw conversions,
+  resize, then theme lookup and SVG, then JPEG, then ICO/BMP/WebP, then XPM.
+
+  Risk for pikr: a partial SVG renderer is what caused the black-square icons
+  that made pikr switch from floem's `svg()` to resvg (see
+  `IconCache::rasterise_svg`). pikr asked crcbl for:
+  - rejection, not partial painting, of anything the subset doesn't support;
+  - pixel comparison against resvg over the Adwaita, Papirus, breeze and hicolor
+    app icons;
+  - a per-theme report of how many icons render and how many are rejected. Until
+    that report shows parity, the port keeps resvg and passes its RGBA output to
+    `ImageAtlas::register`.
+
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
   pikr should log it and retry or flash. Coverage gap: Windows can't be made to
