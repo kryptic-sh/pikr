@@ -157,9 +157,12 @@
   - rejection, not partial painting, of anything the subset doesn't support;
   - pixel comparison against resvg over the Adwaita, Papirus, breeze and hicolor
     app icons;
-  - a per-theme report of how many icons render and how many are rejected. Until
-    that report shows parity, the port keeps resvg and passes its RGBA output to
-    `ImageAtlas::register`.
+  - a per-theme report of how many icons render and how many are rejected.
+
+  crcbl accepted these conditions. The themes are GPL-3.0 / CC-BY-SA, so they
+  aren't committed: a CI job downloads them and renders the references with the
+  `resvg` CLI on the runner. Until that report shows parity, the port keeps
+  resvg and passes its RGBA output to `ImageAtlas::register`.
 
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
