@@ -57,8 +57,15 @@
   - Step 10: S23, with a spike against `default.css`.
   - Last: S14, AccessKit, because it is a new dependency (owner's call).
 
-  crcbl's session will report each row as it lands on its main. Pikr's spike can
-  start once steps 1–4, 8 and 10 have landed; S9 (IME) can follow.
+  Landed on crcbl main as reported by its session (not verified from pikr): S10
+  as the `crcbl-frame` crate, and S15's `rust-version`. Step 3 proposes one
+  `WindowRole::Panel` covering S1, S8, S16 and S27. On 2026-10-15 pikr sent back
+  what it needs from that role: a layer namespace, an explicit size for an
+  unanchored panel, exclusive zone 0 rather than -1, and a compositor-chosen
+  monitor. Also: the first frame on map, no DWM/AppKit chrome, S17 test cases,
+  and Win32 foreground-refusal reporting. crcbl's session will report each row
+  as it lands on its main. Pikr's spike can start once steps 1–4, 8 and 10 have
+  landed; S9 (IME) can follow.
 
 - **crcbl's answer (2026-10-15, read-only survey of crcbl `1db97a5b`, not
   verified from pikr).** These are crcbl's claims and recommendations; the build
@@ -84,8 +91,7 @@
   - Clipboard: a Win32 backend exists (`win32/clipboard.rs`). A text read has
     not been run, so `arboard` stays until that's confirmed.
   - Crates to pin: crcbl-shell, crcbl-hal, crcbl-ui, the UI draw-pass crate from
-    S10 (crcbl-render until it lands), and the backends crcbl-vk, crcbl-dx12 and
-    crcbl-mtl.
+    S10 (`crcbl-frame`), and the backends crcbl-vk, crcbl-dx12 and crcbl-mtl.
 - **Prep work that does not wait on crcbl:** pull plain picker state and
   Pikr-owned input types out of the Floem reactive layer in `ui/view.rs`, and a
   backend-neutral computed style out of `ui/css.rs`. Not started.
