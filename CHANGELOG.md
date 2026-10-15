@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- **Wayland: pikr opens on the layer-shell `overlay` layer instead of `top`**,
+  for both the picker and `--message`. It now shows above a fullscreen app
+  rather than opening hidden behind it. Compositor rules that match the `pikr`
+  namespace are unaffected.
+
 ## [0.8.13] - 2026-09-15
 
 ### Added

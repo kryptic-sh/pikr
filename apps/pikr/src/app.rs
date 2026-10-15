@@ -48,12 +48,13 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
 
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         {
-            use floem::window::{Anchor, KeyboardInteractivity, LayerShellConfig};
+            use floem::window::{Anchor, KeyboardInteractivity, Layer, LayerShellConfig};
             let layer_cfg = LayerShellConfig {
                 namespace: "pikr".into(),
                 anchor: Anchor::empty(),
                 exclusive_zone: 0,
                 keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                layer: Layer::Overlay,
                 ..Default::default()
             };
             let window_config = WindowConfig::default()
@@ -173,7 +174,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
 
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     {
-        use floem::window::{Anchor, KeyboardInteractivity, LayerShellConfig};
+        use floem::window::{Anchor, KeyboardInteractivity, Layer, LayerShellConfig};
 
         // The window framebuffer is transparent so the compositor's window-corner
         // rounding (Hyprland / KWin / etc.) can clip cleanly without leaking the
@@ -189,6 +190,9 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
             // dismissed (Esc x2 / Enter). Matches the rofi/wofi modal-launcher
             // convention.
             keyboard_interactivity: KeyboardInteractivity::Exclusive,
+            // Overlay rather than the default Top, so pikr shows above a
+            // fullscreen app instead of opening hidden behind it.
+            layer: Layer::Overlay,
             ..Default::default()
         };
         let window_config = WindowConfig::default()

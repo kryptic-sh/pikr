@@ -114,7 +114,7 @@
   never run.
 
   Pikr's launcher maps to
-  `WindowRole::Panel(PanelDesc { anchor: PanelAnchor::empty(), layer: PanelLayer::Top, keyboard: PanelKeyboard::Exclusive, reserve: Reserve::None, .. })`,
+  `WindowRole::Panel(PanelDesc { anchor: PanelAnchor::empty(), layer: PanelLayer::Overlay, keyboard: PanelKeyboard::Exclusive, reserve: Reserve::None, .. })`,
   covering S1, S8, S16 and S27. pikr's points went into that API:
   - `PanelDesc.namespace`, where empty means app_id.
   - An unanchored panel requests `WindowDesc.size`, and the granted size arrives
@@ -122,10 +122,9 @@
   - `Reserve::None` is exclusive zone 0; `Reserve::IgnoreOthers` is -1.
   - `monitor: None` means the focused output on Wayland, and the monitor under
     the pointer on Win32 and AppKit.
-  - The Overlay layer is available. pikr runs on Top today: the floem fork's
-    `LayerShellConfig` default is `Layer::Top`, and `app.rs` does not override
-    it. The port keeps Top. Overlay, which shows pikr above fullscreen apps,
-    would be a separate behaviour change.
+  - The Overlay layer is available. pikr uses Overlay (owner decision,
+    2026-10-16) so it shows above fullscreen apps. The floem build sets
+    `Layer::Overlay` explicitly in `app.rs`, since the fork defaults to Top.
 
   crcbl's backlog makes each backend step build and test these behaviours:
   - the first frame arrives on map, with no flash;
