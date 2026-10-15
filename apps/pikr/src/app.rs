@@ -8,8 +8,9 @@ use floem::reactive::SignalUpdate;
 use crate::cli::{Cli, Mode};
 use crate::config::Config;
 use crate::modes;
+use crate::picker::app_state::AppState;
 use crate::picker::state::PickerState;
-use crate::ui::view::{AppState, message_view, picker_view};
+use crate::ui::view::{message_view, picker_view};
 use anyhow::Result;
 
 pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {

@@ -1,5 +1,6 @@
 //! Picker — selection state, vim keymap, fuzzy matcher.
 
+pub mod app_state;
 pub mod frecency;
 pub mod history;
 pub mod icons;
@@ -7,6 +8,7 @@ pub mod input;
 pub mod keys;
 pub mod keyspec;
 pub mod matcher;
+pub mod query_text;
 pub mod state;
 
 use std::path::{Path, PathBuf};
