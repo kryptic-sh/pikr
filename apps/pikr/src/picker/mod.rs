@@ -3,6 +3,7 @@
 pub mod frecency;
 pub mod history;
 pub mod icons;
+pub mod input;
 pub mod keys;
 pub mod keyspec;
 pub mod matcher;

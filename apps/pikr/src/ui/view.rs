@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use floem::ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey};
+use floem::ui_events::keyboard::KeyboardEvent;
 use floem::{
     IntoView, ViewId,
     event::listener::{
@@ -25,6 +25,7 @@ use floem::{
 use crate::cli::Mode as CliMode;
 use crate::config::Theme;
 use crate::modes::{self, Entry};
+use crate::picker::input::{Key, Modifiers, NamedKey};
 use crate::picker::{
     keys::{Action, key_to_action},
     matcher::{Match, Matcher},
@@ -542,7 +543,7 @@ pub fn message_view(text: String, sheet: Arc<crate::ui::css::Sheet>) -> impl Int
     .on_event(
         KeyDown,
         move |_cx: &mut EventCx, kb_event: &KeyboardEvent| {
-            if matches!(kb_event.key, Key::Named(NamedKey::Escape)) {
+            if crate::ui::keyboard::key_from_floem(&kb_event.key) == Key::Named(NamedKey::Escape) {
                 std::process::exit(0);
             }
             EventPropagation::Stop
@@ -1496,9 +1497,9 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
         // upstream — figure out which sub-effect of the rerank chain
         // moves focus, and pin it so this per-key reclaim can go.
         root_id.request_focus();
-        let ctrl = ke.modifiers.ctrl();
-        let shift = ke.modifiers.shift();
-        let key = &ke.key;
+        let mods = crate::ui::keyboard::modifiers_from_floem(ke.modifiers);
+        let (ctrl, shift) = (mods.ctrl, mods.shift);
+        let key = &crate::ui::keyboard::key_from_floem(&ke.key);
 
         // A confirm card owns the keyboard: Enter accepts its binding, Esc or
         // Left dismisses, everything else is swallowed so the selection and
@@ -1530,7 +1531,7 @@ pub fn picker_view(state: Arc<Mutex<AppState>>, startup_started: Instant) -> imp
             } else if ex_open.is_some() {
                 None
             } else {
-                kb_custom_action(&s.kb_custom, s.cli_mode, vim_mode, key, ke.modifiers, caret)
+                kb_custom_action(&s.kb_custom, s.cli_mode, vim_mode, key, mods, caret)
                     .or_else(|| key_to_action(&s.picker, key, ctrl, shift))
             };
             (vim_mode, ex_open, total, g_pending, action)
@@ -2354,7 +2355,7 @@ mod tests {
     #[test]
     fn kb_custom_picks_binding_and_confirm_variant() {
         let b = bindings(&["F2", "Shift+Delete=Sure?"]);
-        let none = Modifiers::empty();
+        let none = Modifiers::default();
         let act = |key: &Key, mods| {
             kb_custom_action(&b, CliMode::Dmenu, VimMode::Insert, key, mods, (0, 0))
         };
@@ -2363,7 +2364,13 @@ mod tests {
             Some(Action::AcceptKbCustom(0))
         );
         assert_eq!(
-            act(&named(NamedKey::Delete), Modifiers::SHIFT),
+            act(
+                &named(NamedKey::Delete),
+                Modifiers {
+                    shift: true,
+                    ..Default::default()
+                }
+            ),
             Some(Action::ConfirmKbCustom(1))
         );
         assert_eq!(act(&named(NamedKey::Delete), none), None);
@@ -2373,7 +2380,7 @@ mod tests {
     fn kb_custom_applies_only_in_dmenu_mode() {
         let b = bindings(&["F2"]);
         let f2 = named(NamedKey::F2);
-        let none = Modifiers::empty();
+        let none = Modifiers::default();
         for mode in [CliMode::Drun, CliMode::Calc, CliMode::Emoji] {
             assert_eq!(
                 kb_custom_action(&b, mode, VimMode::Insert, &f2, none, (0, 0)),
@@ -2387,7 +2394,7 @@ mod tests {
     fn kb_custom_caret_guard_is_insert_home_end_only() {
         let b = bindings(&["Home"]);
         let home = named(NamedKey::Home);
-        let none = Modifiers::empty();
+        let none = Modifiers::default();
         // Mid-query in Insert, Home moves the caret: the binding yields.
         assert_eq!(
             kb_custom_action(&b, CliMode::Dmenu, VimMode::Insert, &home, none, (1, 3)),
@@ -2410,7 +2417,10 @@ mod tests {
                 CliMode::Dmenu,
                 VimMode::Insert,
                 &right,
-                Modifiers::ALT,
+                Modifiers {
+                    alt: true,
+                    ..Default::default()
+                },
                 (1, 3)
             ),
             Some(Action::AcceptKbCustom(0))

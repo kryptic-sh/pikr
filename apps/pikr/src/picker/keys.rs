@@ -1,7 +1,7 @@
 //! Vim keymap → picker action + dispatch.
 
+use super::input::{Key, NamedKey};
 use floem::reactive::{SignalGet, SignalUpdate};
-use floem::ui_events::keyboard::{Key, NamedKey};
 
 use super::state::{PickerState, VimMode};
 
@@ -52,7 +52,7 @@ pub enum Action {
     HistoryNext,
 }
 
-/// Translate a floem key event into an `Action` given the current vim mode.
+/// Translate a key press into an `Action` given the current vim mode.
 ///
 /// Returns `None` for unhandled keys. Count prefix digits in Normal mode are
 /// accumulated on `state` before a motion is returned.

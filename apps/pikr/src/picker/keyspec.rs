@@ -4,7 +4,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use floem::ui_events::keyboard::{Key, Modifiers, NamedKey};
+use super::input::{Key, Modifiers, NamedKey};
 
 /// A single key chord: a key plus the exact set of modifiers held with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,11 +41,11 @@ impl KeySpec {
     /// [`KeySpec::shift_is_optional`]).
     pub fn matches(&self, key: &Key, mods: Modifiers) -> bool {
         let shift_ok = if self.shift_is_optional() {
-            mods.shift() || !self.shift
+            mods.shift || !self.shift
         } else {
-            mods.shift() == self.shift
+            mods.shift == self.shift
         };
-        if !shift_ok || (self.ctrl, self.alt, self.meta) != (mods.ctrl(), mods.alt(), mods.meta()) {
+        if !shift_ok || (self.ctrl, self.alt, self.meta) != (mods.ctrl, mods.alt, mods.meta) {
             return false;
         }
         match (&self.key, key) {
@@ -245,12 +245,12 @@ mod tests {
     use super::*;
 
     fn mods(ctrl: bool, shift: bool, alt: bool, meta: bool) -> Modifiers {
-        let mut m = Modifiers::empty();
-        m.set(Modifiers::CONTROL, ctrl);
-        m.set(Modifiers::SHIFT, shift);
-        m.set(Modifiers::ALT, alt);
-        m.set(Modifiers::META, meta);
-        m
+        Modifiers {
+            ctrl,
+            shift,
+            alt,
+            meta,
+        }
     }
 
     const NONE: (bool, bool, bool, bool) = (false, false, false, false);
