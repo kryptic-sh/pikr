@@ -114,7 +114,7 @@
   never run.
 
   Pikr's launcher maps to
-  `WindowRole::Panel(PanelDesc { anchor: PanelAnchor::empty(), layer: PanelLayer::Overlay, keyboard: PanelKeyboard::Exclusive, reserve: Reserve::None, .. })`,
+  `WindowRole::Panel(PanelDesc { anchor: PanelAnchor::empty(), layer: PanelLayer::Top, keyboard: PanelKeyboard::Exclusive, reserve: Reserve::None, .. })`,
   covering S1, S8, S16 and S27. pikr's points went into that API:
   - `PanelDesc.namespace`, where empty means app_id.
   - An unanchored panel requests `WindowDesc.size`, and the granted size arrives
@@ -122,7 +122,10 @@
   - `Reserve::None` is exclusive zone 0; `Reserve::IgnoreOthers` is -1.
   - `monitor: None` means the focused output on Wayland, and the monitor under
     the pointer on Win32 and AppKit.
-  - The Overlay layer is available.
+  - The Overlay layer is available. pikr runs on Top today: the floem fork's
+    `LayerShellConfig` default is `Layer::Top`, and `app.rs` does not override
+    it. The port keeps Top. Overlay, which shows pikr above fullscreen apps,
+    would be a separate behaviour change.
 
   crcbl's backlog makes each backend step build and test these behaviours:
   - the first frame arrives on map, with no flash;
@@ -158,9 +161,26 @@
     not been run, so `arboard` stays until that's confirmed.
   - Crates to pin: crcbl-shell, crcbl-hal, crcbl-ui, the UI draw-pass crate from
     S10 (`crcbl-frame`), and the backends crcbl-vk, crcbl-dx12 and crcbl-mtl.
-- **Prep work that does not wait on crcbl:** pull plain picker state and
-  Pikr-owned input types out of the Floem reactive layer in `ui/view.rs`, and a
-  backend-neutral computed style out of `ui/css.rs`. Not started.
+- **Prep work done ahead of the port (2026-10-16):**
+  - The keymap and `--kb-custom` use pikr-owned `picker::input` key types, with
+    `ui::keyboard` translating floem events.
+  - `AppState`, `--kb-custom` matching and the selection helpers live in
+    `picker::app_state`; the query-text helpers are in `picker::query_text`.
+  - The theme-filled CSS is `ui::theme_css::stylesheet_source`, ready to hand to
+    crcbl-ui.
+- **Deliberately left for the port itself:**
+  - `PickerState` stays a set of floem `RwSignal`s. `ui/view.rs` reads and
+    writes them throughout. Making the state plain means rewriting the floem
+    view's reactivity, which the port throws away, and the key-handling e2e
+    suite (`tests/e2e`, sway + wtype) runs only on Linux CI, so every step would
+    be a blind CI round trip. The port makes the state plain while writing the
+    crcbl view.
+  - The planned backend-neutral computed style is dropped: crcbl-ui parses
+    `default.css` itself (S23), so pikr's `hjkl-css` adapter in `ui/css.rs` goes
+    away with floem.
+  - The `picker_view` key handler in `ui/view.rs` is still one large floem
+    closure. Pulling it into a plain `handle_key` is the first step of the port,
+    once the state is plain.
 - **wayr declined as a target.** It is Wayland-only by design, so Pikr would
   still need separate Windows and macOS paths. wayr's own `README.md` still
   lists Pikr as a consumer; that needs fixing in the wayr repo (no session was

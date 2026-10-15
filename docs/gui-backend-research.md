@@ -61,9 +61,10 @@ crcbl builds all of S1–S27 before its first crates.io release (owner decision,
 
 1. Wait for the spike set above to land in crcbl, pinned by git revision until
    crcbl's first crates.io release (S15).
-2. Before touching the frontend, extract plain picker state and Pikr-owned input
-   types out of the Floem reactive layer (`ui/view.rs`), and a backend-neutral
-   computed style from `ui/css.rs`.
+2. Before touching the frontend, separate the toolkit-independent parts. Done on
+   2026-10-16: pikr-owned input types, the picker session logic in
+   `picker::app_state`, and the theme-filled stylesheet source. Making the
+   picker state plain is left to the port (see the backlog).
 3. Build a disposable crcbl spike that passes the checklist under "Prototype
    acceptance" below.
 4. Port the picker and `--message` windows to crcbl. Then drop `floem`, the
