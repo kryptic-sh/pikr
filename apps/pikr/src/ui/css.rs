@@ -34,30 +34,10 @@ pub struct Sheet {
     matched: std::cell::RefCell<std::collections::HashMap<MemoKey, MatchedRules>>,
 }
 
-/// Build the runtime stylesheet by substituting theme colours into the
-/// `default.css` template. Computed colours (`ex_bg`, `status_bg`,
-/// `count_bg`) mirror the `blend()` calls that were inline in
-/// `ui/view.rs` before the CSS migration.
+/// Build the runtime stylesheet from the theme-substituted `default.css`
+/// (see [`crate::ui::theme_css::stylesheet_source`]).
 pub fn build_stylesheet(theme: &Theme) -> Sheet {
-    let accent = parse_hex(&theme.accent);
-    let muted = parse_hex(&theme.muted);
-    let selected_bg = parse_hex(&theme.selected_bg);
-    // The ex bar and status bar share the same derived background.
-    let ex_bg = blend_hex(muted, selected_bg, 0.15);
-    let status_bg = ex_bg;
-    let count_bg = blend_hex(accent, selected_bg, 0.25);
-
-    let css = include_str!("styles/default.css")
-        .replace("{bg}", &theme.bg)
-        .replace("{fg}", &theme.fg)
-        .replace("{accent}", &theme.accent)
-        .replace("{muted}", &theme.muted)
-        .replace("{selected_bg}", &theme.selected_bg)
-        .replace("{ex_bg}", &hex(ex_bg))
-        .replace("{status_bg}", &hex(status_bg))
-        .replace("{count_bg}", &hex(count_bg))
-        .replace("{font_family}", &theme.font)
-        .replace("{font_size}", &theme.font_size.to_string());
+    let css = crate::ui::theme_css::stylesheet_source(theme);
 
     Sheet {
         inner: parse(&css).unwrap_or_else(|err| {
@@ -220,29 +200,6 @@ fn apply_margin_4(s: Style, sides: [Length; 4]) -> Style {
 
 fn to_floem_color(c: &CssColor) -> Color {
     Color::from_rgba8(c.r, c.g, c.b, c.a)
-}
-
-fn parse_hex(s: &str) -> u32 {
-    let s = s.trim_start_matches('#');
-    u32::from_str_radix(s, 16).unwrap_or(0)
-}
-
-fn hex(rgb: u32) -> String {
-    format!("#{:06x}", rgb & 0xff_ffff)
-}
-
-fn blend_hex(over: u32, under: u32, t: f32) -> u32 {
-    let t = t.clamp(0.0, 1.0);
-    let or = ((over >> 16) & 0xff) as f32;
-    let og = ((over >> 8) & 0xff) as f32;
-    let ob = (over & 0xff) as f32;
-    let ur = ((under >> 16) & 0xff) as f32;
-    let ug = ((under >> 8) & 0xff) as f32;
-    let ub = (under & 0xff) as f32;
-    let r = (or * t + ur * (1.0 - t)) as u32;
-    let g = (og * t + ug * (1.0 - t)) as u32;
-    let b = (ob * t + ub * (1.0 - t)) as u32;
-    (r << 16) | (g << 8) | b
 }
 
 #[cfg(test)]
