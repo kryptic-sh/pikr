@@ -71,14 +71,21 @@
   and on-demand focus loss. Keys typed before the compositor hands over focus go
   to the previous window, and no client can claim them.
 
-  S16 on Wayland (premultiplied-alpha swapchain) is crcbl `5fd4deeb`, local to
-  crcbl and not pushed yet. Pin that instead once it's green, because the
-  rounded panel needs it.
+  Not on crcbl main yet: crcbl branch `appkit-panels` (tip `2cef1e12`, CI
+  running). It carries:
+  - S16 on Wayland (`5fd4deeb`, a premultiplied-alpha swapchain);
+  - Win32 panels and appbars;
+  - AppKit panels;
+  - item 9.
 
-  Win32 and AppKit panels are CI-verified on crcbl branches but not merged. Open
-  item 9: on Win32 a refused `SetForegroundWindow` is only logged inside crcbl,
-  and the app sees no Focus event. pikr asked on 2026-10-15 for an explicit
-  event, so it doesn't have to guess a timeout.
+  crcbl will fast-forward main to that tip once it's green. Pin that rev for the
+  spike, because the rounded panel needs S16.
+
+  Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
+  panel's `SetForegroundWindow` returns false, with no Focus event after it.
+  pikr should log it and retry or flash. Coverage gap: Windows can't be made to
+  refuse foreground to a test process, so the refusal path is reviewed but has
+  never run.
 
   Pikr's launcher maps to
   `WindowRole::Panel(PanelDesc { anchor: PanelAnchor::empty(), layer: PanelLayer::Overlay, keyboard: PanelKeyboard::Exclusive, reserve: Reserve::None, .. })`,
