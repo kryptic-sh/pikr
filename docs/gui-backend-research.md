@@ -54,13 +54,15 @@ are shared with lyr):
 | S27 | Win32: tool window kept out of the taskbar and Alt-Tab, taking foreground focus on hotkey launch           |
 
 Pikr's first spike needs S1, S16, S17, S6/S19, S9, S10, S11, S22, S12 and S23.
-crcbl builds all of S1–S27 before its first crates.io release (owner decision,
-2026-10-15). The order is tracked in [`backlog.md`](backlog.md).
+crcbl releases 0.1.0 with some rows still open, and the rest follow in later
+releases (owner decision, 2026-10-16, replacing the 2026-10-15 plan to wait for
+all of S1–S27). Which rows 0.1.0 leaves open, and crcbl's order of work, are
+tracked in [`backlog.md`](backlog.md).
 
 ### Migration plan
 
-1. Wait for the spike set above to land in crcbl, pinned by git revision until
-   crcbl's first crates.io release (S15).
+1. Wait for the spike set above to land in crcbl. Depend on crates.io releases
+   where they cover a row, and pin a git revision for rows still open there.
 2. Before touching the frontend, separate the toolkit-independent parts. Done on
    2026-10-16: pikr-owned input types, the picker session logic in
    `picker::app_state`, and the theme-filled stylesheet source. Making the

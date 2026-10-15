@@ -43,11 +43,29 @@
   (first sent as P1–P12) were sent to crcbl's session on 2026-10-15, and lyr
   added them to the joint table in `lyr/docs/plan/03-surfaces-and-input.md` (lyr
   f44f1b8). Delete this entry when the forks are gone.
-- **crcbl schedule (owner decision, relayed by crcbl's session on 2026-10-15).**
-  crcbl's first crates.io release waits until S1–S27 are built and its crate
-  seam is refactored for outside use. Until then pikr pins by git rev, at
-  CI-green commits only. crcbl's backlog holds the ordered program, and pikr's
-  spike rows fall in it as:
+- **crcbl schedule.** The owner originally decided (2026-10-15) that crcbl's
+  first crates.io release would wait for all of S1–S27. On 2026-10-16 they
+  changed this: crcbl ships 0.1.0 with some rows still open, and the rest come
+  in later releases. The crates are `crcbl-shell`, `crcbl-hal`, `crcbl-ui` and
+  `crcbl-frame`, plus `crcbl-vk`, `crcbl-dx12` or `crcbl-mtl` per platform. The
+  upload is still going through crates.io's new-crate rate limit, and crcbl will
+  message the version once every crate is up. Rows open or partial at the v0.1.0
+  tag, as reported by crcbl and not checked from pikr:
+  - S9: compose and text-input-v3 are on main after the tag; Win32/AppKit IME
+    on/off is on a branch. pikr needs a later release or a git pin for this.
+  - S12: one-line styled spans only. That covers pikr, which needs neither
+    wrapping nor weight.
+  - S13: cold start not measured.
+  - S14: accessibility is on a branch.
+  - S18: FreeBSD compiles but has never run.
+  - S22: colour emoji has not started. It is in pikr's spike set, so the emoji
+    mode can't reach parity on 0.1.0.
+  - Win32 per-pixel transparency (a DirectComposition swapchain) and AppKit
+    no-flash on map are still missing.
+
+  Until a release covers a row pikr needs, pikr pins by git rev, at CI-green
+  commits only. crcbl's backlog holds the ordered program, and pikr's spike rows
+  fall in it as:
   - Step 1: S10, the UI draw pass in its own crate.
   - Step 2: S6, S19, S25.
   - Steps 3–4: S1, S16, S17, S21.
