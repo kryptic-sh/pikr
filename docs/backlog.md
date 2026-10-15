@@ -107,6 +107,26 @@
 
   Still to come from crcbl: S18 FreeBSD and S22 colour emoji.
 
+  S28 (requested by lyr on the owner's request, 2026-10-16): a crcbl image/asset
+  crate shared by lyr and pikr, to replace pikr's `image`, `resvg` and
+  `freedesktop-icons` use in the port. pikr sent crcbl its requirements the same
+  day:
+  - decode BMP, ICO and WebP as well as PNG, JPEG and SVG. floem's `img()`
+    decodes all of these today (checked with `cargo tree -e features -i image`),
+    so dropping any loses icons for `Icon=` absolute paths. XPM is optional,
+    since pikr doesn't render it now either;
+  - PNG encoding for the Windows on-disk icon cache in `drun_icons_windows.rs`;
+  - BGRA DIB import with flags for premultiplied alpha, row order and an
+    all-zero alpha channel. pikr does none of the alpha handling today, so
+    whether `GetImage` bitmaps are premultiplied is unverified;
+  - SVG rendering that matches `render_svg_to_png`, including its rejection of
+    degenerate sizes;
+  - XDG lookup that matches `IconCache`: the theme fallback chain,
+    `GENERIC_FALLBACK_NAMES`, `MISS_RELOOKUP` miss expiry, and the mtime+length
+    file key. macOS app icons aren't needed yet: drun on macOS finds no icons
+    today. When pikr adds them, they would come from NSWorkspace through the
+    raw-buffer import, not from decoding `.icns`.
+
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
   pikr should log it and retry or flash. Coverage gap: Windows can't be made to
