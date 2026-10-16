@@ -184,11 +184,14 @@
     them.
   - 16 refused. A refused icon shows the generic icon in pikr, so this is the
     real regression: about 8% of breeze app icons. Refusals across all sets are
-    filters 38, text/`flowRoot` 11, `<image>` 3 and DTD entities 2. crcbl is
-    breaking the filters down by primitive; drop-shadow blur support is the
-    likely next step, measured on breeze apps. crcbl is also adding a hicolor
-    set taken from installed systems. Not parity yet. Until it is, the port
-    keeps resvg and passes its RGBA output to `ImageAtlas::register`.
+    filters 38, text/`flowRoot` 11, `<image>` 3 and DTD entities 2. In breeze
+    apps, 9 refusals come from filters and 6 from text. Those filters use only
+    the drop-shadow primitives (feGaussianBlur, feComposite, feOffset, feFlood,
+    feColorMatrix). Supporting these five is crcbl's next SVG step and could
+    recover up to 9 refusals (about 88% → 93% if they match). It will be
+    measured on breeze apps and hicolor. crcbl is also adding a hicolor set
+    taken from installed systems. Not parity yet. Until it is, the port keeps
+    resvg and passes its RGBA output to `ImageAtlas::register`.
 
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
