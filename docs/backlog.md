@@ -174,10 +174,21 @@
   aren't committed: a CI job downloads them and renders the references with the
   `resvg` CLI on the runner. First results at 48 px, reported by crcbl (the SVG
   renderer is on a branch): Adwaita 97.3%, Papirus 99.8%, breeze 98.5% and
-  breeze apps 88.3% matching. Most refusals are filters, then text. hicolor was
-  not reported. A refused icon shows the generic icon in pikr, so about one
-  breeze app icon in eight would regress. Not parity yet. Until it is, the port
-  keeps resvg and passes its RGBA output to `ImageAtlas::register`.
+  breeze apps 88.3% matching. "Matching" means it rendered, with at most 1% of
+  pixels off by more than 32/255 in any premultiplied channel. Breeze apps (206
+  icons) breaks down as:
+  - 182 matching;
+  - 8 differing. crcbl says these come mostly from resvg not inheriting
+    `gradientTransform` through `href`, which crcbl does per the spec, and the
+    rest from stroke/dash precision. They still render, so pikr doesn't lose
+    them.
+  - 16 refused. A refused icon shows the generic icon in pikr, so this is the
+    real regression: about 8% of breeze app icons. Refusals across all sets are
+    filters 38, text/`flowRoot` 11, `<image>` 3 and DTD entities 2. crcbl is
+    breaking the filters down by primitive; drop-shadow blur support is the
+    likely next step, measured on breeze apps. crcbl is also adding a hicolor
+    set taken from installed systems. Not parity yet. Until it is, the port
+    keeps resvg and passes its RGBA output to `ImageAtlas::register`.
 
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
