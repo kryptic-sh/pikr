@@ -7,10 +7,10 @@
 - **`picker/matcher.rs:135-144` — every non-ASCII label is re-decomposed
   (grapheme split + NFC) per entry, per keystroke, though labels never change.**
   `match_field` runs inside the per-entry loop (`matcher.rs:101-102`, from
-  `view.rs:684` rerank on every keystroke). In emoji mode all ~1800 labels are
-  non-ASCII (glyph prefix, `modes/emoji.rs:21`), so every keystroke re-runs
-  unicode-segmentation + NFC over all of them. The per-entry allocation was
-  already removed (reused `text_buf`), but the processing is repeated. Fix:
+  `Session::handle_key`'s rerank on every keystroke). In emoji mode all ~1800
+  labels are non-ASCII (glyph prefix, `modes/emoji.rs:21`), so every keystroke
+  re-runs unicode-segmentation + NFC over all of them. The per-entry allocation
+  was already removed (reused `text_buf`), but the processing is repeated. Fix:
   precompute each entry's grapheme-normalized form once at collect/switch time
   and have `match_field` consume it (keep `text_buf` for descriptions). ~2 kB
   memory for 1800 labels. ~100–400 µs/keystroke in emoji mode (measure
@@ -18,276 +18,67 @@
   2026-08-06: the win is emoji-mode-specific and was not profiled this session;
   the review itself recommends measuring before optimizing._
 
-- **`ui/view.rs` — the whole match list is rebuilt into an `imbl::Vector` twice
-  per character and once per navigation keystroke, even when nothing matched
-  changed.** The virtual*stack data closure (`view.rs:1080-1100`) re-reads `rev`
-  and rebuilds all up-to-256 items (Arc clone + two Rc clones + imbl insert
-  each) on every `rev` bump. `rev` is bumped unconditionally at the end of every
-  handled keydown (including selection-only `MoveDown`/`MoveUp`/ `PageDown`) and
-  a second time per character inside the rerank effect batch. Selection moves
-  don't change matches — row styles already track selection reactively via
-  `selected_sig` — so the rebuild is pure waste. Fix: memoize the `imbl::Vector`
-  keyed by a matches-version signal (imbl clone is O(1)), and split `rev` into
-  "matches changed" vs "selection changed". ~50–100 µs/keystroke across all
-  modes. \_Deferred 2026-08-06: touches the floem reactivity core (rev drives
-  the virtual_stack data closure, scroll `ensure_visible`, and the empty-state
-  visibility) where the no-results-hang regression lives; judged not worth the
-  regression risk without a profiler confirming the win.*
+## GUI on crcbl
 
-## GUI migration to crcbl
-
-- **Move the GUI from Floem (and its floem/winit forks) to crcbl.** Decided by
-  the owner on 2026-10-15. Plan, requirement list and spike acceptance live in
-  `docs/gui-backend-research.md`. Blocked on crcbl: Pikr's spike needs joint
-  rows S1, S6, S9, S10, S11 and S12 plus S16, S17, S19, S22 and S23. S16–S27
-  (first sent as P1–P12) were sent to crcbl's session on 2026-10-15, and lyr
-  added them to the joint table in `lyr/docs/plan/03-surfaces-and-input.md` (lyr
-  f44f1b8). Delete this entry when the forks are gone.
-- **crcbl schedule.** The owner originally decided (2026-10-15) that crcbl's
-  first crates.io release would wait for all of S1–S27. On 2026-10-16 they
-  changed this: crcbl ships 0.1.0 with some rows still open, and the rest come
-  in later releases. The crates are `crcbl-shell`, `crcbl-hal`, `crcbl-ui` and
-  `crcbl-frame`, plus `crcbl-vk`, `crcbl-dx12` or `crcbl-mtl` per platform.
-  0.1.0 is published. On 2026-10-16 pikr confirmed through the crates.io API
-  that each of those seven crates is at 0.1.0, and that the GitHub release
-  `v0.1.0` is published and not a draft. Rows open or partial at the v0.1.0 tag,
-  as reported by crcbl and not checked from pikr:
-  - S9: compose and text-input-v3 are on main after the tag; Win32/AppKit IME
-    on/off is on a branch. pikr needs a later release or a git pin for this.
-  - S12: one-line styled spans only. That covers pikr, which needs neither
-    wrapping nor weight.
-  - S13: cold start not measured.
-  - S14: accessibility is on a branch.
-  - S18: FreeBSD compiles but has never run.
-  - S22: colour emoji isn't in 0.1.0. It is in pikr's spike set. As of
-    2026-10-16 it is in review at crcbl: per-glyph fallback plus CBDT, sbix and
-    COLR v0/v1, drawn by the UI pass.
-  - Win32 per-pixel transparency (a DirectComposition swapchain) and AppKit
-    no-flash on map are still missing.
-
-  On crcbl main after the tag, not yet released. crcbl reports `de5f5ade` as a
-  green main commit carrying all of this; not verified from pikr:
-  - dead keys/Compose on Wayland and X11, and text-input-v3;
-  - `crcbl-image` (S28), with features `png` (decode and encode), `jpeg`, `bmp`,
-    `ico` (`ico::sizes`) and `theme` (XDG lookup), plus `raw::convert` and
-    `resize::{fit_within, shrink_to_fit, nearest_size}` (Lanczos3). `svg`
-    (`svg::decode(bytes, size, scale, &limits)`, which errors on anything
-    outside its subset) and `webp` (lossless and lossy VP8 with ALPH alpha,
-    including the first frame of an animation). crcbl reports an exact match
-    with libwebp's default decode on its fixtures, and no panics over 9.6M
-    corrupted inputs, so WebP is at parity with pikr's current decoding;
-  - `Shell::set_text_input(window, Option<TextPurpose>)`, replacing
-    `set_text_input_enabled`. `TextPurpose` is `{Normal, Password, Pin}` in
-    `crcbl_core::input`, `None` turns input off, and
-    `Ui::text_editing_purpose()` reports the focused field's purpose. pikr's
-    password mode should pass `TextPurpose::Password`. Still on crcbl's
-    integration branch: S12 `Ui::paragraph` and S14 `accesskit`.
-
-  Breaking in crcbl's next release: `crcbl_ui::font::raster` moved to
-  `crcbl_image::raster` (the old path still re-exports it), and `Rasterizer`
-  takes `raster::Point` instead of `glam::Vec2`.
-
-  Until a release covers a row pikr needs, pikr pins by git rev, at CI-green
-  commits only. crcbl's backlog holds the ordered program, and pikr's spike rows
-  fall in it as:
-  - Step 1: S10, the UI draw pass in its own crate.
-  - Step 2: S6, S19, S25.
-  - Steps 3–4: S1, S16, S17, S21.
-  - Steps 3, 5 and 6: S8.
-  - Step 8: S11, S12, S22.
-  - Step 9: S9.
-  - Step 10: S23, with a spike against `default.css`.
-  - Last: S14, AccessKit, because it is a new dependency (owner's call).
-
-  crcbl rev to pin for the spike: `de5f5ade` for crcbl-image (with SVG) and the
-  `set_text_input` API, otherwise `72999dd7`. For `72999dd7`: crcbl's session
-  reports a full CI pass on that exact commit (sway, a real Win32 desktop, a
-  macOS session); not verified from pikr. It contains:
-  - S10 as `crcbl-frame` (`UiRenderer::new` / `with_images` without the game
-    renderer);
-  - S15's `rust-version`;
-  - S6 as `Shell::waker()` / `ShellWaker::wake()`;
-  - the window-role API, `WindowDesc::role` and `WindowDesc::transparent`;
-  - S11, where `Font::parse` takes runtime bytes;
-  - panels on Wayland, Win32 and AppKit (S1, S8, S27);
-  - S16 transparency on Wayland and AppKit (premultiplied swapchain, clear to
-    alpha 0);
-  - S3 popups;
-  - item 9;
-  - S23: `default.css`, with placeholders filled as `ui/css.rs` fills them,
-    parses with zero diagnostics after crcbl added the `border` shorthand.
-
-  S17 was checked under sway: focus on map, the first key after focus, repeat,
-  and on-demand focus loss. Keys typed before the compositor hands over focus go
-  to the previous window, and no client can claim them.
-
-  Also on crcbl main at `531903c7` (main's own CI was still running when
-  reported):
-  - S12: match highlighting as a `flex-direction: row` block with one span per
-    run. There's no font-weight and no paragraph wrapping, and pikr needs
-    neither.
-  - S24: `ImageAtlas::unregister(id)`, so per-keystroke icons can be replaced.
-  - S20: a CSS `cursor` property plus `Ui::cursor()`.
-  - S26 on Windows: D3D12 (or WARP with no GPU) when Vulkan is missing.
-
-  crcbl's answers on 2026-10-15:
-  - Clipping: `overflow: hidden` on a block clips its children to its padding
-    box (`crates/crcbl-ui/src/tree/clipping_tests.rs`). The default is
-    `visible`, so the port must add `overflow: hidden` to the result row or the
-    label span in `default.css`, or long labels paint past the panel.
-  - No GPU on Linux or macOS: `crcbl::backend::open()` returns
-    `GpuError::NoBackend { tried, last }` with a readable message, not a panic.
-    pikr should print it and exit. Linux uses lavapipe only if Mesa installed
-    it.
-
-  - Scrollbar: on crcbl main at `5bbdd180` (a branch CI pass on that exact
-    commit, per crcbl). `ui.scrollbar(selector, target)` takes the list's key
-    and builds a `scrollbar` track holding one `.scroll-handle`, so pikr's
-    existing rule applies unchanged. The port must place the track, either
-    beside the list in a row block or absolutely over its right edge. The
-    default width is 8px. Vertical only, with dragging but no click-to-page. The
-    handle appears from the second frame.
-
-  Still to come from crcbl: S18 FreeBSD and S22 colour emoji.
-
-  S28 (requested by lyr on the owner's request, 2026-10-16): a crcbl image/asset
-  crate shared by lyr and pikr, to replace pikr's `image`, `resvg` and
-  `freedesktop-icons` use in the port. pikr sent crcbl its requirements the same
-  day:
-  - decode BMP, ICO and WebP as well as PNG, JPEG and SVG. floem's `img()`
-    decodes all of these today (checked with `cargo tree -e features -i image`),
-    so dropping any loses icons for `Icon=` absolute paths. XPM is optional,
-    since pikr doesn't render it now either;
-  - PNG encoding for the Windows on-disk icon cache in `drun_icons_windows.rs`;
-  - BGRA DIB import with flags for premultiplied alpha, row order and an
-    all-zero alpha channel. pikr does none of the alpha handling today, so
-    whether `GetImage` bitmaps are premultiplied is unverified;
-  - SVG rendering that matches `render_svg_to_png`, including its rejection of
-    degenerate sizes;
-  - XDG lookup that matches `IconCache`: the theme fallback chain,
-    `GENERIC_FALLBACK_NAMES`, `MISS_RELOOKUP` miss expiry, and the mtime+length
-    file key. macOS app icons aren't needed yet: drun on macOS finds no icons
-    today. When pikr adds them, they would come from NSWorkspace through the
-    raw-buffer import, not from decoding `.icns`.
-
-  crcbl accepted all six points (2026-10-16). Owner decision on crcbl's side:
-  crcbl writes its own decoders in safe Rust instead of depending on `image`,
-  `zune-jpeg` or `resvg`. Only PNG stays on the `png` crate. SVG is an
-  "icon-theme subset". Order of work: caps and fuzzing, PNG, raw conversions,
-  resize, then theme lookup and SVG, then JPEG, then ICO/BMP/WebP, then XPM.
-
-  Risk for pikr: a partial SVG renderer is what caused the black-square icons
-  that made pikr switch from floem's `svg()` to resvg (see
-  `IconCache::rasterise_svg`). pikr asked crcbl for:
-  - rejection, not partial painting, of anything the subset doesn't support;
-  - pixel comparison against resvg over the Adwaita, Papirus, breeze and hicolor
-    app icons;
-  - a per-theme report of how many icons render and how many are rejected.
-
-  crcbl accepted these conditions. The themes are GPL-3.0 / CC-BY-SA, so they
-  aren't committed: a CI job downloads them and renders the references with the
-  `resvg` CLI on the runner. Results at 48 px against resvg 0.48.1, reported by
-  crcbl for the renderer now on main: Adwaita 97.3%, Papirus 99.8%, Papirus apps
-  99.7%, breeze 98.5% and breeze apps 88.3% matching. "Matching" means it
-  rendered, with at most 1% of pixels off by more than 32/255 in any
-  premultiplied channel. Breeze apps (206 icons) breaks down as:
-  - 182 matching;
-  - 8 differing. crcbl says these come mostly from resvg not inheriting
-    `gradientTransform` through `href`, which crcbl does per the spec, and the
-    rest from stroke/dash precision. They still render, so pikr doesn't lose
-    them.
-  - 16 refused. A refused icon shows the generic icon in pikr, so this is the
-    real regression: about 8% of breeze app icons. Refusals across all sets are
-    filters 38, text/`flowRoot` 11, `<image>` 3 and DTD entities 2. In breeze
-    apps, 9 refusals come from filters and 6 from text. Those filters use only
-    the drop-shadow primitives (feGaussianBlur, feComposite, feOffset, feFlood,
-    feColorMatrix). Supporting these five is crcbl's next SVG step and could
-    recover up to 9 refusals (about 88% → 93% if they match). It will be
-    measured on breeze apps and hicolor. CI's `svg corpus` job now also measures
-    the runner's `/usr/share/icons/hicolor`, report-only with no floor, since
-    the runner image decides what's in it.
-
-  Drop-shadow filters (feGaussianBlur, feOffset, feFlood, feComposite,
-  feColorMatrix, feMerge, linearRGB) were pushed next, and crcbl reports every
-  filter refusal now matching resvg. Breeze apps goes 88.3% → 92.2%, Adwaita
-  97.3% → 99.3% and breeze 98.5% → 98.9%. That push's CI was not yet green when
-  reported. Breeze apps still refuses 6 text icons (one of them `flowRoot`) and
-  2 DTD-entity files. Not parity yet. Until it is, the port keeps resvg and
-  passes its RGBA output to `ImageAtlas::register`.
-
-  Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
-  panel's `SetForegroundWindow` returns false, with no Focus event after it.
-  pikr should log it and retry or flash. Coverage gap: Windows can't be made to
-  refuse foreground to a test process, so the refusal path is reviewed but has
-  never run.
-
-  Pikr's launcher maps to
-  `WindowRole::Panel(PanelDesc { anchor: PanelAnchor::empty(), layer: PanelLayer::Overlay, keyboard: PanelKeyboard::Exclusive, reserve: Reserve::None, .. })`,
-  covering S1, S8, S16 and S27. pikr's points went into that API:
-  - `PanelDesc.namespace`, where empty means app_id.
-  - An unanchored panel requests `WindowDesc.size`, and the granted size arrives
-    as `Resized`.
-  - `Reserve::None` is exclusive zone 0; `Reserve::IgnoreOthers` is -1.
-  - `monitor: None` means the focused output on Wayland, and the monitor under
-    the pointer on Win32 and AppKit.
-  - The Overlay layer is available. pikr uses Overlay (owner decision,
-    2026-10-16) so it shows above fullscreen apps. The floem build sets
-    `Layer::Overlay` explicitly in `app.rs`, since the fork defaults to Top.
-
-  crcbl's backlog makes each backend step build and test these behaviours:
-  - the first frame arrives on map, with no flash;
-  - no DWM or AppKit chrome;
-  - S17 cases (early keys, focus gained and lost, repeat), in a sway e2e suite;
-  - a refused `SetForegroundWindow` is reported.
-
-  crcbl's session will report each row as it lands on its main. Pikr's spike can
-  start once steps 1–4, 8 and 10 have landed; S9 (IME) can follow.
-
-- **crcbl's answer (2026-10-15, read-only survey of crcbl `1db97a5b`, not
-  verified from pikr).** These are crcbl's claims and recommendations; the build
-  order is the owner's call.
-  - Present: S19, since `Shell::wait_events(Option<Duration>)` takes a timeout
-    and the blink needs nothing new. Text measurement for S22 (`text_width` in
-    crcbl-ui's `text.rs`).
-  - Partly present: S20 (`set_cursor(CursorIcon)` exists, and the list has hover
-    and click; the scrollbar handle and the wheel path are unverified). S21
-    (fractional scale exists on Wayland, but not yet on layer surfaces). S24 (an
-    image module exists; RGBA upload is likely but unconfirmed).
-  - Missing: S16 transparency, S17 focus and first key (these come with
-    layer-shell), S18 FreeBSD (not in CI), S22 colour emoji and font fallback,
-    S27 Win32 tool window and foreground focus.
-  - S25: exit is pikr breaking out of its own loop. Confirm in the spike.
-  - S26: no CPU renderer exists. crcbl recommends a terminal error naming the
-    missing graphics API rather than a software rasteriser. Owner call.
-  - S23: crcbl-ui's stylesheet (cssparser + taffy) has class selectors, colours,
-    box model, borders, radius, fonts and align/justify. Percent sizes and exact
-    specificity plus source-order cascade are unchecked. Next step: parse
-    `default.css` with crcbl-ui in the spike, and drop `hjkl-css` unless that
-    fails.
-  - Clipboard: a Win32 backend exists (`win32/clipboard.rs`). A text read has
-    not been run, so `arboard` stays until that's confirmed.
-  - Crates to pin: crcbl-shell, crcbl-hal, crcbl-ui, the UI draw-pass crate from
-    S10 (`crcbl-frame`), and the backends crcbl-vk, crcbl-dx12 and crcbl-mtl.
-- **Prep work done ahead of the port (2026-10-16):**
-  - The keymap and `--kb-custom` use pikr-owned `picker::input` key types, with
-    `ui::keyboard` translating floem events.
-  - `AppState`, `--kb-custom` matching and the selection helpers live in
-    `picker::app_state`; the query-text helpers are in `picker::query_text`.
-  - The theme-filled CSS is `ui::theme_css::stylesheet_source`, ready to hand to
-    crcbl-ui.
-- **Deliberately left for the port itself:**
-  - `PickerState` stays a set of floem `RwSignal`s. `ui/view.rs` reads and
-    writes them throughout. Making the state plain means rewriting the floem
-    view's reactivity, which the port throws away, and the key-handling e2e
-    suite (`tests/e2e`, sway + wtype) runs only on Linux CI, so every step would
-    be a blind CI round trip. The port makes the state plain while writing the
-    crcbl view.
-  - The planned backend-neutral computed style is dropped: crcbl-ui parses
-    `default.css` itself (S23), so pikr's `hjkl-css` adapter in `ui/css.rs` goes
-    away with floem.
-  - The `picker_view` key handler in `ui/view.rs` is still one large floem
-    closure. Pulling it into a plain `handle_key` is the first step of the port,
-    once the state is plain.
+- **The port to crcbl landed on 2026-10-16.** floem, its winit fork, resvg,
+  `freedesktop-icons`, `image`, `hjkl-css` and `imbl` are gone. Every crcbl
+  crate in the workspace `Cargo.toml` is pinned to the same crcbl main rev,
+  `de5f5ade` (CI green, checked with `gh run list`). Bump all of them together,
+  to CI-green revs only, as crcbl lands what pikr is waiting on below;
+  `6ca46474` (SVG drop-shadow filters) was still in CI when the port was
+  committed. crcbl's next release is 0.2.0 (a breaking raster API change), and
+  publishing it is the owner's call; pikr is not on crates.io, so the git pin
+  costs nothing there.
+- **Waiting on crcbl.** Each is a gap in pikr until it lands; crcbl's session
+  has every one queued and reports green revs as they land.
+  - System font lookup by family name. crcbl is adding a discovery crate
+    (fontconfig config and cache on Linux/FreeBSD, name tables on Windows and
+    macOS). Until then `ui::fonts` shells out to `fc-match` on unix and reads
+    the installed-fonts registry key through `reg query` on Windows; on macOS
+    without fontconfig the theme font is never found. Delete `ui::fonts` when
+    crcbl's lands.
+  - Per-glyph font fallback and colour emoji (S22): in final integration on
+    `integrate/emoji` as of 2026-10-16, through `Ui::set_fallback_fonts`. Until
+    then a glyph the theme font lacks draws `.notdef`, which makes emoji mode
+    unusable. ZWJ sequences, skin tones and flags will still draw as their parts
+    (no GSUB).
+  - Shaping (GSUB/GPOS beyond Latin-1 kerning, Arabic/Indic, bidi).
+  - SVG: text (including `flowRoot`), DTD entities, embedded `<image>` and
+    malformed-value leniency. A refused SVG shows the generic icon. Breeze apps
+    matched 88.3% of resvg at `de5f5ade` and 92.2% with the filters in
+    `6ca46474`, by crcbl's corpus job (not measured from pikr).
+  - An XPM decoder (`/usr/share/pixmaps`). pikr never drew XPM, so not a
+    regression.
+  - Win32 per-pixel transparency (a DirectComposition swapchain): the Windows
+    panel is opaque with square outer corners.
+  - S9 IME on/off on Win32 and AppKit.
+  - D3D12 startup: in a release build here, instance open plus adapter
+    enumeration took ~0.7 s and device creation ~0.23 s of a ~1.1 s
+    launch-to-first-paint. Reported to crcbl 2026-10-16.
+  - `ShellEvent::FocusRefused` did not arrive when Windows refused pikr the
+    foreground (launched from a background process). Reported 2026-10-16.
+- **Workarounds in pikr that go with crcbl changes.**
+  - `ui::run::Window::frame` builds and lays out the tree twice per drawn frame,
+    because `Ui::list` builds the rows its previous layout showed; with one
+    build a changed match list drew the old window of rows (seen on Windows: 2
+    of 4 rows). Asked crcbl for a way to build once.
+  - The status-bar chips, the confirm card and the block caret are blocks
+    wrapping a span: crcbl text spans paint no background, padding or radius.
+- **Not verified (coverage gaps).**
+  - Linux and FreeBSD were not run locally at all. The first real check of
+    Wayland (layer-shell overlay panel, keyboard, lavapipe rendering) is CI's
+    sway e2e suite and the 500 ms startup gate, whose Vulkan startup time is
+    unknown.
+  - macOS was not built or run.
+  - Windows (D3D12): the picker, match highlighting, a scrolled list with its
+    scrollbar and the `--message` modal were rendered and looked at in
+    screenshots. Keyboard input, clicks, the wheel and drun icons were not
+    exercised: pikr launched from a background shell never got the foreground,
+    and synthesized keys would have gone to another window.
+  - No icon from a real icon theme was drawn; icon decoding is covered by unit
+    tests only. HiDPI (scale ≠ 1) was not exercised.
+  - `docs/gui-backend-research.md` is the migration's design doc; delete it,
+    keeping only what still binds, once CI has verified the port.
 - **wayr declined as a target.** It is Wayland-only by design, so Pikr would
   still need separate Windows and macOS paths. wayr's own `README.md` still
   lists Pikr as a consumer; that needs fixing in the wayr repo (no session was
@@ -369,18 +160,16 @@ macOS and Windows.
   equal to the live expression. Inherent to filtering on a secret; the options
   are to document it or to stop filtering under `-P` (show all rows unranked).
   Needs a product call.
-- **Windows startup is at the edge of the 500 ms usable-picker target.** Release
-  build, warm drun cache: entries collected in ~4 ms but first paint at ~540–925
-  ms across runs — the wgpu/Vulkan init dominates, not pikr's own work. Not
-  profiled further.
-- **Windows window posture from issue #9 is not done:** no always-on-top, no
-  `WS_EX_TOOLWINDOW` (pikr shows in Alt-Tab and the taskbar), decorations left
-  to the default `WindowConfig`. Observed: the window does take foreground when
-  launched from a terminal.
-- **README "Requirements" / "Architecture" still say Wayland-only.** Windows and
-  macOS open a regular top-level window (`app::run` non-linux arm); the README
-  should say so and document that a global hotkey is user-wired (PowerToys,
-  AutoHotkey).
+- **Windows startup is past the 500 ms usable-picker target.** Release build on
+  crcbl/D3D12: ~1.1 s from launch to first paint, almost all of it D3D12
+  instance, adapter and device setup (see "GUI on crcbl"). Not profiled inside
+  crcbl.
+- **Windows window posture (issue #9) now comes from crcbl's panel role:** a
+  topmost `WS_EX_TOOLWINDOW` window, by crcbl's documentation of its Win32
+  panel. Whether pikr is now absent from Alt-Tab and the taskbar was not looked
+  at.
+- **README should document that a global hotkey is user-wired on Windows and
+  macOS** (PowerToys, AutoHotkey).
 
 ### Coverage gaps (not verified)
 

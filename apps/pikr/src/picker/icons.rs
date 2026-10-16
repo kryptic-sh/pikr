@@ -1,60 +1,19 @@
-//! XDG icon-theme lookup with a per-process cache.
+//! Entry icons: XDG icon-theme lookup and decoding, both cached.
 //!
 //! drun entries carry an `Icon=` value that's either an absolute path or a
-//! freedesktop name (e.g. `"firefox"`). The picker view calls into
-//! `IconCache::resolve` lazily as virtual_stack builds visible rows, so
-//! startup pays no resolution cost for entries the user never scrolls past.
+//! freedesktop name (e.g. `"firefox"`). The view asks for an entry's icon only
+//! as its row is built, so startup pays nothing for entries the user never
+//! scrolls to.
 
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 
-/// Per-process XDG icon-theme cache. Stores both hits and misses so that the
-/// same name is never looked up twice, and caches icon file bytes per file
-/// version — SVG rasterised to PNG once so resvg's render pass doesn't
-/// repeat, raw PNG / JPEG bytes read once so the disk isn't touched on every
-/// virtual_stack frame. A `stat` per lookup checks the file's mtime/length
-/// and re-reads (or re-rasterises) when the file changed on disk; a rewrite
-/// that preserves both mtime and length on a coarse filesystem stays
-/// undetectable, which is inherent to a stat key.
-pub struct IconCache {
-    /// name-or-path → resolved file path (or `None` for misses), with the
-    /// lookup time so a stale miss can be re-resolved after
-    /// [`MISS_RELOOKUP`].
-    cache: HashMap<String, Resolution>,
-    /// SVG file path → PNG bytes, rasterised once per file version.
-    raster_cache: HashMap<PathBuf, CachedBytes>,
-    /// Raw file path → file bytes, read once per file version. PNGs / JPEGs
-    /// go straight to floem's `img()` from here instead of being re-read on
-    /// each row rebuild.
-    file_cache: HashMap<PathBuf, CachedBytes>,
-}
-
-/// How long a cached miss stays cached before `resolve` tries the theme
-/// lookup again — so an icon theme installed while pikr runs is picked up
-/// without waiting for a restart, while a persistently-missing name (e.g.
-/// every entry on a theme-less system walking the fallback chain) isn't
-/// re-resolved on every row rebuild. Hits are served for the session; on-disk
-/// freshness of the file itself is handled per-read by `file_bytes` /
-/// `rasterise_svg`.
-const MISS_RELOOKUP: std::time::Duration = std::time::Duration::from_secs(60);
-
-/// One cached resolution: the path (or the miss) plus when it was looked up.
-struct Resolution {
-    path: Option<PathBuf>,
-    resolved_at: std::time::Instant,
-}
-
-/// Cached file bytes plus the mtime/length they were read at, so a file
-/// replaced on disk while pikr runs is re-read instead of serving stale
-/// bytes for the session.
-struct CachedBytes {
-    mtime: std::time::SystemTime,
-    len: u64,
-    bytes: Arc<Vec<u8>>,
-}
+use crcbl_image::theme::{FileVersion, IconThemes, SearchPath};
+use crcbl_image::{ImageError, Limits, Rgba8Image};
 
 /// Conventional generic-application icon names tried in order when an
 /// entry's `Icon=` is missing or doesn't resolve. Hicolor + most theme
@@ -67,233 +26,101 @@ pub const GENERIC_FALLBACK_NAMES: &[&str] = &[
     "exec",
 ];
 
-/// Themes searched in order when the default-theme lookup fails. Some
-/// minimal systems (headless sway, fresh installs) have no
-/// `XDG_CURRENT_DESKTOP` / GTK theme set, so `freedesktop_icons::lookup`
-/// falls back to hicolor — which doesn't ship the conventional
-/// `application-x-executable` / `applications-other` generic icons.
-/// Adwaita and Papirus do, and `breeze` is the KDE equivalent.
-#[cfg(unix)]
-const FALLBACK_THEMES: &[&str] = &["Adwaita", "Papirus", "breeze", "hicolor"];
+/// Themes searched, in order, after `hicolor` misses. Some minimal systems
+/// (headless sway, fresh installs) ship only hicolor, which doesn't carry
+/// the conventional `application-x-executable` / `applications-other`
+/// generic icons; Adwaita and Papirus do, and `breeze` is the KDE
+/// equivalent.
+const FALLBACK_THEMES: &[&str] = &["Adwaita", "Papirus", "breeze"];
 
-/// A 32 px, scale-1 freedesktop icon lookup — the shared starting point for
-/// the primary and fallback-theme lookups in [`IconCache::resolve`]. Takes
-/// the name as a parameter (not a capture) so the returned builder can borrow
-/// it for the `.with_theme(t).find()` chain.
-#[cfg(unix)]
-fn icon_lookup(name: &str) -> freedesktop_icons::LookupBuilder<'_> {
-    freedesktop_icons::lookup(name).with_size(32).with_scale(1)
+/// How long a missed name stays cached before it is looked up again — so an
+/// icon theme installed while pikr runs is picked up without waiting for a
+/// restart, while a persistently-missing name isn't re-resolved on every row
+/// rebuild. Hits are served for the session.
+const MISS_RELOOKUP: Duration = Duration::from_secs(60);
+
+/// Bounds on one decoded icon. `Icon=` paths come from user-writable
+/// `.desktop` files, so the file is untrusted; no real icon is larger.
+const ICON_LIMITS: Limits = Limits {
+    max_width: 1024,
+    max_height: 1024,
+    max_bytes: 1024 * 1024 * 4,
+};
+
+/// One decoded file, at one size, as it was when read.
+struct Decoded {
+    version: FileVersion,
+    size: u32,
+    /// `None` when the file could not be decoded, so a broken icon is not
+    /// re-read on every row rebuild either.
+    image: Option<Arc<Rgba8Image>>,
+}
+
+/// Per-process icon cache: theme lookups through [`IconThemes`] (which caches
+/// hits, and misses for [`MISS_RELOOKUP`]), and decoded images keyed by file
+/// version, so a file replaced on disk while pikr runs is decoded again.
+pub struct IconCache {
+    themes: IconThemes,
+    decoded: HashMap<PathBuf, Decoded>,
 }
 
 impl IconCache {
-    /// Create an empty cache.
     pub fn new() -> Self {
+        let themes = IconThemes::new(SearchPath::from_environment(), "hicolor", MISS_RELOOKUP)
+            .with_fallback_themes(FALLBACK_THEMES.iter().map(|t| (*t).to_owned()))
+            .with_generic_names(GENERIC_FALLBACK_NAMES.iter().map(|n| (*n).to_owned()));
         Self {
-            cache: HashMap::new(),
-            raster_cache: HashMap::new(),
-            file_cache: HashMap::new(),
+            themes,
+            decoded: HashMap::new(),
         }
     }
 
-    /// Resolve `name_or_path` to a usable file path.
-    ///
-    /// - Absolute paths (`/…`) pass through verbatim.
-    /// - Bare freedesktop icon names go through `freedesktop_icons::lookup`
-    ///   with a 32 px request size (we render at 24, so a 32 source
-    ///   downscales cleanly).
-    ///
-    /// Results — including `None` for misses — are cached so we don't
-    /// re-resolve the same name on every virtual_stack frame.
-    pub fn resolve(&mut self, name_or_path: &str) -> Option<PathBuf> {
-        self.resolve_at(name_or_path, std::time::Instant::now())
+    /// The file for an entry's `Icon=` value at `size` × `scale` pixels: an
+    /// absolute path that exists, or a theme icon. A missing or unresolvable
+    /// name falls back through [`GENERIC_FALLBACK_NAMES`], so the row still
+    /// gets the generic application icon. Off Linux and the BSDs there are no
+    /// theme directories, so only absolute paths resolve.
+    pub fn resolve(&mut self, icon: Option<&str>, size: u32, scale: u32) -> Option<PathBuf> {
+        let name = icon
+            .filter(|name| !name.is_empty())
+            .unwrap_or(GENERIC_FALLBACK_NAMES[0]);
+        self.themes.lookup(name, size, scale)
     }
 
-    /// `resolve` with an injectable clock — the production entry point wraps
-    /// this with `Instant::now()` so the miss-staleness logic is testable
-    /// without sleeping.
-    fn resolve_at(&mut self, name_or_path: &str, now: std::time::Instant) -> Option<PathBuf> {
-        if name_or_path.is_empty() {
-            return None;
-        }
-
-        if let Some(cached) = self.cache.get(name_or_path) {
-            // Hits are served for the session; misses expire after
-            // MISS_RELOOKUP so a newly-installed theme gets picked up.
-            if cached.path.is_some()
-                || now.saturating_duration_since(cached.resolved_at) < MISS_RELOOKUP
-            {
-                return cached.path.clone();
-            }
-        }
-
-        let resolved = if Path::new(name_or_path).is_absolute() {
-            // Absolute path on any OS (Unix: starts with `/`;
-            // Windows: starts with a drive letter like `C:\`).
-            // Pass through verbatim — no theme lookup needed.
-            Some(PathBuf::from(name_or_path))
-        } else {
-            // freedesktop_icons is unix-only. On macOS / Windows bare
-            // icon names don't resolve to anything useful — the picker
-            // shows no icon and the cache stores the miss.
-            #[cfg(unix)]
-            {
-                icon_lookup(name_or_path).find().or_else(|| {
-                    FALLBACK_THEMES
-                        .iter()
-                        .find_map(|theme| icon_lookup(name_or_path).with_theme(theme).find())
-                })
-            }
-            #[cfg(not(unix))]
-            {
-                None
-            }
-        };
-
-        self.cache.insert(
-            name_or_path.to_string(),
-            Resolution {
-                path: resolved.clone(),
-                resolved_at: now,
-            },
-        );
-        resolved
-    }
-
-    /// Resolve `primary` if set, otherwise walk `fallbacks` in order and
-    /// return the first match. Used by the picker so drun entries with a
-    /// missing or unresolvable `Icon=` still render an icon slot instead
-    /// of dead space. Returns `None` only when every option misses —
-    /// `application-x-executable` is the conventional generic-app icon but
-    /// not every theme installs it, so we try a chain of common names.
-    pub fn resolve_or_fallback(
-        &mut self,
-        primary: Option<&str>,
-        fallbacks: &[&str],
-    ) -> Option<PathBuf> {
-        if let Some(name) = primary
-            && let Some(p) = self.resolve(name)
+    /// `path` decoded to fit a `size` × `size` square, cached per file
+    /// version. `None` when the file can't be read or decoded — including an
+    /// SVG that uses something crcbl's renderer does not draw, which it
+    /// refuses rather than drawing it partly.
+    pub fn image(&mut self, path: &Path, size: u32) -> Option<Arc<Rgba8Image>> {
+        let version = FileVersion::of(path)?;
+        if let Some(cached) = self.decoded.get(path)
+            && cached.version == version
+            && cached.size == size
         {
-            return Some(p);
+            return cached.image.clone();
         }
-        for fb in fallbacks {
-            if let Some(p) = self.resolve(fb) {
-                return Some(p);
-            }
-        }
-        None
-    }
-
-    /// Rasterise `svg_path` to PNG bytes at `size_px` × `size_px`, cached per
-    /// file version. Returns `None` if the file can't be read or parsed.
-    ///
-    /// A `stat` per lookup checks the file's mtime and length; when either
-    /// differs from the cached entry the SVG is re-rasterised, so an icon
-    /// replaced on disk while pikr runs picks up the new bytes. The stat is
-    /// far cheaper than the render pass it lets us skip.
-    ///
-    /// Bypasses floem's `svg()` view, which goes through vello's SVG path
-    /// and silently drops paths that use features it doesn't fully
-    /// support (markers, complex clip-paths, …). Many app icons end up
-    /// rendering only their solid background plate that way — looks like
-    /// a black square. resvg handles the full SVG 1.1 surface, produces
-    /// a correct raster, and we route the PNG through floem's `img()`.
-    pub fn rasterise_svg(&mut self, svg_path: &Path, size_px: u32) -> Option<Arc<Vec<u8>>> {
-        let meta = std::fs::metadata(svg_path).ok()?;
-        let Some(mtime) = meta.modified().ok() else {
-            // No mtime to key freshness on — rasterise without caching.
-            return render_svg_to_png(svg_path, size_px).map(Arc::new);
-        };
-        if let Some(cached) = self.raster_cache.get(svg_path)
-            && cached.mtime == mtime
-            && cached.len == meta.len()
-        {
-            return Some(cached.bytes.clone());
-        }
-        let bytes = render_svg_to_png(svg_path, size_px)?;
-        let arc = Arc::new(bytes);
-        self.raster_cache.insert(
-            svg_path.to_path_buf(),
-            CachedBytes {
-                mtime,
-                len: meta.len(),
-                bytes: arc.clone(),
-            },
-        );
-        Some(arc)
-    }
-
-    /// Read `path`'s bytes, cached per file version for subsequent calls. PNG /
-    /// JPEG files go straight to floem's `img()`; caching the bytes avoids a
-    /// disk read on every row rebuild (the virtual_stack rebuilds visible rows
-    /// on each rerank and scroll).
-    ///
-    /// A `stat` per lookup checks the file's mtime and length; when either
-    /// differs from the cached entry the file is re-read, so an icon replaced
-    /// on disk while pikr runs picks up the new bytes. The stat is far cheaper
-    /// than the disk read it lets us skip.
-    pub fn file_bytes(&mut self, path: &Path) -> Option<Arc<Vec<u8>>> {
-        let meta = std::fs::metadata(path).ok()?;
-        let Some(mtime) = meta.modified().ok() else {
-            // No mtime to key freshness on — read without caching.
-            return std::fs::read(path).ok().map(Arc::new);
-        };
-        if let Some(cached) = self.file_cache.get(path)
-            && cached.mtime == mtime
-            && cached.len == meta.len()
-        {
-            return Some(cached.bytes.clone());
-        }
-        let bytes = std::fs::read(path).ok()?;
-        let arc = Arc::new(bytes);
-        self.file_cache.insert(
+        let image = std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| decode(&bytes, size).map_err(|e| e.to_string()))
+            .inspect_err(|e| tracing::debug!(path = %path.display(), "icon not drawn: {e}"))
+            .ok()
+            .map(Arc::new);
+        self.decoded.insert(
             path.to_path_buf(),
-            CachedBytes {
-                mtime,
-                len: meta.len(),
-                bytes: arc.clone(),
+            Decoded {
+                version,
+                size,
+                image: image.clone(),
             },
         );
-        Some(arc)
+        image
     }
 
-    /// Number of entries currently in the cache. Used in tests.
+    /// Number of decoded files cached. Used in tests.
     #[cfg(test)]
-    pub fn cache_len(&self) -> usize {
-        self.cache.len()
+    fn decoded_len(&self) -> usize {
+        self.decoded.len()
     }
-
-    /// Number of rasterised SVGs cached. Used in tests.
-    #[cfg(test)]
-    pub fn raster_cache_len(&self) -> usize {
-        self.raster_cache.len()
-    }
-
-    /// Number of raw file-byte entries cached. Used in tests.
-    #[cfg(test)]
-    pub fn file_cache_len(&self) -> usize {
-        self.file_cache.len()
-    }
-}
-
-/// Pure helper — SVG file → PNG bytes via resvg + tiny-skia. Scales the
-/// rasterised image so the longer side hits `size_px`, then draws into a
-/// square `size_px × size_px` pixmap (transparent fill).
-fn render_svg_to_png(svg_path: &Path, size_px: u32) -> Option<Vec<u8>> {
-    let data = std::fs::read(svg_path).ok()?;
-    let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default()).ok()?;
-    let svg_size = tree.size();
-    let dim = svg_size.width().max(svg_size.height());
-    // A crafted `<svg width="0" height="0">` yields a zero tree size; the
-    // scale would be `size_px / 0` = inf and tiny-skia would rasterise
-    // garbage. Bail out — the caller treats None as "no icon".
-    if dim <= 0.0 || !dim.is_finite() {
-        return None;
-    }
-    let scale = size_px as f32 / dim;
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(size_px, size_px)?;
-    let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
-    pixmap.encode_png().ok()
 }
 
 impl Default for IconCache {
@@ -302,19 +129,35 @@ impl Default for IconCache {
     }
 }
 
+/// `bytes` decoded by their format's signature, then scaled down to fit a
+/// `size` × `size` square. SVG has no signature; anything unrecognised is
+/// tried as SVG, which rejects what is not.
+fn decode(bytes: &[u8], size: u32) -> Result<Rgba8Image, ImageError> {
+    use crcbl_image::{bmp, ico, jpeg, png, resize, svg, webp};
+    let image = if bytes.starts_with(b"\x89PNG") {
+        png::decode(bytes, &ICON_LIMITS)?
+    } else if bytes.starts_with(&[0xff, 0xd8]) {
+        jpeg::decode(bytes, &ICON_LIMITS)?
+    } else if bytes.starts_with(b"BM") {
+        bmp::decode(bytes, &ICON_LIMITS)?
+    } else if bytes.starts_with(&[0, 0, 1, 0]) {
+        ico::decode(bytes, size, &ICON_LIMITS)?
+    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+        webp::decode(bytes, &ICON_LIMITS)?
+    } else {
+        // Rendered straight at the target size: nothing to scale.
+        return svg::decode(bytes, size, 1, &ICON_LIMITS);
+    };
+    let (width, height) = resize::shrink_to_fit((image.width(), image.height()), (size, size));
+    resize::resize(&image, width, height, &ICON_LIMITS)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// An absolute path on the host OS, so passthrough tests take the
-    /// absolute-path branch everywhere — a literal `/tmp/x` has no drive
-    /// prefix and is not absolute on Windows.
-    fn abs(name: &str) -> String {
-        std::env::temp_dir()
-            .join(name)
-            .to_string_lossy()
-            .into_owned()
-    }
+    const RED_SQUARE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ff0000"/></svg>"##;
+    const GREEN_SQUARE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#00ff00"/></svg>"##;
 
     fn pin_mtime(path: &Path, t: std::time::SystemTime) {
         std::fs::File::options()
@@ -325,307 +168,83 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    fn absolute_path_passthrough() {
-        let mut cache = IconCache::new();
-        let path = abs("firefox.png");
-        let result = cache.resolve(&path);
-        assert_eq!(result, Some(PathBuf::from(path)));
+    /// The first pixel's RGBA.
+    fn first_pixel(image: &Rgba8Image) -> [u8; 4] {
+        image.pixels()[..4].try_into().unwrap()
     }
 
     #[test]
-    fn empty_string_returns_none() {
+    fn absolute_path_that_exists_resolves_to_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("icon.svg");
+        std::fs::write(&path, RED_SQUARE).unwrap();
         let mut cache = IconCache::new();
-        assert_eq!(cache.resolve(""), None);
+        let name = path.to_string_lossy();
+        assert_eq!(cache.resolve(Some(&name), 24, 1), Some(path.clone()));
     }
 
     #[test]
-    fn empty_string_not_cached() {
-        // Empty string short-circuits before the cache insert, so cache stays empty.
-        let mut cache = IconCache::new();
-        let _ = cache.resolve("");
-        let _ = cache.resolve("");
-        assert_eq!(cache.cache_len(), 0);
+    fn svg_decodes_at_the_requested_size() {
+        let image = decode(RED_SQUARE.as_bytes(), 24).expect("decode");
+        assert_eq!((image.width(), image.height()), (24, 24));
+        assert_eq!(first_pixel(&image), [0xff, 0, 0, 0xff]);
     }
 
     #[test]
-    fn cache_hit_does_not_re_lookup() {
-        let mut cache = IconCache::new();
-        // Use an absolute path so the result is deterministic regardless of
-        // the system's installed icon themes.
-        let path = "/tmp/some-icon.png";
-        cache.resolve(path);
-        cache.resolve(path);
-        // Only one entry in cache regardless of how many times we ask.
-        assert_eq!(cache.cache_len(), 1);
+    fn zero_size_svg_is_refused() {
+        let zero = br#"<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0"/>"#;
+        assert!(decode(zero, 24).is_err());
     }
 
     #[test]
-    fn stale_miss_is_re_resolved() {
-        // A miss cached before MISS_RELOOKUP expires must be looked up again
-        // — otherwise a theme installed while pikr runs never resolves until
-        // restart. Observable via the entry's resolved_at advancing: the
-        // re-lookup of a still-missing name replaces the cached timestamp.
-        let mut cache = IconCache::new();
-        let t0 = std::time::Instant::now();
-        cache.cache.insert(
-            "zzz-no-such-icon".to_string(),
-            Resolution {
-                path: None,
-                resolved_at: t0,
-            },
-        );
-
-        // Fresh miss: served from cache, timestamp untouched.
-        cache.resolve_at("zzz-no-such-icon", t0 + std::time::Duration::from_secs(59));
-        assert_eq!(cache.cache["zzz-no-such-icon"].resolved_at, t0);
-
-        // Stale miss: re-resolved, so the timestamp moves to the lookup time.
-        let t1 = t0 + std::time::Duration::from_secs(61);
-        cache.resolve_at("zzz-no-such-icon", t1);
-        assert_ne!(
-            cache.cache["zzz-no-such-icon"].resolved_at, t0,
-            "a stale miss must be looked up again"
-        );
+    fn garbage_is_refused() {
+        assert!(decode(b"\x89PNG not-really-a-png", 24).is_err());
+        assert!(decode(b"not an image at all", 24).is_err());
     }
 
     #[test]
-    fn hit_is_served_forever_even_after_ttl() {
-        // Only misses expire; a resolved path stays cached for the session
-        // (file freshness on disk is file_bytes/rasterise_svg's stat key).
+    fn missing_file_is_none_and_not_cached() {
         let mut cache = IconCache::new();
-        let t0 = std::time::Instant::now();
-        let path = std::path::PathBuf::from("/tmp/some-icon.png");
-        cache.cache.insert(
-            "/tmp/some-icon.png".to_string(),
-            Resolution {
-                path: Some(path.clone()),
-                resolved_at: t0,
-            },
-        );
-        let later = t0 + std::time::Duration::from_secs(3600);
-        assert_eq!(cache.resolve_at("/tmp/some-icon.png", later), Some(path));
-        assert_eq!(cache.cache["/tmp/some-icon.png"].resolved_at, t0);
+        let dir = tempfile::tempdir().unwrap();
+        assert!(cache.image(&dir.path().join("nope.png"), 24).is_none());
+        assert_eq!(cache.decoded_len(), 0);
     }
 
     #[test]
-    fn different_names_cached_separately() {
+    fn decode_is_cached_per_file_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("icon.svg");
+        std::fs::write(&path, RED_SQUARE).unwrap();
         let mut cache = IconCache::new();
-        cache.resolve("/tmp/icon-a.png");
-        cache.resolve("/tmp/icon-b.png");
-        assert_eq!(cache.cache_len(), 2);
-    }
-
-    #[test]
-    fn fallback_used_when_primary_is_none() {
-        // Fallback path is absolute so the test is deterministic regardless
-        // of the system icon theme.
-        let mut cache = IconCache::new();
-        let fallback = abs("fallback.png");
-        let result = cache.resolve_or_fallback(None, &[&fallback]);
-        assert_eq!(result, Some(PathBuf::from(fallback)));
-    }
-
-    #[test]
-    fn fallback_used_when_primary_misses() {
-        // Primary is a bare name that almost certainly isn't installed
-        // (random suffix); fallback is an absolute path passthrough.
-        let mut cache = IconCache::new();
-        let fallback = abs("fallback.png");
-        let result = cache.resolve_or_fallback(Some("zzz-no-such-icon-xyz"), &[&fallback]);
-        assert_eq!(result, Some(PathBuf::from(fallback)));
-    }
-
-    #[test]
-    fn fallback_walks_chain_until_a_hit() {
-        // First entry is a bare name that won't resolve; second is an
-        // absolute path that always does.
-        let mut cache = IconCache::new();
-        let late = abs("late-fallback.png");
-        let result = cache.resolve_or_fallback(None, &["zzz-no-such-icon-xyz", &late]);
-        assert_eq!(result, Some(PathBuf::from(late)));
-    }
-
-    #[test]
-    fn fallback_returns_none_when_chain_exhausted() {
-        let mut cache = IconCache::new();
-        let result = cache.resolve_or_fallback(None, &["zzz-nope-1", "zzz-nope-2"]);
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn primary_wins_when_resolvable() {
-        let mut cache = IconCache::new();
-        let primary = abs("primary.png");
-        let result = cache.resolve_or_fallback(Some(&primary), &[&abs("fallback.png")]);
-        assert_eq!(result, Some(PathBuf::from(primary)));
-    }
-
-    #[test]
-    fn rasterise_missing_file_is_none() {
-        let mut cache = IconCache::new();
-        let result = cache.rasterise_svg(Path::new("/tmp/does-not-exist.svg"), 24);
-        assert!(result.is_none());
-        assert_eq!(cache.raster_cache_len(), 0);
-    }
-
-    #[test]
-    fn rasterise_simple_svg_round_trip() {
-        // Tiny inline SVG that resvg + tiny-skia can absolutely render.
-        let dir = std::env::temp_dir();
-        let path = dir.join("pikr-test-icon.svg");
-        std::fs::write(
-            &path,
-            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ff0000"/></svg>"##,
-        )
-        .unwrap();
-        let mut cache = IconCache::new();
-        let bytes = cache.rasterise_svg(&path, 24).expect("rasterise");
-        // PNG magic header.
-        assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
-        // Second call must hit the cache (no re-rasterise).
-        let bytes2 = cache.rasterise_svg(&path, 24).expect("cache hit");
-        assert!(Arc::ptr_eq(&bytes, &bytes2));
-        assert_eq!(cache.raster_cache_len(), 1);
-        std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn rasterise_zero_size_svg_returns_none() {
-        // A zero-sized SVG must not reach the scale division (`size_px / 0`
-        // = inf → tiny-skia garbage). resvg may reject the tree outright or
-        // parse it with a zero size — either way the result must be None.
-        let dir = std::env::temp_dir();
-        let path = dir.join("pikr-test-zero-size.svg");
-        std::fs::write(
-            &path,
-            r##"<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0"/>"##,
-        )
-        .unwrap();
-        let result = render_svg_to_png(&path, 24);
-        assert!(result.is_none());
-        std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn file_bytes_caches_and_dedupes() {
-        // The cache doesn't parse the bytes, so any content works.
-        let dir = std::env::temp_dir();
-        let path = dir.join("pikr-test-icon.png");
-        std::fs::write(&path, b"\x89PNG not-really-a-png").unwrap();
-        let mut cache = IconCache::new();
-        let bytes = cache.file_bytes(&path).expect("read");
-        // Second call must hit the cache (no re-read) — same Arc.
-        let bytes2 = cache.file_bytes(&path).expect("cache hit");
-        assert!(Arc::ptr_eq(&bytes, &bytes2));
-        assert_eq!(cache.file_cache_len(), 1);
-        std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn file_bytes_missing_file_is_none() {
-        let mut cache = IconCache::new();
-        let result = cache.file_bytes(Path::new("/tmp/does-not-exist.png"));
-        assert!(result.is_none());
-        assert_eq!(cache.file_cache_len(), 0);
-    }
-
-    #[test]
-    fn file_bytes_invalidates_on_mtime_change() {
-        // An icon replaced on disk while pikr runs must be re-read, not served
-        // from the session cache. Content changes with the SAME byte length, so
-        // only the pinned mtime distinguishes the versions.
-        let dir = std::env::temp_dir();
-        let path = dir.join("pikr-test-icon-replaced.png");
-        std::fs::write(&path, b"AAAA").unwrap();
-        let mut cache = IconCache::new();
-        let first = cache.file_bytes(&path).expect("read");
-        assert_eq!(&first[..], b"AAAA");
-
-        let t0 = std::time::SystemTime::now();
-        std::fs::write(&path, b"BBBB").unwrap();
-        pin_mtime(&path, t0 + std::time::Duration::from_millis(1));
-
-        let second = cache.file_bytes(&path).expect("re-read");
-        assert_ne!(
-            &second[..],
-            &first[..],
-            "changed mtime must re-read the file"
-        );
-        assert_eq!(&second[..], b"BBBB");
-        assert_eq!(
-            cache.file_cache_len(),
-            1,
-            "entry must be replaced, not duplicated"
-        );
-        std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn file_bytes_invalidates_on_len_change() {
-        // Same pinned mtime, different length: the len half of the key must
-        // invalidate on its own.
-        let dir = std::env::temp_dir();
-        let path = dir.join("pikr-test-icon-len.png");
-        std::fs::write(&path, b"AAAA").unwrap();
-        let mut cache = IconCache::new();
-        let first = cache.file_bytes(&path).expect("read");
-
-        let t0 = std::time::SystemTime::now();
-        std::fs::write(&path, b"BB").unwrap();
-        pin_mtime(&path, t0); // restore the original mtime — only len differs
-
-        let second = cache.file_bytes(&path).expect("re-read");
-        assert_ne!(
-            &second[..],
-            &first[..],
-            "changed length must re-read the file"
-        );
-        assert_eq!(&second[..], b"BB");
-        std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn rasterise_svg_invalidates_on_change() {
-        // A replaced SVG must re-rasterise: the old PNG bytes must not survive.
-        let dir = std::env::temp_dir();
-        let path = dir.join("pikr-test-icon-replaced.svg");
-        std::fs::write(
-            &path,
-            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ff0000"/></svg>"##,
-        )
-        .unwrap();
-        let mut cache = IconCache::new();
-        let first = cache.rasterise_svg(&path, 24).expect("rasterise");
-        assert_eq!(&first[..8], b"\x89PNG\r\n\x1a\n");
-
-        let t0 = std::time::SystemTime::now();
-        std::fs::write(
-            &path,
-            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#00ff00"/></svg>"##,
-        )
-        .unwrap();
-        pin_mtime(&path, t0 + std::time::Duration::from_millis(1));
-
-        let second = cache.rasterise_svg(&path, 24).expect("re-rasterise");
+        let first = cache.image(&path, 24).expect("decode");
+        let again = cache.image(&path, 24).expect("cache hit");
         assert!(
-            !Arc::ptr_eq(&first, &second),
-            "a changed SVG must re-rasterise, not return the cached PNG"
+            Arc::ptr_eq(&first, &again),
+            "same version must not re-decode"
         );
-        assert_eq!(
-            cache.raster_cache_len(),
-            1,
-            "entry must be replaced, not duplicated"
-        );
-        std::fs::remove_file(&path).ok();
+
+        // Same length, different content: only the pinned mtime moves.
+        let t0 = std::time::SystemTime::now();
+        std::fs::write(&path, GREEN_SQUARE).unwrap();
+        pin_mtime(&path, t0 + Duration::from_millis(1));
+        let second = cache.image(&path, 24).expect("re-decode");
+        assert_eq!(first_pixel(&second), [0, 0xff, 0, 0xff]);
+        assert_eq!(cache.decoded_len(), 1, "entry replaced, not duplicated");
+    }
+
+    #[test]
+    fn a_new_size_decodes_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("icon.svg");
+        std::fs::write(&path, RED_SQUARE).unwrap();
+        let mut cache = IconCache::new();
+        assert_eq!(cache.image(&path, 24).unwrap().width(), 24);
+        assert_eq!(cache.image(&path, 48).unwrap().width(), 48);
     }
 
     #[test]
     fn generic_fallback_names_starts_with_application_x_executable() {
-        // The conventional name comes first; later entries are fallbacks
-        // for systems that don't ship the canonical one.
         assert_eq!(GENERIC_FALLBACK_NAMES[0], "application-x-executable");
-        assert!(!GENERIC_FALLBACK_NAMES.is_empty());
     }
 
     #[test]
@@ -633,14 +252,6 @@ mod tests {
     fn name_lookup_returns_some_for_common_icon() {
         let mut cache = IconCache::new();
         // "utilities-terminal" is present in virtually every hicolor theme.
-        let result = cache.resolve("utilities-terminal");
-        assert!(
-            result.is_some(),
-            "expected system icon lookup to succeed for 'utilities-terminal'"
-        );
-        // Second call must come from cache.
-        let result2 = cache.resolve("utilities-terminal");
-        assert_eq!(result, result2);
-        assert_eq!(cache.cache_len(), 1);
+        assert!(cache.resolve(Some("utilities-terminal"), 24, 1).is_some());
     }
 }

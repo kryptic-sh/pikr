@@ -107,7 +107,7 @@ impl Entry {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Payload {
     /// Print this string to stdout.
     Stdout(String),

@@ -10,10 +10,32 @@ and this project adheres to
 
 ### Changed
 
+- **pikr is drawn with crcbl instead of floem.** The window, input, layout and
+  rendering, icon-theme lookup and image decoding now come from
+  [crcbl](https://github.com/kryptic-sh/crcbl); floem, its winit fork, wgpu,
+  resvg, `freedesktop-icons` and `image` are gone. Rendering needs Vulkan on
+  Linux and FreeBSD (Mesa's lavapipe works without a GPU), Direct3D 12 on
+  Windows and Metal on macOS. With no usable GPU pikr prints why and exits
+  non-zero.
 - **Wayland: pikr opens on the layer-shell `overlay` layer instead of `top`**,
   for both the picker and `--message`. It now shows above a fullscreen app
   rather than opening hidden behind it. Compositor rules that match the `pikr`
   namespace are unaffected.
+- **No more "requires a Wayland compositor" exit.** Without layer-shell (GNOME
+  Mutter) or on X11, pikr opens as an ordinary window.
+- The theme's `font` is found through fontconfig (`fc-match`) on Linux and
+  FreeBSD, and on macOS where fontconfig is installed, and through the
+  installed-fonts registry on Windows. A family that isn't found is drawn in
+  crcbl's built-in sans-serif face.
+- Characters the theme font lacks (CJK, symbols, emoji) draw as a missing-glyph
+  box until crcbl's per-glyph font fallback lands; colour emoji, and shaping for
+  scripts such as Arabic, follow in later crcbl releases.
+- Windows: the panel is opaque with square outer corners until crcbl supports
+  per-pixel window transparency there.
+- SVG icons are drawn by crcbl's own renderer. An icon using a feature it does
+  not draw yet (SVG text, embedded images) shows the generic application icon
+  instead. XPM icons, which pikr never drew, still aren't.
+- The minimum supported Rust version is 1.98.
 
 ## [0.8.13] - 2026-09-15
 

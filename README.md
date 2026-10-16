@@ -156,14 +156,18 @@ font_size = 14.0
 
 ## Requirements
 
-Requires a Wayland compositor advertising the `wlr-layer-shell-unstable-v1`
-protocol (Hyprland, sway, niri, river, wayfire, …). GNOME Mutter does not
-advertise the protocol — use `--no-layer-shell` for a regular Wayland window.
-X11 is not supported.
+A GPU driver: Vulkan on Linux and FreeBSD (Mesa's lavapipe is enough without a
+GPU), Direct3D 12 on Windows, Metal on macOS.
+
+On Wayland, pikr opens as a centred overlay panel on compositors with the
+`wlr-layer-shell-unstable-v1` protocol (Hyprland, sway, niri, river, wayfire,
+…), above fullscreen windows and holding the keyboard. Elsewhere — GNOME Mutter,
+X11 — it opens as an ordinary window.
 
 ## Architecture
 
-Built on [floem](https://crates.io/crates/floem) (winit + vello), Wayland-only.
+Built on [crcbl](https://github.com/kryptic-sh/crcbl): its window shell, GPU
+layer, UI tree and image decoders.
 
 ## Contributing
 

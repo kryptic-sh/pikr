@@ -48,16 +48,6 @@ impl Pikr {
             .env("XDG_CONFIG_HOME", sway.config_dir.to_str().unwrap())
             .env("XDG_STATE_HOME", sway.state_dir.to_str().unwrap())
             .envs(env.iter().copied())
-            // Force deterministic software rendering. CI runners have no usable
-            // GPU; without this, Mesa falls back to ZINK (GL-on-Vulkan) and
-            // wgpu hangs when the Vulkan ICD is incompatible
-            // (`VK_ERROR_INCOMPATIBLE_DRIVER`), so pikr never renders or exits
-            // and the test times out. `WGPU_BACKEND=gl` + `LIBGL_ALWAYS_SOFTWARE`
-            // + llvmpipe give a GPU-independent GL path. Real users are
-            // unaffected (test harness only).
-            .env("WGPU_BACKEND", "gl")
-            .env("LIBGL_ALWAYS_SOFTWARE", "1")
-            .env("GALLIUM_DRIVER", "llvmpipe")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 

@@ -1,7 +1,6 @@
-//! Selection state machine with reactive floem signals.
+//! The picker's editing and selection state.
 
 use clap::ValueEnum;
-use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum VimMode {
@@ -12,186 +11,94 @@ pub enum VimMode {
     Visual,
 }
 
-/// Reactive state shared across the picker view tree.
-///
-/// All fields are `RwSignal`s so the floem view tree subscribes automatically.
-#[derive(Clone)]
+/// What the user has typed and selected, independent of how it is drawn.
+#[derive(Debug, Clone)]
 pub struct PickerState {
-    pub query: RwSignal<String>,
+    pub query: String,
     /// Char-index (codepoint count) into `query` where the editing caret
     /// sits. `0..=query.chars().count()`. Invariant: kept in range by every
     /// handler that mutates `query`.
-    pub query_cursor: RwSignal<usize>,
-    pub selected: RwSignal<usize>,
-    pub vim_mode: RwSignal<VimMode>,
+    pub query_cursor: usize,
+    pub selected: usize,
+    pub vim_mode: VimMode,
     /// Accumulated count prefix for motions like `5j`.
-    pub count: RwSignal<Option<usize>>,
+    pub count: Option<usize>,
     /// Ex command buffer (`None` = not in ex mode).
-    pub ex_buf: RwSignal<Option<String>>,
+    pub ex_buf: Option<String>,
     /// Visual-mode anchor (the row where `v`/`V`/`<C-v>` was pressed). The
     /// selected range is `min(anchor, selected) ..= max(anchor, selected)`.
     /// `None` outside Visual mode.
-    pub visual_anchor: RwSignal<Option<usize>>,
+    pub visual_anchor: Option<usize>,
 }
 
 impl PickerState {
     pub fn new() -> Self {
         Self {
-            query: RwSignal::new(String::new()),
-            query_cursor: RwSignal::new(0),
-            selected: RwSignal::new(0),
+            query: String::new(),
+            query_cursor: 0,
+            selected: 0,
             // Start in Insert so the user can type a query immediately on launch.
             // Esc → Normal for j/k/G/etc. nav over the result list.
-            vim_mode: RwSignal::new(VimMode::Insert),
-            visual_anchor: RwSignal::new(None),
-            count: RwSignal::new(None),
-            ex_buf: RwSignal::new(None),
+            vim_mode: VimMode::Insert,
+            visual_anchor: None,
+            count: None,
+            ex_buf: None,
         }
     }
 
-    /// Clamp `selected` to `[0, max)`. Skips `.set` when the value already
-    /// matches so we don't fan out a spurious subscriber dispatch (floem's
-    /// `set` is synchronous and triggers every subscriber even on no-op).
-    pub fn clamp_selected(&self, max: usize) {
-        let cur = self.selected.get_untracked();
-        let next = if max == 0 { 0 } else { cur.min(max - 1) };
-        if cur != next {
-            self.selected.set(next);
-        }
+    /// Clamp `selected` to `[0, max)`.
+    pub fn clamp_selected(&mut self, max: usize) {
+        self.selected = if max == 0 {
+            0
+        } else {
+            self.selected.min(max - 1)
+        };
     }
 
     /// Consume and return the current count prefix (defaults to 1).
-    pub fn take_count(&self) -> usize {
-        let n = self.count.get().unwrap_or(1);
-        self.count.set(None);
-        n
+    pub fn take_count(&mut self) -> usize {
+        self.count.take().unwrap_or(1)
     }
 
     /// A mode switch rebuilds the entry list and drops selection state; it
     /// must also exit Visual and clear any count prefix. Leaving Visual armed
     /// with a stale anchor made the next Enter execute a range of the NEW
     /// mode's list (the `:mode`-from-Visual multi-launch bug).
-    pub fn reset_after_mode_switch(&self) {
-        self.vim_mode.set(VimMode::Normal);
-        self.visual_anchor.set(None);
-        self.count.set(None);
+    pub fn reset_after_mode_switch(&mut self) {
+        self.vim_mode = VimMode::Normal;
+        self.visual_anchor = None;
+        self.count = None;
     }
 
     /// Push a digit into the count prefix.
-    pub fn push_count_digit(&self, d: u32) {
-        let cur = self.count.get().unwrap_or(0);
+    pub fn push_count_digit(&mut self, d: u32) {
+        let cur = self.count.unwrap_or(0);
         // Saturate instead of wrapping: a pathological multi-digit count
         // prefix must not silently wrap back to a small number in release.
         let next = cur.saturating_mul(10).saturating_add(d as usize);
-        self.count.set(Some(next));
+        self.count = Some(next);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use floem::reactive::Effect;
-    use std::cell::Cell;
-    use std::rc::Rc;
-    use std::sync::{Arc, Mutex};
 
-    /// Regression for the no-results UI hang (2026-05-16). `rerank` was
-    /// holding a `Mutex<AppState>` guard while calling `clamp_selected(0)`,
-    /// which `selected.set(0)`. floem fires signal subscribers synchronously
-    /// inside `set`; those subscribers re-locked the same mutex → permanent
-    /// deadlock.
-    ///
-    /// We can't reproduce the exact UI subscriber graph in a unit test, but
-    /// we can reproduce the same pattern: lock a mutex, set a signal whose
-    /// subscriber locks the same mutex. WITHOUT `batch`, this would hang
-    /// the test thread forever. WITH `batch`, the subscriber's effect runs
-    /// AFTER the closure returns, by which time the guard is dropped.
-    ///
-    /// If a future refactor removes the `batch` wrap, this test deadlocks
-    /// (test-runner timeout surfaces the regression).
-    #[test]
-    fn signal_set_inside_held_mutex_does_not_deadlock_when_batched() {
-        let shared: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
-        let observed: Rc<Cell<u32>> = Rc::new(Cell::new(0));
-        let selected = RwSignal::new(0usize);
-
-        // Subscriber: when `selected` changes, the effect locks `shared` and
-        // bumps a counter. Floem fires this subscriber from inside the
-        // call that triggers the signal change.
-        {
-            let shared = Arc::clone(&shared);
-            let observed = observed.clone();
-            Effect::new(move |_| {
-                let _ = selected.get();
-                let mut g = shared.lock().unwrap();
-                *g += 1;
-                observed.set(*g);
-            });
-        }
-        // create_effect fires once at registration. With the lock free at
-        // that point, the subscriber's counter is bumped to 1.
-        assert_eq!(observed.get(), 1);
-
-        // Production-shaped critical section: hold the mutex, set the signal.
-        // Without `batch`, the subscriber would try to re-lock the held
-        // mutex and the test thread would hang here (std::sync::Mutex is
-        // non-reentrant).
-        Effect::batch(|| {
-            let g = shared.lock().unwrap();
-            // With batch, signal dispatch is queued; the closure returns
-            // and the guard drops before the subscriber actually runs.
-            selected.set(1);
-            assert_eq!(*g, 1);
-        });
-
-        // After batch returns, the subscriber has run with the lock free.
-        assert_eq!(observed.get(), 2);
-    }
-
-    /// `clamp_selected(0)` when `selected` is already 0 must not fire the
-    /// signal — otherwise every "no matches" rerank cascades a needless
-    /// subscriber dispatch (status bar count, virtual_stack, etc).
-    #[test]
-    fn clamp_selected_zero_is_noop_when_already_zero() {
-        let st = PickerState::new();
-        st.selected.set(0);
-
-        let count = Rc::new(Cell::new(0u32));
-        {
-            let count = count.clone();
-            let sel = st.selected;
-            Effect::new(move |_| {
-                let _ = sel.get();
-                count.set(count.get() + 1);
-            });
-        }
-        // Initial registration fire.
-        let baseline = count.get();
-        st.clamp_selected(0);
-        assert_eq!(
-            count.get(),
-            baseline,
-            "clamp_selected(0) on already-0 selected must not refire subscribers"
-        );
-    }
-
-    /// Clamping past-the-end pushes selected to max-1 and DOES fire (the
-    /// value actually changed).
     #[test]
     fn clamp_selected_past_end_moves_to_last() {
-        let st = PickerState::new();
-        st.selected.set(10);
+        let mut st = PickerState::new();
+        st.selected = 10;
         st.clamp_selected(3);
-        assert_eq!(st.selected.get_untracked(), 2);
+        assert_eq!(st.selected, 2);
     }
 
     /// Empty match list with non-zero selected must collapse to 0.
     #[test]
     fn clamp_selected_zero_collapses_nonzero() {
-        let st = PickerState::new();
-        st.selected.set(5);
+        let mut st = PickerState::new();
+        st.selected = 5;
         st.clamp_selected(0);
-        assert_eq!(st.selected.get_untracked(), 0);
+        assert_eq!(st.selected, 0);
     }
 
     #[test]
@@ -199,24 +106,24 @@ mod tests {
         // Regression for the `:mode`-from-Visual bug: a mode switch must
         // leave the picker in Normal with no anchor, or the next Enter
         // executes a range of the new mode's list.
-        let st = PickerState::new();
-        st.vim_mode.set(VimMode::Visual);
-        st.visual_anchor.set(Some(5));
-        st.count.set(Some(usize::MAX));
+        let mut st = PickerState::new();
+        st.vim_mode = VimMode::Visual;
+        st.visual_anchor = Some(5);
+        st.count = Some(usize::MAX);
         st.reset_after_mode_switch();
-        assert_eq!(st.vim_mode.get(), VimMode::Normal);
-        assert_eq!(st.visual_anchor.get(), None);
-        assert_eq!(st.count.get(), None);
+        assert_eq!(st.vim_mode, VimMode::Normal);
+        assert_eq!(st.visual_anchor, None);
+        assert_eq!(st.count, None);
     }
 
     /// Pathological count prefixes (dozens of digits) saturate at
     /// `usize::MAX` instead of silently wrapping back to a small number.
     #[test]
     fn push_count_digit_saturates_on_overflow() {
-        let st = PickerState::new();
+        let mut st = PickerState::new();
         for _ in 0..25 {
             st.push_count_digit(9);
         }
-        assert_eq!(st.count.get(), Some(usize::MAX));
+        assert_eq!(st.count, Some(usize::MAX));
     }
 }

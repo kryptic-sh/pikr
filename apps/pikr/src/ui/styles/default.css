@@ -1,73 +1,278 @@
-/* pikr default stylesheet.
+/* pikr default stylesheet, for crcbl-ui.
  *
- * Theme colour placeholders are substituted at runtime in
- * `ui::css::build_stylesheet(&Theme)`. Only static styling lives here;
- * reactive bits (per-row selection bg, vim-mode chip background, match
- * highlight colours) stay inline in `ui/view.rs`.
+ * Theme placeholders are filled at runtime by
+ * `ui::theme_css::stylesheet_source(&Theme)`. State that changes per frame
+ * (the cursor row, the Visual range, the vim-mode chip, the caret's blink)
+ * is a class the view sets, styled here.
+ *
+ * crcbl-ui's selectors are compounds joined by " " or ">", and of two rules
+ * in the same tier the later one wins: state rules come after base rules.
  */
 
-/* Outermost container — opaque framebuffer fill behind the rounded panel.
- * Keeps the corner clipping clean so the compositor's window-corner
- * rounding doesn't leak the transparent framebuffer past the radius. */
-.panel-outer {
-  width: 100%;
-  height: 100%;
-  background-color: {bg};
-}
-
-/* Rounded inner panel — main pikr body. */
+/* Rounded panel — the whole window. Outside its corners the window is
+ * transparent where the platform composites alpha. */
 .panel {
   width: 100%;
   height: 100%;
+  flex-direction: column;
+  padding: 10px;
   background-color: {bg};
   border: 1.5px solid {accent};
   border-radius: 10px;
+  color: {fg};
+  font-family: {font_family};
+  font-size: {font_size}px;
 }
 
-/* Vertical layout strip inside the panel: input → results → ex → status. */
-.panel-stack {
-  width: 100%;
-  height: 100%;
-  padding: 10px;
-}
-
-/* Query input row sitting at the top of the panel. */
+/* Query input row at the top of the panel. */
 .input-row {
-  width: 100%;
   height: 36px;
+  flex-shrink: 0;
+  flex-direction: row;
+  align-items: center;
   padding: 0 14px;
+  margin: 0 0 8px 0;
   background-color: {selected_bg};
   border-radius: 6px;
-  margin: 0 0 8px 0;
+  overflow: hidden;
+}
+
+.input-row:hover {
+  background-color: {hover_bg};
+}
+
+/* Prompt prefix (e.g. ">" or "name:"). */
+.prompt {
+  color: {accent};
+  white-space: nowrap;
+}
+
+/* The query: its text and the caret, in a row. */
+.query {
+  flex-direction: row;
   align-items: center;
+  margin: 0 0 0 8px;
+  white-space: nowrap;
+}
+
+/* Insert-mode caret: a thin bar between characters that takes no width,
+ * so the text never moves as the caret does. */
+.caret {
+  width: 2px;
+  height: {font_size}px;
+  margin: 0 -2px 0 0;
+}
+
+/* Normal / Visual block caret: the character under the caret, inverted. */
+.caret-block.blink-on {
+  background-color: {accent};
+  color: {bg};
+}
+
+.caret.blink-on {
+  background-color: {accent};
+}
+
+/* The result list and its scrollbar, side by side, taking the space left. */
+.results {
+  flex-grow: 1;
+  flex-basis: 0;
+  min-height: 0;
+  flex-direction: row;
+}
+
+list {
+  flex-grow: 1;
+  height: 100%;
+  border-width: 0;
+  background: transparent;
+  color: {fg};
+}
+
+.list-row {
+  padding: 0;
+}
+
+list .list-row:hover {
+  background: transparent;
+}
+
+list .list-row:focus {
+  outline: none;
+}
+
+scrollbar {
+  background: transparent;
+}
+
+.scroll-handle {
+  background-color: {muted};
+  border-radius: 3px;
+}
+
+scrollbar > .scroll-handle:hover {
+  background-color: {accent};
+}
+
+/* One result row: 36px of row under a 4px gap. */
+.row {
+  width: 100%;
+  height: 36px;
+  margin: 4px 0 0 0;
+  flex-direction: row;
+  align-items: center;
+  padding: 0 14px;
+  border: 1.5px solid transparent;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.list-row:hover > .row {
+  background-color: {hover_bg};
+}
+
+.row.visual {
+  background-color: {visual_bg};
+}
+
+/* The cursor row: deeper background and the accent ring. Last, so it wins
+ * over hover and the Visual range. */
+.row.selected {
+  background-color: {selected_bg};
+  border-color: {accent};
+}
+
+/* App-icon slot — 24x24 px, right-gap 8 px before the label. White, so the
+ * icon is drawn untinted. */
+.icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  margin: 0 8px 0 0;
+  color: #ffffff;
+}
+
+.icon-slot {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  margin: 0 8px 0 0;
+}
+
+/* A label or description: runs of text, matched characters in the accent. */
+.label {
+  flex-direction: row;
+  flex-shrink: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.desc {
+  flex-direction: row;
+  flex-shrink: 1;
+  min-width: 0;
+  margin: 0 0 0 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  color: {muted};
+}
+
+.hl {
+  color: {accent};
+}
+
+.spacer {
+  flex-grow: 1;
+}
+
+/* Confirm card for `--kb-custom KEY=PROMPT`, at the right edge of the
+ * highlighted row. */
+.confirm-card {
+  flex-shrink: 0;
+  color: {bg};
+  background-color: {accent};
+  border-radius: 4px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+/* Empty-state row shown when there are no matches. */
+.empty-row {
+  width: 100%;
+  height: 36px;
+  margin: 4px 0 0 0;
+  flex-direction: row;
+  padding: 0 14px;
+  align-items: center;
+}
+
+.empty-row-text {
+  color: {muted};
+  white-space: nowrap;
+}
+
+/* `--loading` text, centred where the list will appear. */
+.loading {
+  flex-grow: 1;
+  flex-basis: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-text {
+  color: {muted};
 }
 
 /* Ex-command gutter between the result list and the status bar. */
 .ex-bar {
-  width: 100%;
   height: 22px;
+  flex-shrink: 0;
+  flex-direction: row;
+  align-items: center;
   padding: 0 14px;
+  margin: 8px 0 2px 0;
   background-color: {ex_bg};
   border-radius: 6px;
-  margin: 8px 0 2px 0;
-  align-items: center;
+  white-space: nowrap;
 }
 
-/* Status bar wrapper at the bottom of the panel. */
+/* Status bar at the bottom of the panel. */
 .status-bar {
-  width: 100%;
   height: 28px;
+  flex-shrink: 0;
+  flex-direction: row;
+  align-items: center;
   padding: 3px 14px;
   background-color: {status_bg};
   border-radius: 6px;
-  align-items: center;
 }
 
-/* Mode-name label sitting after the mode chip (e.g. "dmenu" / "drun"). */
+/* Vim-mode pill in the status bar. */
+.mode-chip {
+  color: {selected_bg};
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.mode-chip.insert {
+  background-color: {accent};
+}
+
+.mode-chip.normal {
+  background-color: {muted};
+}
+
+.mode-chip.visual {
+  background-color: {visual_chip_bg};
+}
+
+/* Mode-name label after the mode chip (e.g. "dmenu" / "drun"). */
 .mode-name {
   color: {muted};
-  font-family: {font_family};
-  font-size: {font_size}px;
+  margin: 0 0 0 10px;
 }
 
 /* Match-count pill on the right of the status bar (e.g. "1/3"). */
@@ -76,115 +281,18 @@
   background-color: {count_bg};
   border-radius: 4px;
   padding: 2px 8px;
-  font-family: {font_family};
-  font-size: {font_size}px;
 }
 
-/* App-icon slot — 24x24 px, right-gap 8 px before the label. */
-.icon {
-  width: 24px;
-  height: 24px;
-  margin: 0 8px 0 0;
-}
-
-/* Description text appended after the entry label. */
-.desc {
-  margin: 0 0 0 10px;
-}
-
-/* Confirm card for `--kb-custom KEY=PROMPT`, at the right edge of the
- * highlighted row. Visibility is reactive and stays inline. */
-.confirm-card {
-  color: {bg};
-  background-color: {accent};
-  border-radius: 4px;
-  padding: 2px 10px;
-  font-family: {font_family};
-  font-size: {font_size}px;
-}
-
-/* `--loading` text, centred where the list will appear. */
-.loading-text {
-  color: {muted};
-  font-family: {font_family};
-  font-size: {font_size}px;
-}
-
-/* Result-list row container. Border and bg are reactive and stay inline. */
-.row {
-  width: 100%;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 6px;
-  align-items: center;
-}
-
-/* Empty-state row wrapper shown when there are no matches. */
-.empty-row {
-  width: 100%;
-  height: 36px;
-  padding: 0 14px;
-  align-items: center;
-}
-
-/* Text label inside the empty-state row. */
-.empty-row-text {
-  color: {muted};
-  font-family: {font_family};
-  font-size: {font_size}px;
-}
-
-/* Scroll-bar handle pill. */
-.scroll-handle {
-  background-color: {muted};
-  border-radius: 3px;
-}
-
-/* Vim-mode pill in the status bar. bg is reactive and stays inline. */
-.mode-chip {
-  color: {selected_bg};
-  font-family: {font_family};
-  font-size: {font_size}px;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-/* Prompt prefix label (e.g. ">" or "name:") in the input row. */
-.prompt {
-  color: {accent};
-  font-family: {font_family};
-  font-size: {font_size}px;
-}
-
-/* Query text label in the input row. Margin-left separates it from prompt. */
-.query {
-  color: {fg};
-  font-family: {font_family};
-  font-size: {font_size}px;
-  margin: 0 0 0 8px;
-}
-
-/* Outermost container for the message modal — opaque bg fill, mirrors .panel-outer. */
-.message-modal-outer {
+/* The `--message` modal: the same panel chrome, the text centred. */
+.message {
   width: 100%;
   height: 100%;
-  background-color: {bg};
-}
-
-/* Rounded inner panel for the message modal — mirrors .panel chrome. */
-.message-modal {
-  width: 100%;
-  height: 100%;
-  background-color: {bg};
-  border: 1.5px solid {accent};
-  border-radius: 10px;
   padding: 10px;
   align-items: center;
   justify-content: center;
-}
-
-/* Message text label inside the modal. */
-.message-text {
+  background-color: {bg};
+  border: 1.5px solid {accent};
+  border-radius: 10px;
   color: {fg};
   font-family: {font_family};
   font-size: {font_size}px;

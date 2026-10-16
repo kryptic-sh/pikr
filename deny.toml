@@ -11,38 +11,7 @@ targets = [
 [advisories]
 version = 2
 yanked = "deny"
-ignore = [
-    # paste — pulled in transitively via floem / vello. No longer
-    # maintained but the API surface is closed and the crate has no known
-    # CVE. Tracked upstream; revisit when floem drops the dep.
-    "RUSTSEC-2024-0436",
-    # gtk-rs GTK3 bindings family — pulled transitively via
-    # jrmoulton/understory (a floem main dep). Upstream gtk-rs deprecated
-    # the GTK3 bindings in favour of GTK4. No CVE; revisit when the floem
-    # tree moves off the GTK3 generation.
-    "RUSTSEC-2024-0412",
-    "RUSTSEC-2024-0413",
-    "RUSTSEC-2024-0415",
-    "RUSTSEC-2024-0416",
-    "RUSTSEC-2024-0418",
-    "RUSTSEC-2024-0419",
-    "RUSTSEC-2024-0420",
-    # proc-macro-error — unmaintained, pulled transitively. No CVE.
-    "RUSTSEC-2024-0370",
-    # rustybuzz — unmaintained, pulled through Floem's resvg 0.46 (pikr
-    # itself is on resvg 0.48, which no longer uses rustybuzz). No CVE and
-    # no safe upgrade in the floem dependency line. Drop once floem main
-    # moves to resvg 0.48+ / harfrust.
-    "RUSTSEC-2026-0206",
-    # ttf-parser — unmaintained, pulled transitively via the floem font
-    # stack. No CVE, no safe upgrade published. Revisit with floem.
-    "RUSTSEC-2026-0192",
-    # bitmaps — unmaintained (repo archived 2026-05-03), pulled transitively
-    # via imbl 7 (floem's persistent vector; also a direct pikr dep). No CVE
-    # and no safe upgrade published. Revisit when the floem tree moves off
-    # imbl.
-    "RUSTSEC-2026-0247",
-]
+ignore = []
 
 [licenses]
 version = 2
@@ -73,13 +42,7 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
-    # Epic 4 — Wayland layer-shell support lives on forks of
-    # lapce/floem and rust-windowing/winit until the patches land upstream.
-    "https://github.com/mxaddict/floem.git",
-    "https://github.com/mxaddict/winit.git",
-    # Transitive deps of the current lapce/floem main that the
-    # layer-shell-port branch tracks: vger-rs (Vello SDF renderer) and
-    # jrmoulton/understory (box-tree / focus utilities).
-    "https://github.com/lapce/vger-rs",
-    "https://github.com/jrmoulton/understory",
+    # crcbl, pinned by rev until a crcbl release carries every crate pikr
+    # uses (see the workspace Cargo.toml).
+    "https://github.com/kryptic-sh/crcbl",
 ]

@@ -13,9 +13,6 @@ pub enum Key {
     /// The text the key produces under the current layout and modifiers.
     /// Space arrives here as `" "`.
     Character(String),
-    /// A key pikr binds nothing to. It still reaches the handlers so that a
-    /// modal state (a confirm card, the ex prompt) can swallow it.
-    Other,
 }
 
 /// The named keys pikr binds, in the keymap or through `--kb-custom`.

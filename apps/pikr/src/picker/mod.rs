@@ -9,6 +9,7 @@ pub mod keys;
 pub mod keyspec;
 pub mod matcher;
 pub mod query_text;
+pub mod session;
 pub mod state;
 
 use std::path::{Path, PathBuf};

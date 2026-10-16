@@ -7,9 +7,6 @@
 // Linux / macOS.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 #![deny(unsafe_code)]
-// floem's reactive primitives (RwSignal etc.) are intentionally single-thread
-// and not Send+Sync. Arc<Mutex<AppState>> holding them is deliberate.
-#![allow(clippy::arc_with_non_send_sync)]
 
 mod app;
 mod cli;
@@ -31,22 +28,14 @@ fn main() -> Result<()> {
     // on all non-Windows targets. See `console_attach.rs` for the rationale.
     console_attach::attach_parent_console();
 
-    // Default filter quiets two chatty deps that emit benign WARNs on every
-    // startup:
-    //   - `usvg` complains about `clip-path: none` / `marker-*: none` and
-    //     missing exotic font-families on icons that still render fine.
-    //   - `wgpu_hal` notes missing Vulkan validation layers and an init-time
-    //     GLES context re-init under Wayland; neither affects runtime.
-    // Users can opt back in with `RUST_LOG=usvg=warn` etc.
     // Logs go to stderr so stdout stays exclusively the picker payload
-    // (the dmenu-style emit). Without this, every wgpu / floem trace line
-    // ends up in the consumer's stdin pipe alongside the actual selection.
+    // (the dmenu-style emit). Without this, every trace line would end up in
+    // the consumer's stdin pipe alongside the actual selection.
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                tracing_subscriber::EnvFilter::new("warn,usvg=error,wgpu_hal=error")
-            }),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
         )
         .init();
 

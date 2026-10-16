@@ -5,9 +5,9 @@
 
 use crate::config::Theme;
 
-/// `default.css` with every `{placeholder}` replaced from `theme`. Computed
-/// colours (`ex_bg`, `status_bg`, `count_bg`) mirror the `blend()` calls that
-/// were inline in `ui/view.rs` before the CSS migration.
+/// `default.css` with every `{placeholder}` replaced from `theme`. The
+/// derived colours blend two theme colours, as the floem view's `blend()`
+/// calls did.
 pub fn stylesheet_source(theme: &Theme) -> String {
     let accent = parse_hex(&theme.accent);
     let muted = parse_hex(&theme.muted);
@@ -16,6 +16,11 @@ pub fn stylesheet_source(theme: &Theme) -> String {
     let ex_bg = blend_hex(muted, selected_bg, 0.15);
     let status_bg = ex_bg;
     let count_bg = blend_hex(accent, selected_bg, 0.25);
+    // Mouse hover: a light accent tint, distinct from the cursor row.
+    let hover_bg = blend_hex(accent, selected_bg, 0.18);
+    // The Visual range: toward the accent, still distinct from the cursor row.
+    let visual_bg = blend_hex(accent, selected_bg, 0.35);
+    let visual_chip_bg = blend_hex(accent, muted, 0.5);
 
     include_str!("styles/default.css")
         .replace("{bg}", &theme.bg)
@@ -26,8 +31,23 @@ pub fn stylesheet_source(theme: &Theme) -> String {
         .replace("{ex_bg}", &hex(ex_bg))
         .replace("{status_bg}", &hex(status_bg))
         .replace("{count_bg}", &hex(count_bg))
-        .replace("{font_family}", &theme.font)
+        .replace("{hover_bg}", &hex(hover_bg))
+        .replace("{visual_bg}", &hex(visual_bg))
+        .replace("{visual_chip_bg}", &hex(visual_chip_bg))
+        .replace("{font_family}", &font_family(&theme.font))
         .replace("{font_size}", &theme.font_size.to_string())
+}
+
+/// The theme's family as a CSS `font-family` list: quoted, since family
+/// names have spaces, and falling back to crcbl's built-in sans-serif face
+/// when no font is registered under it. Quotes and backslashes are dropped
+/// rather than escaped; no real family name has one.
+fn font_family(family: &str) -> String {
+    let name: String = family
+        .chars()
+        .filter(|c| !matches!(c, '"' | '\\'))
+        .collect();
+    format!("\"{name}\", sans-serif")
 }
 
 fn parse_hex(s: &str) -> u32 {
@@ -79,5 +99,14 @@ mod tests {
         let css = stylesheet_source(&theme);
         assert!(css.contains(&theme.bg), "bg {} missing", theme.bg);
         assert!(css.contains(&theme.font), "font {} missing", theme.font);
+    }
+
+    #[test]
+    fn font_family_is_quoted_with_a_fallback() {
+        assert_eq!(
+            font_family("Hack Nerd Font"),
+            "\"Hack Nerd Font\", sans-serif"
+        );
+        assert_eq!(font_family("Bad\"Name"), "\"BadName\", sans-serif");
     }
 }

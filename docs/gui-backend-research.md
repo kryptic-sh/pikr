@@ -1,8 +1,10 @@
 # GUI Backend Research
 
-_Status: decided on 2026-10-15 — Pikr migrates to crcbl. Research shelved on
-2026-08-04; the alternatives below are kept as the record of what was
-considered._
+_Status: done on 2026-10-16 — Pikr runs on crcbl. The owner skipped the
+disposable spike (step 3) and had the port land directly, dropping resvg at the
+same time; what is still waiting on crcbl is in [`backlog.md`](backlog.md).
+Decided on 2026-10-15; research shelved on 2026-08-04. The alternatives below
+are kept as the record of what was considered._
 
 ## Decision: crcbl
 
@@ -68,10 +70,11 @@ tracked in [`backlog.md`](backlog.md).
    `picker::app_state`, and the theme-filled stylesheet source. Making the
    picker state plain is left to the port (see the backlog).
 3. Build a disposable crcbl spike that passes the checklist under "Prototype
-   acceptance" below.
+   acceptance" below. Skipped: the owner chose to port directly (2026-10-16).
 4. Port the picker and `--message` windows to crcbl. Then drop `floem`, the
    `[patch.crates-io]` fork entries, `imbl`, and, if crcbl's clipboard reads the
-   current text on Win32, `arboard`.
+   current text on Win32, `arboard`. Done on 2026-10-16, except `arboard`, which
+   stays: crcbl's Win32 clipboard read is still unconfirmed.
 
 ## Decision constraints
 

@@ -200,8 +200,8 @@ fn hicon_to_png(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option
 /// Steps:
 /// 1. `GetObjectW` — reads width / height from the `BITMAP` struct.
 /// 2. `GetDIBits`  — copies pixel data as 32 bpp BGRA, top-down.
-/// 3. BGRA → RGBA swap in-place.
-/// 4. Encode with `image::RgbaImage` → PNG bytes.
+/// 3. BGRA → RGBA through `crcbl_image::raw::convert`.
+/// 4. Encode with `crcbl_image::png::encode` → PNG bytes.
 ///
 /// Leaves `hbm` alive; the caller owns it. Returns `None` on any step failure.
 fn hbitmap_to_png(hbm: HBITMAP) -> Option<Vec<u8>> {
@@ -242,7 +242,7 @@ fn hbitmap_to_png(hbm: HBITMAP) -> Option<Vec<u8>> {
     // --- Step 2: GetDIBits — fills pixels as 32 bpp BGRA, top-down ---
     //
     // Negative biHeight forces top-down scan order (row 0 = top of image),
-    // which matches `image::RgbaImage::from_raw` expectations.
+    // which `RowOrder::TopDown` below declares.
     let mut pixels: Vec<u8> = vec![0u8; len];
 
     let mut bmi = BITMAPINFO {
@@ -282,19 +282,22 @@ fn hbitmap_to_png(hbm: HBITMAP) -> Option<Vec<u8>> {
         return None;
     }
 
-    // --- Step 3: BGRA → RGBA ---
-    // `GetDIBits` returns pixels in BGRA order (Windows GDI convention);
-    // `image::RgbaImage` expects RGBA.  Swap B ↔ R channels in-place.
-    for px in pixels.as_chunks_mut::<4>().0 {
-        px.swap(0, 2); // B ↔ R
-    }
-
-    // --- Step 4: Encode as PNG ---
-    use image::ImageFormat;
-    let img = image::RgbaImage::from_raw(width, height, pixels)?;
-    let mut buf = std::io::Cursor::new(Vec::new());
-    img.write_to(&mut buf, ImageFormat::Png).ok()?;
-    Some(buf.into_inner())
+    // --- Steps 3 and 4: BGRA → RGBA, then PNG ---
+    // The alpha bytes are taken as they come, straight and never replaced,
+    // as this path has always read them.
+    use crcbl_image::raw::{AllZeroAlpha, Alpha, ChannelOrder, RawPixels, RowOrder};
+    let raw = RawPixels {
+        width,
+        height,
+        stride: width as usize * 4,
+        order: ChannelOrder::Bgra,
+        rows: RowOrder::TopDown,
+        alpha: Alpha::Straight,
+        all_zero_alpha: AllZeroAlpha::Transparent,
+        data: &pixels,
+    };
+    let image = crcbl_image::raw::convert(&raw, &crcbl_image::Limits::DEFAULT).ok()?;
+    crcbl_image::png::encode(&image).ok()
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

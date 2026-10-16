@@ -4,13 +4,10 @@
 
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-
-use floem::reactive::{SignalGet, SignalUpdate};
+use std::sync::Arc;
 
 use crate::cli::Mode as CliMode;
-use crate::config::Theme;
-use crate::modes::{self, Entry};
+use crate::modes::Entry;
 use crate::picker::input::{Key, Modifiers, NamedKey};
 use crate::picker::keys::Action;
 use crate::picker::matcher::{Match, Matcher};
@@ -103,7 +100,6 @@ pub struct AppState {
     pub cli_mode: CliMode,
     pub prompt: String,
     pub max_results: usize,
-    pub theme: Theme,
     pub matcher: Matcher,
     /// When true, the query bar renders each character as ● (U+25CF) instead
     /// of the actual glyph. The underlying `query` signal still holds the
@@ -118,26 +114,14 @@ pub struct AppState {
     /// Precomputed expr → result for the calc-history entries, built once at
     /// startup (see modes::calc::precompute).
     pub calc_results: HashMap<String, String>,
-    /// XDG icon-theme lookup cache. Populated lazily as rows scroll into
-    /// view; icons are picker-only (message_view doesn't use it).
-    pub icons: Arc<Mutex<crate::picker::icons::IconCache>>,
-    /// Parsed default stylesheet with theme colours substituted. Migrated
-    /// `.style(...)` sites use `ui::css::apply` against this sheet to pick
-    /// up declarative rules; reactive sites still chain inline.
-    pub stylesheet: Arc<crate::ui::css::Sheet>,
     /// `--kb-custom` bindings, in flag order. Checked before the vim keymap;
     /// binding N accepts the selection and exits `KB_CUSTOM_EXIT_BASE + N`.
     pub kb_custom: Vec<crate::picker::keyspec::KbCustom>,
-    /// `--loading` text, shown in place of the list until stdin closes.
-    pub loading: Option<String>,
-    /// Entries still being read from stdin (`--loading`). Taken once by
-    /// `picker_view`, which swaps them in when they arrive.
-    pub pending_entries: Option<std::sync::mpsc::Receiver<modes::dmenu::LoadedEntries>>,
 }
 
 impl AppState {
     pub fn rerank(&mut self) {
-        let query = self.picker.query.get();
+        let query = self.picker.query.clone();
         tracing::debug!(
             mode = ?self.cli_mode,
             query_len = query.chars().count(),
@@ -323,9 +307,9 @@ impl AppState {
             None => Vec::new(),
         };
         self.usage_keys = crate::picker::frecency::entry_keys(&self.entries);
-        self.picker.query.set(String::new());
-        self.picker.query_cursor.set(0);
-        self.picker.selected.set(0);
+        self.picker.query.clear();
+        self.picker.query_cursor = 0;
+        self.picker.selected = 0;
         self.picker.reset_after_mode_switch();
         self.rerank();
     }
@@ -352,16 +336,15 @@ pub(crate) fn move_down_selection(cur: usize, n: usize, total: usize) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::modes::Payload;
     use std::cell::Cell;
 
     /// An `AppState` with in-memory usage/history and no disk state, for
     /// driving `rerank` without a window.
-    fn app_state(cli_mode: CliMode, labels: &[&str], password: bool) -> AppState {
+    pub(crate) fn app_state(cli_mode: CliMode, labels: &[&str], password: bool) -> AppState {
         let entries: Vec<Arc<Entry>> = labels.iter().map(|l| Arc::new(Entry::stdout(*l))).collect();
-        let theme = crate::config::Theme::default();
         AppState {
             picker: crate::picker::state::PickerState::new(),
             usage_keys: crate::picker::frecency::entry_keys(&entries),
@@ -371,22 +354,17 @@ mod tests {
             cli_mode,
             prompt: String::new(),
             max_results: 256,
-            stylesheet: Arc::new(crate::ui::css::build_stylesheet(&theme)),
-            theme,
             matcher: crate::picker::matcher::Matcher::new(),
             password,
             usage: Default::default(),
             history: Default::default(),
             calc_results: Default::default(),
-            icons: Arc::new(Mutex::new(crate::picker::icons::IconCache::new())),
             kb_custom: Vec::new(),
-            loading: None,
-            pending_entries: None,
         }
     }
 
     fn ranked_with_query(mut state: AppState, query: &str) -> AppState {
-        state.picker.query.set(query.to_owned());
+        state.picker.query = query.to_owned();
         state.rerank();
         state
     }

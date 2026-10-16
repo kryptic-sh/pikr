@@ -49,10 +49,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
-      # System deps for transitive gtk-rs / glib-sys build scripts pulled
-      # in via current lapce/floem main (jrmoulton/understory). Linux only.
-      - if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxkbcommon-dev
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
@@ -92,9 +88,6 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
-      # See clippy job for rationale on the gtk-rs / glib-sys system deps.
-      - if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxkbcommon-dev
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
@@ -108,7 +101,7 @@ jobs:
     name: smoke ${{ matrix.os }}
     # CLI-only smoke: build pikr in release, run `--version` and `--help`,
     # assert exit 0. Catches link errors, missing runtime libs (VCRUNTIME on
-    # Windows, dyld load on macOS, libgtk on Linux) and panic-on-init bugs
+    # Windows, dyld load on macOS) and panic-on-init bugs
     # without standing up a display server. Runs on every PR push, so a
     # crash that only manifests on macOS/Windows fails review BEFORE merge —
     # filling the gap between Linux-only `test` and the no-runtime build matrix.
@@ -119,9 +112,6 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
-      - name: Install build deps (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxkbcommon-dev
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
@@ -188,10 +178,9 @@ jobs:
     # continue-on-error is gone.
     steps:
       - uses: actions/checkout@v6
-      # `mesa-utils` + `libgl1-mesa-dri` pull in llvmpipe so the harness's
-      # software-GL path (WGPU_BACKEND=gl + LIBGL_ALWAYS_SOFTWARE) has a driver
-      # to load on runners with no usable GPU.
-      - run: sudo apt-get update && sudo apt-get install -y sway wtype libgtk-3-dev libxkbcommon-dev libgl1-mesa-dri mesa-utils
+      # `mesa-vulkan-drivers` installs lavapipe, the Vulkan software
+      # rasteriser pikr renders through on runners with no usable GPU.
+      - run: sudo apt-get update && sudo apt-get install -y sway wtype mesa-vulkan-drivers
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
@@ -210,10 +199,9 @@ jobs:
     needs: [test]
     steps:
       - uses: actions/checkout@v6
-      # llvmpipe via `mesa-utils` + `libgl1-mesa-dri` gives the harness's
-      # software-GL path (WGPU_BACKEND=gl + LIBGL_ALWAYS_SOFTWARE) a driver
-      # on GPU-less runners — the deterministic worst case for rendering.
-      - run: sudo apt-get update && sudo apt-get install -y sway wtype libgtk-3-dev libxkbcommon-dev libgl1-mesa-dri mesa-utils
+      # lavapipe via `mesa-vulkan-drivers` is the Vulkan driver on GPU-less
+      # runners — the deterministic worst case for rendering.
+      - run: sudo apt-get update && sudo apt-get install -y sway wtype mesa-vulkan-drivers
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
@@ -274,18 +262,10 @@ jobs:
             suffix: ".exe"
             archive: zip
           # `aarch64-unknown-linux-gnu` and `x86_64-unknown-linux-musl`
-          # are still out — cross-compile plumbing for muda+gtk-rs after
-          # the layer-shell-port migration. Tracked in #31 and #32.
+          # are still out. Tracked in #31 and #32.
 
     steps:
       - uses: actions/checkout@v6
-
-      # Linux: transitive gtk-rs / glib-sys build scripts (via floem main's
-      # muda gtk feature) need libgtk-3-dev. macOS: no system deps — muda
-      # uses AppKit directly.
-      - name: Install build deps (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxkbcommon-dev
 
       - name: Install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
