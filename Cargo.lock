@@ -264,12 +264,12 @@ dependencies = [
 [[package]]
 name = "crcbl-console"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 
 [[package]]
 name = "crcbl-core"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "bitflags",
  "crcbl-console",
@@ -280,7 +280,7 @@ dependencies = [
 [[package]]
 name = "crcbl-dx12"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "crcbl-core",
  "crcbl-hal",
@@ -290,7 +290,7 @@ dependencies = [
 [[package]]
 name = "crcbl-frame"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "bytemuck",
  "crcbl-core",
@@ -303,7 +303,7 @@ dependencies = [
 [[package]]
 name = "crcbl-hal"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "bitflags",
  "crcbl-core",
@@ -313,7 +313,7 @@ dependencies = [
 [[package]]
 name = "crcbl-image"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "png",
  "thiserror",
@@ -322,7 +322,7 @@ dependencies = [
 [[package]]
 name = "crcbl-mtl"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "block2",
  "crcbl-core",
@@ -337,7 +337,7 @@ dependencies = [
 [[package]]
 name = "crcbl-reflect"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "crcbl-reflect-derive",
  "glam",
@@ -347,7 +347,7 @@ dependencies = [
 [[package]]
 name = "crcbl-reflect-derive"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -357,7 +357,7 @@ dependencies = [
 [[package]]
 name = "crcbl-shaders"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "crcbl-spawn",
 ]
@@ -365,7 +365,7 @@ dependencies = [
 [[package]]
 name = "crcbl-shell"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "bitflags",
  "crcbl-core",
@@ -376,12 +376,12 @@ dependencies = [
 [[package]]
 name = "crcbl-spawn"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 
 [[package]]
 name = "crcbl-ui"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "bytemuck",
  "crcbl-core",
@@ -396,7 +396,7 @@ dependencies = [
 [[package]]
 name = "crcbl-vk"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 dependencies = [
  "ash",
  "crcbl-core",
@@ -407,7 +407,7 @@ dependencies = [
 [[package]]
 name = "crcbl-wl-scanner"
 version = "0.1.0"
-source = "git+https://github.com/kryptic-sh/crcbl?rev=de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd#de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd"
+source = "git+https://github.com/kryptic-sh/crcbl?rev=6ca464744c23fa93bce38983a14422b534c1d11a#6ca464744c23fa93bce38983a14422b534c1d11a"
 
 [[package]]
 name = "crossbeam-deque"

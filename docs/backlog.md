@@ -23,12 +23,11 @@
 - **The port to crcbl landed on 2026-10-16.** floem, its winit fork, resvg,
   `freedesktop-icons`, `image`, `hjkl-css` and `imbl` are gone. Every crcbl
   crate in the workspace `Cargo.toml` is pinned to the same crcbl main rev,
-  `de5f5ade` (CI green, checked with `gh run list`). Bump all of them together,
-  to CI-green revs only, as crcbl lands what pikr is waiting on below;
-  `6ca46474` (SVG drop-shadow filters) was still in CI when the port was
-  committed. crcbl's next release is 0.2.0 (a breaking raster API change), and
-  publishing it is the owner's call; pikr is not on crates.io, so the git pin
-  costs nothing there.
+  `6ca46474` (SVG drop-shadow filters; CI green, checked with `gh run list`).
+  Bump all of them together, to CI-green revs only, as crcbl lands what pikr is
+  waiting on below. crcbl 0.2.0 (owner-approved) follows colour emoji onto
+  crates.io; move to it then. pikr is not on crates.io, so the git pin costs
+  nothing meanwhile.
 - **Waiting on crcbl.** Each is a gap in pikr until it lands; crcbl's session
   has every one queued and reports green revs as they land.
   - System font lookup by family name. crcbl is adding a discovery crate
@@ -45,8 +44,8 @@
   - Shaping (GSUB/GPOS beyond Latin-1 kerning, Arabic/Indic, bidi).
   - SVG: text (including `flowRoot`), DTD entities, embedded `<image>` and
     malformed-value leniency. A refused SVG shows the generic icon. Breeze apps
-    matched 88.3% of resvg at `de5f5ade` and 92.2% with the filters in
-    `6ca46474`, by crcbl's corpus job (not measured from pikr).
+    matches 92.2% of resvg at `6ca46474`, by crcbl's corpus job (not measured
+    from pikr).
   - An XPM decoder (`/usr/share/pixmaps`). pikr never drew XPM, so not a
     regression.
   - Win32 per-pixel transparency (a DirectComposition swapchain): the Windows
@@ -54,16 +53,24 @@
   - S9 IME on/off on Win32 and AppKit.
   - D3D12 startup: in a release build here, instance open plus adapter
     enumeration took ~0.7 s and device creation ~0.23 s of a ~1.1 s
-    launch-to-first-paint. Reported to crcbl 2026-10-16.
+    launch-to-first-paint. crcbl recorded it under S13; the fix is lazy adapter
+    probing.
   - `ShellEvent::FocusRefused` did not arrive when Windows refused pikr the
-    foreground (launched from a background process). Reported 2026-10-16.
+    foreground (launched from a background process). A crcbl bug, confirmed:
+    `show_panel` trusts `SetForegroundWindow`'s return, which the foreground
+    lock can report as success; the fix checks `GetForegroundWindow`.
+  - Debug builds turn on crcbl-dx12's DRED and ask for the D3D12 debug layer (a
+    WARN without the Graphics Tools feature). By design;
+    `CRCBL_DX12_VALIDATION=0` turns it off.
 - **Workarounds in pikr that go with crcbl changes.**
   - `ui::run::Window::frame` builds and lays out the tree twice per drawn frame,
     because `Ui::list` builds the rows its previous layout showed; with one
     build a changed match list drew the old window of rows (seen on Windows: 2
-    of 4 rows). Asked crcbl for a way to build once.
+    of 4 rows). crcbl has the fix queued; then build once.
   - The status-bar chips, the confirm card and the block caret are blocks
     wrapping a span: crcbl text spans paint no background, padding or radius.
+    crcbl agrees spans should paint like blocks; the fix is queued, and then the
+    wrapping blocks can go.
 - **Not verified (coverage gaps).**
   - Linux and FreeBSD were not run locally at all. The first real check of
     Wayland (layer-shell overlay panel, keyboard, lavapipe rendering) is CI's

@@ -22,14 +22,14 @@ anyhow = "1"
 # commit until a crcbl release carries crcbl-image (0.1.0 does not); bump
 # the rev as crcbl lands the features pikr is waiting on (see
 # docs/backlog.md). Every crcbl crate must name the same rev.
-crcbl-dx12 = { git = "https://github.com/kryptic-sh/crcbl", rev = "de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd", version = "0.1.0" }
-crcbl-frame = { git = "https://github.com/kryptic-sh/crcbl", rev = "de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd", version = "0.1.0", features = ["parsed-font"] }
-crcbl-hal = { git = "https://github.com/kryptic-sh/crcbl", rev = "de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd", version = "0.1.0" }
-crcbl-image = { git = "https://github.com/kryptic-sh/crcbl", rev = "de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd", version = "0.1.0", features = ["png", "jpeg", "svg", "webp", "ico", "theme"] }
-crcbl-mtl = { git = "https://github.com/kryptic-sh/crcbl", rev = "de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd", version = "0.1.0" }
-crcbl-shell = { git = "https://github.com/kryptic-sh/crcbl", rev = "de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd", version = "0.1.0" }
-crcbl-ui = { git = "https://github.com/kryptic-sh/crcbl", rev = "de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd", version = "0.1.0", features = ["parsed-font"] }
-crcbl-vk = { git = "https://github.com/kryptic-sh/crcbl", rev = "de5f5aded5eb0e8d0d945661c4d2a0b5abd099cd", version = "0.1.0" }
+crcbl-dx12 = { git = "https://github.com/kryptic-sh/crcbl", rev = "6ca464744c23fa93bce38983a14422b534c1d11a", version = "0.1.0" }
+crcbl-frame = { git = "https://github.com/kryptic-sh/crcbl", rev = "6ca464744c23fa93bce38983a14422b534c1d11a", version = "0.1.0", features = ["parsed-font"] }
+crcbl-hal = { git = "https://github.com/kryptic-sh/crcbl", rev = "6ca464744c23fa93bce38983a14422b534c1d11a", version = "0.1.0" }
+crcbl-image = { git = "https://github.com/kryptic-sh/crcbl", rev = "6ca464744c23fa93bce38983a14422b534c1d11a", version = "0.1.0", features = ["png", "jpeg", "svg", "webp", "ico", "theme"] }
+crcbl-mtl = { git = "https://github.com/kryptic-sh/crcbl", rev = "6ca464744c23fa93bce38983a14422b534c1d11a", version = "0.1.0" }
+crcbl-shell = { git = "https://github.com/kryptic-sh/crcbl", rev = "6ca464744c23fa93bce38983a14422b534c1d11a", version = "0.1.0" }
+crcbl-ui = { git = "https://github.com/kryptic-sh/crcbl", rev = "6ca464744c23fa93bce38983a14422b534c1d11a", version = "0.1.0", features = ["parsed-font"] }
+crcbl-vk = { git = "https://github.com/kryptic-sh/crcbl", rev = "6ca464744c23fa93bce38983a14422b534c1d11a", version = "0.1.0" }
 # crcbl-ui and crcbl-frame take glam vectors and do not re-export glam.
 glam = "0.34"
 clap = { version = "4", features = ["derive"] }
