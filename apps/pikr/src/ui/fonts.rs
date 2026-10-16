@@ -8,6 +8,13 @@
 
 use std::path::PathBuf;
 
+/// The family [`find`] resolves to the system's colour emoji font:
+/// fontconfig's generic `emoji` alias, or Windows' own emoji face.
+#[cfg(not(windows))]
+pub const EMOJI_FAMILY: &str = "emoji";
+#[cfg(windows)]
+pub const EMOJI_FAMILY: &str = "Segoe UI Emoji";
+
 /// The file holding `family`'s regular face, if the system can say.
 pub fn find(family: &str) -> Option<PathBuf> {
     let path = find_impl(family)?;

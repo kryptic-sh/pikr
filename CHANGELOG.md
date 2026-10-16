@@ -27,15 +27,21 @@ and this project adheres to
   FreeBSD, and on macOS where fontconfig is installed, and through the
   installed-fonts registry on Windows. A family that isn't found is drawn in
   crcbl's built-in sans-serif face.
-- Characters the theme font lacks (CJK, symbols, emoji) draw as a missing-glyph
-  box until crcbl's per-glyph font fallback lands; colour emoji, and shaping for
-  scripts such as Arabic, follow in later crcbl releases.
+- Characters the theme font lacks, emoji included, are drawn from the system's
+  colour emoji font (fontconfig's `emoji` match, or Segoe UI Emoji on Windows).
+  ZWJ sequences, skin tones and flags draw as their parts, and scripts that need
+  shaping, such as Arabic, are not shaped yet.
 - Windows: the panel is opaque with square outer corners until crcbl supports
   per-pixel window transparency there.
 - SVG icons are drawn by crcbl's own renderer. An icon using a feature it does
   not draw yet (SVG text, embedded images) shows the generic application icon
-  instead. XPM icons, which pikr never drew, still aren't.
+  instead.
 - The minimum supported Rust version is 1.98.
+
+### Added
+
+- XPM icons (`/usr/share/pixmaps` and the like) are drawn; pikr used to show the
+  generic icon for them.
 
 ## [0.8.13] - 2026-09-15
 

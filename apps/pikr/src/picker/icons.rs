@@ -133,7 +133,7 @@ impl Default for IconCache {
 /// `size` × `size` square. SVG has no signature; anything unrecognised is
 /// tried as SVG, which rejects what is not.
 fn decode(bytes: &[u8], size: u32) -> Result<Rgba8Image, ImageError> {
-    use crcbl_image::{bmp, ico, jpeg, png, resize, svg, webp};
+    use crcbl_image::{bmp, ico, jpeg, png, resize, svg, webp, xpm};
     let image = if bytes.starts_with(b"\x89PNG") {
         png::decode(bytes, &ICON_LIMITS)?
     } else if bytes.starts_with(&[0xff, 0xd8]) {
@@ -144,6 +144,8 @@ fn decode(bytes: &[u8], size: u32) -> Result<Rgba8Image, ImageError> {
         ico::decode(bytes, size, &ICON_LIMITS)?
     } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
         webp::decode(bytes, &ICON_LIMITS)?
+    } else if bytes.trim_ascii_start().starts_with(b"/* XPM */") || bytes.starts_with(b"! XPM2") {
+        xpm::decode(bytes, &ICON_LIMITS)?
     } else {
         // Rendered straight at the target size: nothing to scale.
         return svg::decode(bytes, size, 1, &ICON_LIMITS);
@@ -230,6 +232,21 @@ mod tests {
         let second = cache.image(&path, 24).expect("re-decode");
         assert_eq!(first_pixel(&second), [0, 0xff, 0, 0xff]);
         assert_eq!(cache.decoded_len(), 1, "entry replaced, not duplicated");
+    }
+
+    #[test]
+    fn xpm_is_decoded_by_its_signature() {
+        const XPM: &[u8] = b"/* XPM */
+static char *icon[] = {
+\"2 2 1 1\",
+\". c #0000ff\",
+\"..\",
+\"..\"
+};
+";
+        let image = decode(XPM, 24).expect("decode");
+        assert_eq!(image.width(), 2);
+        assert_eq!(first_pixel(&image), [0, 0, 0xff, 0xff]);
     }
 
     #[test]

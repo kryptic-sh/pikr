@@ -22,32 +22,24 @@
 
 - **The port to crcbl landed on 2026-10-16.** floem, its winit fork, resvg,
   `freedesktop-icons`, `image`, `hjkl-css` and `imbl` are gone. Every crcbl
-  crate in the workspace `Cargo.toml` is pinned to the same crcbl main rev,
-  `6ca46474` (SVG drop-shadow filters; CI green, checked with `gh run list`).
-  Bump all of them together, to CI-green revs only, as crcbl lands what pikr is
-  waiting on below. crcbl 0.2.0 (owner-approved) follows colour emoji onto
-  crates.io; move to it then. pikr is not on crates.io, so the git pin costs
-  nothing meanwhile.
+  crate comes from crates.io at 0.2 (released 2026-10-16). Bump them together as
+  crcbl releases what pikr is waiting on below.
 - **Waiting on crcbl.** Each is a gap in pikr until it lands; crcbl's session
   has every one queued and reports green revs as they land.
   - System font lookup by family name. crcbl is adding a discovery crate
     (fontconfig config and cache on Linux/FreeBSD, name tables on Windows and
     macOS). Until then `ui::fonts` shells out to `fc-match` on unix and reads
     the installed-fonts registry key through `reg query` on Windows; on macOS
-    without fontconfig the theme font is never found. Delete `ui::fonts` when
-    crcbl's lands.
-  - Per-glyph font fallback and colour emoji (S22): in final integration on
-    `integrate/emoji` as of 2026-10-16, through `Ui::set_fallback_fonts`. Until
-    then a glyph the theme font lacks draws `.notdef`, which makes emoji mode
-    unusable. ZWJ sequences, skin tones and flags will still draw as their parts
-    (no GSUB).
+    without fontconfig neither the theme font nor the emoji fallback is found.
+    When crcbl-font lands, delete `ui::fonts`, and feed its `fallbacks()` to
+    `Ui::set_fallback_fonts` in place of `ui::fonts::EMOJI_FAMILY`.
+  - Colour emoji draw through `Ui::set_fallback_fonts` (seen on Windows with
+    Segoe UI Emoji; fontconfig's `emoji` match on Linux not run). ZWJ sequences,
+    skin tones and flags still draw as their parts (no GSUB).
   - Shaping (GSUB/GPOS beyond Latin-1 kerning, Arabic/Indic, bidi).
-  - SVG: text (including `flowRoot`), DTD entities, embedded `<image>` and
-    malformed-value leniency. A refused SVG shows the generic icon. Breeze apps
-    matches 92.2% of resvg at `6ca46474`, by crcbl's corpus job (not measured
-    from pikr).
-  - An XPM decoder (`/usr/share/pixmaps`). pikr never drew XPM, so not a
-    regression.
+  - SVG text (including `flowRoot`) and embedded `<image>` (next on crcbl main).
+    A refused SVG shows the generic icon. By crcbl's corpus job at 0.2.0 (not
+    measured from pikr), breeze apps decode 93.2% and papirus 99.9%.
   - Win32 per-pixel transparency (a DirectComposition swapchain): the Windows
     panel is opaque with square outer corners.
   - S9 IME on/off on Win32 and AppKit.
@@ -59,14 +51,15 @@
     foreground (launched from a background process). A crcbl bug, confirmed:
     `show_panel` trusts `SetForegroundWindow`'s return, which the foreground
     lock can report as success; the fix checks `GetForegroundWindow`.
-  - Debug builds turn on crcbl-dx12's DRED and ask for the D3D12 debug layer (a
-    WARN without the Graphics Tools feature). By design;
-    `CRCBL_DX12_VALIDATION=0` turns it off.
+  - crcbl-dx12 turns on DRED in every build; debug builds also ask for the D3D12
+    debug layer (a WARN without the Graphics Tools feature). By design;
+    `CRCBL_DX12_VALIDATION=0` turns the debug layer off.
 - **Workarounds in pikr that go with crcbl changes.**
   - `ui::run::Window::frame` builds and lays out the tree twice per drawn frame,
     because `Ui::list` builds the rows its previous layout showed; with one
     build a changed match list drew the old window of rows (seen on Windows: 2
-    of 4 rows). crcbl has the fix queued; then build once.
+    of 4 rows). crcbl's fix (`Ui::list` windows from this frame's count, plus
+    `Ui::needs_rebuild()`) is queued after 0.2.0; then build once.
   - The status-bar chips, the confirm card and the block caret are blocks
     wrapping a span: crcbl text spans paint no background, padding or radius.
     crcbl agrees spans should paint like blocks; the fix is queued, and then the

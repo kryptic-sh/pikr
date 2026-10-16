@@ -55,24 +55,28 @@ pub struct WindowSpec {
 /// Opens the window, runs until the picker finishes, then — window gone —
 /// runs what it chose and exits the process.
 pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Result<()> {
-    // Finding and reading the theme font overlaps opening the window and
-    // the GPU, the slow part of startup.
-    let font = {
+    // Finding and reading the fonts overlaps opening the window and the
+    // GPU, the slow part of startup.
+    let fonts = {
         let family = spec.font_family.clone();
-        std::thread::spawn(move || load_theme_font(&family))
+        std::thread::spawn(move || Fonts {
+            theme: load_font(&family),
+            emoji: load_font(crate::ui::fonts::EMOJI_FAMILY),
+        })
     };
     let mut shell = crcbl_shell::open().context("opening the window system")?;
     let (window, transparent_window) = create_window(shell.as_mut(), &spec)?;
     let extent = wait_for_size(shell.as_mut(), window)?;
     let mut gpu = Gpu::open(&shell.surface_target(window)?, extent, transparent_window)?;
-    let font = font
-        .join()
-        .unwrap_or_else(|_| Err("the font loader panicked".into()));
+    let fonts = fonts.join().unwrap_or_else(|_| Fonts {
+        theme: Err("the font loader panicked".into()),
+        emoji: Err("the font loader panicked".into()),
+    });
     let outcome = Window::new(
         shell.as_mut(),
         window,
         &spec,
-        font,
+        fonts,
         &mut gpu,
         startup_started,
     )
@@ -172,7 +176,7 @@ impl<'a> Window<'a> {
         shell: &'a mut dyn Shell,
         window: WindowId,
         spec: &WindowSpec,
-        font: Result<Font, String>,
+        fonts: Fonts,
         gpu: &'a mut Gpu,
         startup_started: Instant,
     ) -> Result<Self> {
@@ -183,10 +187,17 @@ impl<'a> Window<'a> {
         // Registered under the theme's family, which the stylesheet names;
         // without it, text is drawn in crcbl's built-in sans-serif face.
         let family = &spec.font_family;
-        if let Err(e) =
-            font.and_then(|font| ui.register_font(family, font).map_err(|e| e.to_string()))
+        if let Err(e) = fonts
+            .theme
+            .and_then(|font| ui.register_font(family, font).map_err(|e| e.to_string()))
         {
             tracing::warn!(family, "theme font not used: {e}");
+        }
+        // Emoji, and any other char the theme font lacks, are drawn from the
+        // system's emoji font; without one they draw as missing-glyph boxes.
+        match fonts.emoji {
+            Ok(emoji) => ui.set_fallback_fonts([emoji]),
+            Err(e) => tracing::warn!("emoji font not used: {e}"),
         }
         Ok(Self {
             shell,
@@ -491,8 +502,16 @@ impl Step {
     }
 }
 
-/// The system font the theme names, found, read and parsed.
-fn load_theme_font(family: &str) -> Result<Font, String> {
+/// The system fonts the picker draws in, each found, read and parsed.
+struct Fonts {
+    /// The face the theme names.
+    theme: Result<Font, String>,
+    /// The fallback for chars the theme's face has no glyph for.
+    emoji: Result<Font, String>,
+}
+
+/// The installed font `family` names, found, read and parsed.
+fn load_font(family: &str) -> Result<Font, String> {
     let path = crate::ui::fonts::find(family).ok_or("no such font installed")?;
     let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     Font::parse(bytes).map_err(|e| format!("{}: {e}", path.display()))
