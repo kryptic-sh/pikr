@@ -27,18 +27,18 @@ fn prints_help() {
     assert!(stdout.contains("--dmenu"));
 }
 
-/// Without `WAYLAND_DISPLAY`, pikr must exit non-zero and print the
-/// "WAYLAND_DISPLAY is not set" guard message. The full live-render path
-/// is exercised by the e2e harness (`tests/e2e/`), which runs pikr inside
-/// a `sway --headless` fixture so dev machines don't see a stray window
-/// pop on every `cargo test` invocation.
+/// With no display server at all (neither `WAYLAND_DISPLAY` nor `DISPLAY`),
+/// pikr must exit non-zero and say it could not open the window system,
+/// rather than panic or hang. The full live-render path is exercised by the
+/// e2e harness (`tests/e2e/`), which runs pikr inside a `sway --headless`
+/// fixture so dev machines don't see a stray window pop on every `cargo test`
+/// invocation.
 ///
-/// Gated like the guard itself (`app::run`): Windows and macOS have no
-/// Wayland requirement and open a regular top-level window instead, so there
-/// the test would launch a live picker rather than hit a guard.
+/// Linux and FreeBSD only: Windows and macOS always have a window system, so
+/// there the test would launch a live picker.
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 #[test]
-fn missing_wayland_display_exits_with_guard() {
+fn no_display_server_exits_with_error() {
     let out = Command::new(bin())
         .args(["--show", "drun"])
         .env_remove("WAYLAND_DISPLAY")
@@ -51,13 +51,13 @@ fn missing_wayland_display_exits_with_guard() {
 
     assert!(
         !out.status.success(),
-        "pikr without WAYLAND_DISPLAY must exit non-zero; got {}",
+        "pikr with no display server must exit non-zero; got {}",
         out.status
     );
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("WAYLAND_DISPLAY"),
-        "expected guard message, got stderr: {err}"
+        err.contains("opening the window system"),
+        "expected the window-system error, got stderr: {err}"
     );
 }
 
