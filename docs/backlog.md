@@ -47,10 +47,11 @@
   first crates.io release would wait for all of S1–S27. On 2026-10-16 they
   changed this: crcbl ships 0.1.0 with some rows still open, and the rest come
   in later releases. The crates are `crcbl-shell`, `crcbl-hal`, `crcbl-ui` and
-  `crcbl-frame`, plus `crcbl-vk`, `crcbl-dx12` or `crcbl-mtl` per platform. The
-  upload is still going through crates.io's new-crate rate limit, and crcbl will
-  message the version once every crate is up. Rows open or partial at the v0.1.0
-  tag, as reported by crcbl and not checked from pikr:
+  `crcbl-frame`, plus `crcbl-vk`, `crcbl-dx12` or `crcbl-mtl` per platform.
+  0.1.0 is published. On 2026-10-16 pikr confirmed through the crates.io API
+  that each of those seven crates is at 0.1.0, and that the GitHub release
+  `v0.1.0` is published and not a draft. Rows open or partial at the v0.1.0 tag,
+  as reported by crcbl and not checked from pikr:
   - S9: compose and text-input-v3 are on main after the tag; Win32/AppKit IME
     on/off is on a branch. pikr needs a later release or a git pin for this.
   - S12: one-line styled spans only. That covers pikr, which needs neither
@@ -62,6 +63,16 @@
     mode can't reach parity on 0.1.0.
   - Win32 per-pixel transparency (a DirectComposition swapchain) and AppKit
     no-flash on map are still missing.
+
+  On crcbl main after the tag, not yet released: dead keys/Compose on Wayland
+  and X11, and text-input-v3. crcbl's integration branch, with CI running at the
+  time of the report, carries:
+  - S12 `Ui::paragraph` (wrapping, weight, italic, underline, links);
+  - S14 accessibility behind an `accesskit` feature (Win32 UIA only so far);
+  - `crcbl-image` for S28;
+  - a rename: `Shell::set_text_input(window, Option<TextPurpose>)` replaces
+    `set_text_input_enabled`. pikr's password mode should pass
+    `TextPurpose::Password`.
 
   Until a release covers a row pikr needs, pikr pins by git rev, at CI-green
   commits only. crcbl's backlog holds the ordered program, and pikr's spike rows
@@ -161,8 +172,12 @@
 
   crcbl accepted these conditions. The themes are GPL-3.0 / CC-BY-SA, so they
   aren't committed: a CI job downloads them and renders the references with the
-  `resvg` CLI on the runner. Until that report shows parity, the port keeps
-  resvg and passes its RGBA output to `ImageAtlas::register`.
+  `resvg` CLI on the runner. First results at 48 px, reported by crcbl (the SVG
+  renderer is on a branch): Adwaita 97.3%, Papirus 99.8%, breeze 98.5% and
+  breeze apps 88.3% matching. Most refusals are filters, then text. hicolor was
+  not reported. A refused icon shows the generic icon in pikr, so about one
+  breeze app icon in eight would regress. Not parity yet. Until it is, the port
+  keeps resvg and passes its RGBA output to `ImageAtlas::register`.
 
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
