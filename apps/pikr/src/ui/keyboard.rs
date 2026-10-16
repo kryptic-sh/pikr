@@ -3,14 +3,19 @@
 //! This is the only place the picker's key handling meets the toolkit's key
 //! types; everything past it works on [`crate::picker::input`].
 //!
-//! A typed character reaches the window twice: as a `Key` event naming the
-//! physical key, and as the `TextCommit` the layout and input method made of
-//! it. Named keys are read from the former and characters from the latter,
-//! so each press becomes one [`Key`]. The exception is a character typed
-//! with Ctrl, Alt or Super held: the platform commits no text for a chord,
-//! so it is read from the key's symbol instead.
+//! A typed character reaches the window twice: as a `Key` event carrying the
+//! key's symbol in the current keymap, and as the `TextCommit` the layout and
+//! input method made of it. Named keys are read from the former and
+//! characters from the latter, so each press becomes one [`Key`]. The
+//! exception is a character typed with Ctrl, Alt or Super held: the platform
+//! commits no text for a chord, so it is read from the key's symbol instead.
+//!
+//! Named keys come from the keysym, never the physical key code: a keymap
+//! decides what a key is, and a virtual keyboard (wtype, an on-screen
+//! keyboard) uploads its own keymap whose key codes stand for physical keys
+//! they are not.
 
-use crcbl_shell::{KeyCode, Keysym, Modifiers as CrcblModifiers};
+use crcbl_shell::{Keysym, Modifiers as CrcblModifiers};
 
 use crate::picker::input::{Key, Modifiers, NamedKey};
 
@@ -31,8 +36,8 @@ fn is_chord(mods: Modifiers) -> bool {
 
 /// The [`Key`] a key press stands for, or `None` when the press is a typed
 /// character that arrives as a text commit instead.
-pub fn key_from_press(key_code: Option<KeyCode>, keysym: Keysym, mods: Modifiers) -> Option<Key> {
-    if let Some(named) = key_code.and_then(named_from_crcbl) {
+pub fn key_from_press(keysym: Keysym, mods: Modifiers) -> Option<Key> {
+    if let Some(named) = named_from_keysym(keysym) {
         return Some(Key::Named(named));
     }
     if is_chord(mods) {
@@ -47,34 +52,37 @@ pub fn key_from_commit(text: &str, mods: Modifiers) -> Option<Key> {
     (!is_chord(mods)).then(|| Key::Character(text.to_owned()))
 }
 
-fn named_from_crcbl(code: KeyCode) -> Option<NamedKey> {
-    Some(match code {
-        KeyCode::ArrowDown => NamedKey::ArrowDown,
-        KeyCode::ArrowLeft => NamedKey::ArrowLeft,
-        KeyCode::ArrowRight => NamedKey::ArrowRight,
-        KeyCode::ArrowUp => NamedKey::ArrowUp,
-        KeyCode::Backspace => NamedKey::Backspace,
-        KeyCode::Delete => NamedKey::Delete,
-        KeyCode::End => NamedKey::End,
-        KeyCode::Enter | KeyCode::NumpadEnter => NamedKey::Enter,
-        KeyCode::Escape => NamedKey::Escape,
-        KeyCode::Home => NamedKey::Home,
-        KeyCode::Insert => NamedKey::Insert,
-        KeyCode::PageDown => NamedKey::PageDown,
-        KeyCode::PageUp => NamedKey::PageUp,
-        KeyCode::Tab => NamedKey::Tab,
-        KeyCode::F1 => NamedKey::F1,
-        KeyCode::F2 => NamedKey::F2,
-        KeyCode::F3 => NamedKey::F3,
-        KeyCode::F4 => NamedKey::F4,
-        KeyCode::F5 => NamedKey::F5,
-        KeyCode::F6 => NamedKey::F6,
-        KeyCode::F7 => NamedKey::F7,
-        KeyCode::F8 => NamedKey::F8,
-        KeyCode::F9 => NamedKey::F9,
-        KeyCode::F10 => NamedKey::F10,
-        KeyCode::F11 => NamedKey::F11,
-        KeyCode::F12 => NamedKey::F12,
+/// The named key `keysym` is. The values are X11's keysym numbering
+/// (`xkbcommon-keysyms.h`), which crcbl reports on every backend.
+fn named_from_keysym(keysym: Keysym) -> Option<NamedKey> {
+    Some(match keysym.0 {
+        0xFF08 => NamedKey::Backspace,
+        // Shift+Tab is `ISO_Left_Tab` in XKB keymaps.
+        0xFF09 | 0xFE20 => NamedKey::Tab,
+        0xFF0D | 0xFF8D => NamedKey::Enter,
+        0xFF1B => NamedKey::Escape,
+        0xFF50 => NamedKey::Home,
+        0xFF51 => NamedKey::ArrowLeft,
+        0xFF52 => NamedKey::ArrowUp,
+        0xFF53 => NamedKey::ArrowRight,
+        0xFF54 => NamedKey::ArrowDown,
+        0xFF55 => NamedKey::PageUp,
+        0xFF56 => NamedKey::PageDown,
+        0xFF57 => NamedKey::End,
+        0xFF63 => NamedKey::Insert,
+        0xFFBE => NamedKey::F1,
+        0xFFBF => NamedKey::F2,
+        0xFFC0 => NamedKey::F3,
+        0xFFC1 => NamedKey::F4,
+        0xFFC2 => NamedKey::F5,
+        0xFFC3 => NamedKey::F6,
+        0xFFC4 => NamedKey::F7,
+        0xFFC5 => NamedKey::F8,
+        0xFFC6 => NamedKey::F9,
+        0xFFC7 => NamedKey::F10,
+        0xFFC8 => NamedKey::F11,
+        0xFFC9 => NamedKey::F12,
+        0xFFFF => NamedKey::Delete,
         _ => return None,
     })
 }
@@ -91,33 +99,51 @@ mod tests {
     }
 
     #[test]
-    fn named_keys_map_and_numpad_enter_is_enter() {
+    fn named_keys_come_from_the_keysym() {
         let none = Modifiers::default();
-        assert_eq!(
-            key_from_press(Some(KeyCode::F12), Keysym::NONE, none),
-            Some(Key::Named(NamedKey::F12))
-        );
-        assert_eq!(
-            key_from_press(Some(KeyCode::NumpadEnter), Keysym::NONE, none),
-            Some(Key::Named(NamedKey::Enter))
-        );
+        // The keysyms crcbl's Win32 and AppKit backends report for these keys
+        // (`crcbl_shell::keysym::named_keysym`), plus XKB's Shift+Tab.
+        let cases = [
+            (0xFF08, NamedKey::Backspace),
+            (0xFF09, NamedKey::Tab),
+            (0xFE20, NamedKey::Tab),
+            (0xFF0D, NamedKey::Enter),
+            (0xFF8D, NamedKey::Enter),
+            (0xFF1B, NamedKey::Escape),
+            (0xFF50, NamedKey::Home),
+            (0xFF51, NamedKey::ArrowLeft),
+            (0xFF52, NamedKey::ArrowUp),
+            (0xFF53, NamedKey::ArrowRight),
+            (0xFF54, NamedKey::ArrowDown),
+            (0xFF55, NamedKey::PageUp),
+            (0xFF56, NamedKey::PageDown),
+            (0xFF57, NamedKey::End),
+            (0xFF63, NamedKey::Insert),
+            (0xFFFF, NamedKey::Delete),
+            (0xFFBE, NamedKey::F1),
+            (0xFFC9, NamedKey::F12),
+        ];
+        for (keysym, named) in cases {
+            assert_eq!(
+                key_from_press(Keysym(keysym), none),
+                Some(Key::Named(named)),
+                "keysym {keysym:#x}"
+            );
+        }
     }
 
     #[test]
     fn plain_characters_come_from_the_commit_not_the_press() {
         let none = Modifiers::default();
         let a = Keysym::from_char('a');
-        assert_eq!(key_from_press(Some(KeyCode::KeyA), a, none), None);
+        assert_eq!(key_from_press(a, none), None);
         assert_eq!(key_from_commit("é", none), Some(Key::Character("é".into())));
     }
 
     #[test]
     fn chords_come_from_the_press_not_the_commit() {
         let w = Keysym::from_char('w');
-        assert_eq!(
-            key_from_press(Some(KeyCode::KeyW), w, ctrl()),
-            Some(Key::Character("w".into()))
-        );
+        assert_eq!(key_from_press(w, ctrl()), Some(Key::Character("w".into())));
         assert_eq!(key_from_commit("w", ctrl()), None);
     }
 

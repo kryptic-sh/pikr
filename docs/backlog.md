@@ -54,6 +54,13 @@
   nothing in crcbl-ui (it supports `white-space: normal | nowrap` only), and the
   caret did not draw at all. Seen on Windows with and without the old
   block-wrapped caret.
+- **Named keys must come from the keysym, not `ShellEvent::Key`'s `key_code`**
+  (`ui::keyboard::named_from_keysym`). `key_code` is the physical key from the
+  evdev code, and wtype uploads its own keymap that hands out key codes from the
+  bottom, so its first key arrived as Escape: the first sway e2e run of the port
+  (CI run 38947484014) exited 1 on every test that typed or pressed Return, and
+  the Esc-only tests passed by coincidence. The same holds for any virtual or
+  remapped keyboard.
 - **Not verified (coverage gaps).**
   - Linux and FreeBSD were not run locally at all. The first real check of
     Wayland (layer-shell overlay panel, keyboard, lavapipe rendering) is CI's

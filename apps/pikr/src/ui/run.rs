@@ -340,14 +340,13 @@ impl<'a> Window<'a> {
                 Ok(Step::Continue(false))
             }
             ShellEvent::Key {
-                key_code,
                 keysym,
                 state: ButtonState::Pressed,
                 modifiers,
                 ..
             } => {
                 self.mods = modifiers_from_crcbl(modifiers);
-                let key = key_from_press(key_code, keysym, self.mods);
+                let key = key_from_press(keysym, self.mods);
                 Ok(key.map_or(Step::Continue(false), |key| self.key(&key, content)))
             }
             ShellEvent::TextCommit { text, .. } => {
