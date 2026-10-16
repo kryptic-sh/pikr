@@ -64,15 +64,19 @@
   - Win32 per-pixel transparency (a DirectComposition swapchain) and AppKit
     no-flash on map are still missing.
 
-  On crcbl main after the tag, not yet released: dead keys/Compose on Wayland
-  and X11, and text-input-v3. crcbl's integration branch, with CI running at the
-  time of the report, carries:
-  - S12 `Ui::paragraph` (wrapping, weight, italic, underline, links);
-  - S14 accessibility behind an `accesskit` feature (Win32 UIA only so far);
-  - `crcbl-image` for S28;
-  - a rename: `Shell::set_text_input(window, Option<TextPurpose>)` replaces
-    `set_text_input_enabled`. pikr's password mode should pass
-    `TextPurpose::Password`.
+  On crcbl main after the tag, not yet released. crcbl reports `db30e0f7` as a
+  green main commit carrying all of this; not verified from pikr:
+  - dead keys/Compose on Wayland and X11, and text-input-v3;
+  - `crcbl-image` (S28), with features `png` (decode and encode), `jpeg`, `bmp`,
+    `ico` (`ico::sizes`) and `theme` (XDG lookup), plus `raw::convert` and
+    `resize::{fit_within, shrink_to_fit, nearest_size}` (Lanczos3). SVG and WebP
+    are still on a branch;
+  - `Shell::set_text_input(window, Option<TextPurpose>)`, replacing
+    `set_text_input_enabled`. `TextPurpose` is `{Normal, Password, Pin}` in
+    `crcbl_core::input`, `None` turns input off, and
+    `Ui::text_editing_purpose()` reports the focused field's purpose. pikr's
+    password mode should pass `TextPurpose::Password`. Still on crcbl's
+    integration branch: S12 `Ui::paragraph` and S14 `accesskit`.
 
   Until a release covers a row pikr needs, pikr pins by git rev, at CI-green
   commits only. crcbl's backlog holds the ordered program, and pikr's spike rows
@@ -86,9 +90,10 @@
   - Step 10: S23, with a spike against `default.css`.
   - Last: S14, AccessKit, because it is a new dependency (owner's call).
 
-  crcbl rev to pin for the spike: `72999dd7`. crcbl's session reports a full CI
-  pass on that exact commit (sway, a real Win32 desktop, a macOS session); not
-  verified from pikr. It contains:
+  crcbl rev to pin for the spike: `db30e0f7` for crcbl-image and the
+  `set_text_input` API, otherwise `72999dd7`. For `72999dd7`: crcbl's session
+  reports a full CI pass on that exact commit (sway, a real Win32 desktop, a
+  macOS session); not verified from pikr. It contains:
   - S10 as `crcbl-frame` (`UiRenderer::new` / `with_images` without the game
     renderer);
   - S15's `rust-version`;
