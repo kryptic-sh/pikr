@@ -22,48 +22,38 @@
 
 - **The port to crcbl landed on 2026-10-16.** floem, its winit fork, resvg,
   `freedesktop-icons`, `image`, `hjkl-css` and `imbl` are gone. Every crcbl
-  crate comes from crates.io at 0.2 (released 2026-10-16). Bump them together as
-  crcbl releases what pikr is waiting on below.
+  crate in the workspace `Cargo.toml` is pinned to crcbl main `4c53204e`, past
+  0.2.0, for `Ui::needs_rebuild`, spans that paint their box and crcbl-font.
+  Bump them together, to CI-green revs only, and move back to crates.io with the
+  first crcbl release that carries them.
 - **Waiting on crcbl.** Each is a gap in pikr until it lands; crcbl's session
   has every one queued and reports green revs as they land.
-  - System font lookup by family name. crcbl is adding a discovery crate
-    (fontconfig config and cache on Linux/FreeBSD, name tables on Windows and
-    macOS). Until then `ui::fonts` shells out to `fc-match` on unix and reads
-    the installed-fonts registry key through `reg query` on Windows; on macOS
-    without fontconfig neither the theme font nor the emoji fallback is found.
-    When crcbl-font lands, delete `ui::fonts`, and feed its `fallbacks()` to
-    `Ui::set_fallback_fonts` in place of `ui::fonts::EMOJI_FAMILY`.
-  - Colour emoji draw through `Ui::set_fallback_fonts` (seen on Windows with
-    Segoe UI Emoji; fontconfig's `emoji` match on Linux not run). ZWJ sequences,
-    skin tones and flags still draw as their parts (no GSUB).
+  - ZWJ emoji sequences, skin tones and flags draw as their parts (no GSUB).
   - Shaping (GSUB/GPOS beyond Latin-1 kerning, Arabic/Indic, bidi).
-  - SVG text (including `flowRoot`) and embedded `<image>` (next on crcbl main).
-    A refused SVG shows the generic icon. By crcbl's corpus job at 0.2.0 (not
-    measured from pikr), breeze apps decode 93.2% and papirus 99.9%.
+  - SVG text (including `flowRoot`), next on crcbl's list. A refused SVG shows
+    the generic icon. By crcbl's corpus job at 0.2.0 (not measured from pikr),
+    breeze apps decode 93.2% and papirus 99.9%; embedded `<image>` (data: URLs)
+    landed since, in the pinned rev.
   - Win32 per-pixel transparency (a DirectComposition swapchain): the Windows
     panel is opaque with square outer corners.
   - S9 IME on/off on Win32 and AppKit.
-  - D3D12 startup: in a release build here, instance open plus adapter
-    enumeration took ~0.7 s and device creation ~0.23 s of a ~1.1 s
-    launch-to-first-paint. crcbl recorded it under S13; the fix is lazy adapter
+  - D3D12 startup: at crcbl `6ca46474`, instance open plus adapter enumeration
+    took ~0.7 s and device creation ~0.23 s of a ~1.1 s launch-to-first-paint
+    (release build here). crcbl recorded it under S13; the fix is lazy adapter
     probing.
-  - `ShellEvent::FocusRefused` did not arrive when Windows refused pikr the
-    foreground (launched from a background process). A crcbl bug, confirmed:
-    `show_panel` trusts `SetForegroundWindow`'s return, which the foreground
-    lock can report as success; the fix checks `GetForegroundWindow`.
+  - `ShellEvent::FocusRefused` when Windows refuses pikr the foreground: crcbl
+    fixed it in the pinned rev (checks `GetForegroundWindow`), with no desktop
+    test on crcbl's side. Not yet confirmed from pikr: it needs pikr launched
+    from a background process while another app holds the foreground, and a look
+    at whether the event arrives.
   - crcbl-dx12 turns on DRED in every build; debug builds also ask for the D3D12
     debug layer (a WARN without the Graphics Tools feature). By design;
     `CRCBL_DX12_VALIDATION=0` turns the debug layer off.
-- **Workarounds in pikr that go with crcbl changes.**
-  - `ui::run::Window::frame` builds and lays out the tree twice per drawn frame,
-    because `Ui::list` builds the rows its previous layout showed; with one
-    build a changed match list drew the old window of rows (seen on Windows: 2
-    of 4 rows). crcbl's fix (`Ui::list` windows from this frame's count, plus
-    `Ui::needs_rebuild()`) is queued after 0.2.0; then build once.
-  - The status-bar chips, the confirm card and the block caret are blocks
-    wrapping a span: crcbl text spans paint no background, padding or radius.
-    crcbl agrees spans should paint like blocks; the fix is queued, and then the
-    wrapping blocks can go.
+- **The Normal-mode block caret past the end of the query sits on a no-break
+  space** (`ui::view::query`): a span holding only a plain space collapses to
+  nothing in crcbl-ui (it supports `white-space: normal | nowrap` only), and the
+  caret did not draw at all. Seen on Windows with and without the old
+  block-wrapped caret.
 - **Not verified (coverage gaps).**
   - Linux and FreeBSD were not run locally at all. The first real check of
     Wayland (layer-shell overlay panel, keyboard, lavapipe rendering) is CI's
@@ -161,9 +151,11 @@ macOS and Windows.
   are to document it or to stop filtering under `-P` (show all rows unranked).
   Needs a product call.
 - **Windows startup is past the 500 ms usable-picker target.** Release build on
-  crcbl/D3D12: ~1.1 s from launch to first paint, almost all of it D3D12
-  instance, adapter and device setup (see "GUI on crcbl"). Not profiled inside
-  crcbl.
+  crcbl/D3D12: ~1.1 s from launch to first paint at crcbl `6ca46474`, almost all
+  of it D3D12 instance, adapter and device setup (see "GUI on crcbl"). At
+  `4c53204e` three launches logged 682, 582 and 574 ms; why it dropped was not
+  looked into. Font lookup (theme face plus its fallbacks) took 100 ms cold and
+  31 ms warm, on a thread overlapping GPU setup.
 - **Windows window posture (issue #9) now comes from crcbl's panel role:** a
   topmost `WS_EX_TOOLWINDOW` window, by crcbl's documentation of its Win32
   panel. Whether pikr is now absent from Alt-Tab and the taskbar was not looked

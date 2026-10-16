@@ -23,19 +23,18 @@ and this project adheres to
   namespace are unaffected.
 - **No more "requires a Wayland compositor" exit.** Without layer-shell (GNOME
   Mutter) or on X11, pikr opens as an ordinary window.
-- The theme's `font` is found through fontconfig (`fc-match`) on Linux and
-  FreeBSD, and on macOS where fontconfig is installed, and through the
-  installed-fonts registry on Windows. A family that isn't found is drawn in
-  crcbl's built-in sans-serif face.
-- Characters the theme font lacks, emoji included, are drawn from the system's
-  colour emoji font (fontconfig's `emoji` match, or Segoe UI Emoji on Windows).
-  ZWJ sequences, skin tones and flags draw as their parts, and scripts that need
-  shaping, such as Arabic, are not shaped yet.
+- The theme's `font` is looked up by crcbl's system font lookup: fontconfig on
+  Linux and FreeBSD, the installed-fonts registry on Windows, and the system
+  font directories on macOS. A family that isn't installed is drawn in the
+  system's sans-serif face.
+- Characters the theme font lacks (emoji, CJK, symbols) are drawn from the
+  system's fallback fonts for it, colour emoji in colour. ZWJ sequences, skin
+  tones and flags draw as their parts, and scripts that need shaping, such as
+  Arabic, are not shaped yet.
 - Windows: the panel is opaque with square outer corners until crcbl supports
   per-pixel window transparency there.
 - SVG icons are drawn by crcbl's own renderer. An icon using a feature it does
-  not draw yet (SVG text, embedded images) shows the generic application icon
-  instead.
+  not draw yet (SVG text) shows the generic application icon instead.
 - The minimum supported Rust version is 1.98.
 
 ### Added

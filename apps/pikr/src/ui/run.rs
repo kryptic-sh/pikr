@@ -12,6 +12,7 @@ use crcbl_shell::{
 };
 use crcbl_ui::draw_list::DrawList;
 use crcbl_ui::font::Font;
+use crcbl_ui::font::system::crcbl_font::{FontQuery, SystemFonts};
 use crcbl_ui::text::FontAtlas;
 use crcbl_ui::tree::{AvailableSpace, Ui};
 use crcbl_ui::widget::PointerInput;
@@ -59,10 +60,7 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
     // GPU, the slow part of startup.
     let fonts = {
         let family = spec.font_family.clone();
-        std::thread::spawn(move || Fonts {
-            theme: load_font(&family),
-            emoji: load_font(crate::ui::fonts::EMOJI_FAMILY),
-        })
+        std::thread::spawn(move || load_fonts(&family))
     };
     let mut shell = crcbl_shell::open().context("opening the window system")?;
     let (window, transparent_window) = create_window(shell.as_mut(), &spec)?;
@@ -70,7 +68,7 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
     let mut gpu = Gpu::open(&shell.surface_target(window)?, extent, transparent_window)?;
     let fonts = fonts.join().unwrap_or_else(|_| Fonts {
         theme: Err("the font loader panicked".into()),
-        emoji: Err("the font loader panicked".into()),
+        fallbacks: Vec::new(),
     });
     let outcome = Window::new(
         shell.as_mut(),
@@ -185,7 +183,7 @@ impl<'a> Window<'a> {
         let mut ui = Ui::new();
         ui.add_stylesheet("pikr", &spec.stylesheet);
         // Registered under the theme's family, which the stylesheet names;
-        // without it, text is drawn in crcbl's built-in sans-serif face.
+        // without any face, text is drawn in crcbl's built-in sans-serif.
         let family = &spec.font_family;
         if let Err(e) = fonts
             .theme
@@ -193,12 +191,10 @@ impl<'a> Window<'a> {
         {
             tracing::warn!(family, "theme font not used: {e}");
         }
-        // Emoji, and any other char the theme font lacks, are drawn from the
-        // system's emoji font; without one they draw as missing-glyph boxes.
-        match fonts.emoji {
-            Ok(emoji) => ui.set_fallback_fonts([emoji]),
-            Err(e) => tracing::warn!("emoji font not used: {e}"),
+        if fonts.fallbacks.is_empty() {
+            tracing::warn!("no fallback fonts: chars the theme font lacks draw as boxes");
         }
+        ui.set_fallback_fonts(fonts.fallbacks);
         Ok(Self {
             shell,
             window,
@@ -430,13 +426,18 @@ impl<'a> Window<'a> {
     /// buttons as they were before this event, lays out the new window and
     /// the second draws it.
     fn frame(&mut self, content: &Content, pointer: PointerInput) -> Result<Option<usize>> {
-        let at_rest = PointerInput {
-            down: self.pointer_down,
-            ..PointerInput::hovering(pointer.pos)
-        };
         let wheel = std::mem::take(&mut self.wheel);
-        self.build(content, at_rest, wheel);
-        let clicked = self.build(content, pointer, 0.0);
+        let clicked = self.build(content, pointer, wheel);
+        // Layout showed list rows the build left out (the first frame, or a
+        // list that grew): build again, with this frame's click and wheel
+        // already taken.
+        if self.ui.needs_rebuild() {
+            let at_rest = PointerInput {
+                down: self.pointer_down,
+                ..PointerInput::hovering(pointer.pos)
+            };
+            self.build(content, at_rest, 0.0);
+        }
         self.list.clear();
         self.list.set_scale(self.scale);
         self.ui.emit(&mut self.list);
@@ -504,15 +505,44 @@ impl Step {
 
 /// The system fonts the picker draws in, each found, read and parsed.
 struct Fonts {
-    /// The face the theme names.
+    /// The face the theme names, or the system's sans-serif when the theme's
+    /// family is not installed.
     theme: Result<Font, String>,
-    /// The fallback for chars the theme's face has no glyph for.
-    emoji: Result<Font, String>,
+    /// The system's fallbacks for the theme's family, in order, for the chars
+    /// its face has no glyph for: emoji, CJK, symbols.
+    fallbacks: Vec<Font>,
 }
 
-/// The installed font `family` names, found, read and parsed.
-fn load_font(family: &str) -> Result<Font, String> {
-    let path = crate::ui::fonts::find(family).ok_or("no such font installed")?;
-    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    Font::parse(bytes).map_err(|e| format!("{}: {e}", path.display()))
+fn load_fonts(family: &str) -> Fonts {
+    let started = Instant::now();
+    let system = SystemFonts::new();
+    let query = FontQuery::new(family);
+    let theme = system
+        .find(&query)
+        .or_else(|| {
+            tracing::warn!(
+                family,
+                "theme font not installed; using the system sans-serif"
+            );
+            system.find(&FontQuery::new("sans-serif"))
+        })
+        .ok_or_else(|| "no sans-serif font installed either".to_string())
+        .and_then(|face| Font::from_system(&face).map_err(|e| e.to_string()));
+    let fallbacks = system
+        .fallbacks(&query)
+        .iter()
+        .filter_map(|face| {
+            Font::from_system(face)
+                .inspect_err(
+                    |e| tracing::debug!(path = %face.path.display(), "fallback font skipped: {e}"),
+                )
+                .ok()
+        })
+        .collect::<Vec<_>>();
+    tracing::debug!(
+        elapsed_us = started.elapsed().as_micros(),
+        fallbacks = fallbacks.len(),
+        "startup fonts loaded"
+    );
+    Fonts { theme, fallbacks }
 }

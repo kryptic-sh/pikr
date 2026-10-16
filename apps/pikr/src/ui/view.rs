@@ -208,9 +208,7 @@ impl View {
                     VimMode::Normal => (".mode-chip.normal", "NORMAL"),
                     VimMode::Visual => (".mode-chip.visual", "VISUAL"),
                 };
-                ui.block(chip, &[], |ui| {
-                    ui.span("", label, &[]);
-                });
+                ui.span(chip, label, &[]);
                 ui.span(".mode-name", app.cli_mode.key().as_str(), &[]);
                 ui.block(".spacer", &[], |_| {});
                 let total = app.matches.len();
@@ -219,9 +217,7 @@ impl View {
                 } else {
                     format!("{}/{}", picker.selected + 1, total)
                 };
-                ui.block(".count-chip", &[], |ui| {
-                    ui.span("", count.as_str(), &[]);
-                });
+                ui.span(".count-chip", count.as_str(), &[]);
             });
         });
         clicked
@@ -273,11 +269,12 @@ fn query(ui: &mut Ui, text: &str, cursor: usize, mode: VimMode, blink_on: bool) 
                 ui.span(".query-text", after.as_str(), &[]);
             }
             VimMode::Normal | VimMode::Visual => {
-                // Past the end the block sits on a space.
-                let under = chars.get(cursor).map_or(" ".to_string(), char::to_string);
-                ui.block(&format!(".caret-block{blink}"), &[], |ui| {
-                    ui.span("", under.as_str(), &[]);
-                });
+                // Past the end the block sits on a no-break space: a plain
+                // space alone in a span collapses to nothing.
+                let under = chars
+                    .get(cursor)
+                    .map_or("\u{A0}".to_string(), char::to_string);
+                ui.span(&format!(".caret-block{blink}"), under.as_str(), &[]);
                 let after: String = chars.get(cursor + 1..).unwrap_or_default().iter().collect();
                 ui.span(".query-text", after.as_str(), &[]);
             }
@@ -364,9 +361,7 @@ fn runs<'a>(text: &'a str, positions: &[u32]) -> Vec<(&'a str, bool)> {
 fn confirm_card(ui: &mut Ui, session: &Session) {
     if let Some(card) = &session.confirm {
         let text = format!("{}  \u{21B5}", card.prompt);
-        ui.block(".confirm-card", &[], |ui| {
-            ui.span("", text.as_str(), &[]);
-        });
+        ui.span(".confirm-card", text.as_str(), &[]);
     }
 }
 

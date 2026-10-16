@@ -41,4 +41,8 @@ allow-wildcard-paths = true
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+allow-git = [
+    # crcbl, pinned by rev until a crcbl release carries the fixes pikr uses
+    # (see the workspace Cargo.toml).
+    "https://github.com/kryptic-sh/crcbl",
+]
