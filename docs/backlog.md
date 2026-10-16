@@ -59,19 +59,23 @@
   - S13: cold start not measured.
   - S14: accessibility is on a branch.
   - S18: FreeBSD compiles but has never run.
-  - S22: colour emoji has not started. It is in pikr's spike set, so the emoji
-    mode can't reach parity on 0.1.0.
+  - S22: colour emoji isn't in 0.1.0. It is in pikr's spike set. As of
+    2026-10-16 it is in review at crcbl: per-glyph fallback plus CBDT, sbix and
+    COLR v0/v1, drawn by the UI pass.
   - Win32 per-pixel transparency (a DirectComposition swapchain) and AppKit
     no-flash on map are still missing.
 
-  On crcbl main after the tag, not yet released. crcbl reports `5f1c1571` as a
+  On crcbl main after the tag, not yet released. crcbl reports `de5f5ade` as a
   green main commit carrying all of this; not verified from pikr:
   - dead keys/Compose on Wayland and X11, and text-input-v3;
   - `crcbl-image` (S28), with features `png` (decode and encode), `jpeg`, `bmp`,
     `ico` (`ico::sizes`) and `theme` (XDG lookup), plus `raw::convert` and
     `resize::{fit_within, shrink_to_fit, nearest_size}` (Lanczos3). `svg`
     (`svg::decode(bytes, size, scale, &limits)`, which errors on anything
-    outside its subset) and `webp` (lossless only; lossy is on its way to main);
+    outside its subset) and `webp` (lossless and lossy VP8 with ALPH alpha,
+    including the first frame of an animation). crcbl reports an exact match
+    with libwebp's default decode on its fixtures, and no panics over 9.6M
+    corrupted inputs, so WebP is at parity with pikr's current decoding;
   - `Shell::set_text_input(window, Option<TextPurpose>)`, replacing
     `set_text_input_enabled`. `TextPurpose` is `{Normal, Password, Pin}` in
     `crcbl_core::input`, `None` turns input off, and
@@ -95,7 +99,7 @@
   - Step 10: S23, with a spike against `default.css`.
   - Last: S14, AccessKit, because it is a new dependency (owner's call).
 
-  crcbl rev to pin for the spike: `5f1c1571` for crcbl-image (with SVG) and the
+  crcbl rev to pin for the spike: `de5f5ade` for crcbl-image (with SVG) and the
   `set_text_input` API, otherwise `72999dd7`. For `72999dd7`: crcbl's session
   reports a full CI pass on that exact commit (sway, a real Win32 desktop, a
   macOS session); not verified from pikr. It contains:
@@ -201,8 +205,15 @@
     recover up to 9 refusals (about 88% → 93% if they match). It will be
     measured on breeze apps and hicolor. CI's `svg corpus` job now also measures
     the runner's `/usr/share/icons/hicolor`, report-only with no floor, since
-    the runner image decides what's in it. Not parity yet. Until it is, the port
-    keeps resvg and passes its RGBA output to `ImageAtlas::register`.
+    the runner image decides what's in it.
+
+  Drop-shadow filters (feGaussianBlur, feOffset, feFlood, feComposite,
+  feColorMatrix, feMerge, linearRGB) were pushed next, and crcbl reports every
+  filter refusal now matching resvg. Breeze apps goes 88.3% → 92.2%, Adwaita
+  97.3% → 99.3% and breeze 98.5% → 98.9%. That push's CI was not yet green when
+  reported. Breeze apps still refuses 6 text icons (one of them `flowRoot`) and
+  2 DTD-entity files. Not parity yet. Until it is, the port keeps resvg and
+  passes its RGBA output to `ImageAtlas::register`.
 
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
