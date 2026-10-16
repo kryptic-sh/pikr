@@ -249,6 +249,18 @@ static char *icon[] = {
         assert_eq!(first_pixel(&image), [0, 0, 0xff, 0xff]);
     }
 
+    /// Needs a system sans-serif face for the glyph; without one crcbl
+    /// refuses the text by name.
+    #[test]
+    fn svg_text_is_drawn() {
+        let text = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><text x="0" y="10" font-family="sans-serif" font-size="14" fill="#0000ff">W</text></svg>"##;
+        let image = decode(text, 24).expect("decode");
+        assert!(
+            image.pixels().as_chunks::<4>().0.iter().any(|p| p[3] > 0),
+            "the glyph must cover some pixel"
+        );
+    }
+
     #[test]
     fn a_new_size_decodes_again() {
         let dir = tempfile::tempdir().unwrap();

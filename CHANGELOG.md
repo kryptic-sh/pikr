@@ -33,8 +33,9 @@ and this project adheres to
   Arabic, are not shaped yet.
 - Windows: the panel is opaque with square outer corners until crcbl supports
   per-pixel window transparency there.
-- SVG icons are drawn by crcbl's own renderer. An icon using a feature it does
-  not draw yet (SVG text) shows the generic application icon instead.
+- SVG icons are drawn by crcbl's own renderer, text included. An icon it cannot
+  draw, such as text in characters no installed font has, shows the generic
+  application icon instead.
 - The minimum supported Rust version is 1.98.
 
 ### Added

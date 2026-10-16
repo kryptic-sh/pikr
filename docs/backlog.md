@@ -22,18 +22,21 @@
 
 - **The port to crcbl landed on 2026-10-16.** floem, its winit fork, resvg,
   `freedesktop-icons`, `image`, `hjkl-css` and `imbl` are gone. Every crcbl
-  crate in the workspace `Cargo.toml` is pinned to crcbl main `4c53204e`, past
-  0.2.0, for `Ui::needs_rebuild`, spans that paint their box and crcbl-font.
-  Bump them together, to CI-green revs only, and move back to crates.io with the
-  first crcbl release that carries them.
+  crate in the workspace `Cargo.toml` is on crates.io 0.2.1; bump them together.
+  If a fix pikr needs is only on crcbl main, pin every crate to the same
+  CI-green rev and add the repo back to `deny.toml`'s `allow-git` until a
+  release carries it.
 - **Waiting on crcbl.** Each is a gap in pikr until it lands; crcbl's session
   has every one queued and reports green revs as they land.
   - ZWJ emoji sequences, skin tones and flags draw as their parts (no GSUB).
   - Shaping (GSUB/GPOS beyond Latin-1 kerning, Arabic/Indic, bidi).
-  - SVG text (including `flowRoot`), next on crcbl's list. A refused SVG shows
-    the generic icon. By crcbl's corpus job at 0.2.0 (not measured from pikr),
-    breeze apps decode 93.2% and papirus 99.9%; embedded `<image>` (data: URLs)
-    landed since, in the pinned rev.
+  - SVG text is drawn one glyph per character from cmap, without shaping, and
+    `flowRoot` is skipped as browsers skip it. Text in characters no installed
+    face has is refused, and the icon falls back to the generic one. Coverage of
+    real icon themes was not measured from pikr; crcbl's CI holds the breeze
+    corpus against resvg (floors per crcbl's 0.2.1 release notes).
+  - `picker::icons::tests::svg_text_is_drawn` needs a system sans-serif face;
+    the Ubuntu test job installs no fonts, so it relies on the runner image.
   - Win32 per-pixel transparency (a DirectComposition swapchain): the Windows
     panel is opaque with square outer corners.
   - S9 IME on/off on Win32 and AppKit.
