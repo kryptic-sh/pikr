@@ -64,19 +64,24 @@
   - Win32 per-pixel transparency (a DirectComposition swapchain) and AppKit
     no-flash on map are still missing.
 
-  On crcbl main after the tag, not yet released. crcbl reports `db30e0f7` as a
+  On crcbl main after the tag, not yet released. crcbl reports `5f1c1571` as a
   green main commit carrying all of this; not verified from pikr:
   - dead keys/Compose on Wayland and X11, and text-input-v3;
   - `crcbl-image` (S28), with features `png` (decode and encode), `jpeg`, `bmp`,
     `ico` (`ico::sizes`) and `theme` (XDG lookup), plus `raw::convert` and
-    `resize::{fit_within, shrink_to_fit, nearest_size}` (Lanczos3). SVG and WebP
-    are still on a branch;
+    `resize::{fit_within, shrink_to_fit, nearest_size}` (Lanczos3). `svg`
+    (`svg::decode(bytes, size, scale, &limits)`, which errors on anything
+    outside its subset) and `webp` (lossless only; lossy is on its way to main);
   - `Shell::set_text_input(window, Option<TextPurpose>)`, replacing
     `set_text_input_enabled`. `TextPurpose` is `{Normal, Password, Pin}` in
     `crcbl_core::input`, `None` turns input off, and
     `Ui::text_editing_purpose()` reports the focused field's purpose. pikr's
     password mode should pass `TextPurpose::Password`. Still on crcbl's
     integration branch: S12 `Ui::paragraph` and S14 `accesskit`.
+
+  Breaking in crcbl's next release: `crcbl_ui::font::raster` moved to
+  `crcbl_image::raster` (the old path still re-exports it), and `Rasterizer`
+  takes `raster::Point` instead of `glam::Vec2`.
 
   Until a release covers a row pikr needs, pikr pins by git rev, at CI-green
   commits only. crcbl's backlog holds the ordered program, and pikr's spike rows
@@ -90,7 +95,7 @@
   - Step 10: S23, with a spike against `default.css`.
   - Last: S14, AccessKit, because it is a new dependency (owner's call).
 
-  crcbl rev to pin for the spike: `db30e0f7` for crcbl-image and the
+  crcbl rev to pin for the spike: `5f1c1571` for crcbl-image (with SVG) and the
   `set_text_input` API, otherwise `72999dd7`. For `72999dd7`: crcbl's session
   reports a full CI pass on that exact commit (sway, a real Win32 desktop, a
   macOS session); not verified from pikr. It contains:
@@ -177,11 +182,11 @@
 
   crcbl accepted these conditions. The themes are GPL-3.0 / CC-BY-SA, so they
   aren't committed: a CI job downloads them and renders the references with the
-  `resvg` CLI on the runner. First results at 48 px, reported by crcbl (the SVG
-  renderer is on a branch): Adwaita 97.3%, Papirus 99.8%, breeze 98.5% and
-  breeze apps 88.3% matching. "Matching" means it rendered, with at most 1% of
-  pixels off by more than 32/255 in any premultiplied channel. Breeze apps (206
-  icons) breaks down as:
+  `resvg` CLI on the runner. Results at 48 px against resvg 0.48.1, reported by
+  crcbl for the renderer now on main: Adwaita 97.3%, Papirus 99.8%, Papirus apps
+  99.7%, breeze 98.5% and breeze apps 88.3% matching. "Matching" means it
+  rendered, with at most 1% of pixels off by more than 32/255 in any
+  premultiplied channel. Breeze apps (206 icons) breaks down as:
   - 182 matching;
   - 8 differing. crcbl says these come mostly from resvg not inheriting
     `gradientTransform` through `href`, which crcbl does per the spec, and the
@@ -194,9 +199,10 @@
     the drop-shadow primitives (feGaussianBlur, feComposite, feOffset, feFlood,
     feColorMatrix). Supporting these five is crcbl's next SVG step and could
     recover up to 9 refusals (about 88% → 93% if they match). It will be
-    measured on breeze apps and hicolor. crcbl is also adding a hicolor set
-    taken from installed systems. Not parity yet. Until it is, the port keeps
-    resvg and passes its RGBA output to `ImageAtlas::register`.
+    measured on breeze apps and hicolor. CI's `svg corpus` job now also measures
+    the runner's `/usr/share/icons/hicolor`, report-only with no floor, since
+    the runner image decides what's in it. Not parity yet. Until it is, the port
+    keeps resvg and passes its RGBA output to `ImageAtlas::register`.
 
   Item 9 is `ShellEvent::FocusRefused { window }`: queued when an Exclusive
   panel's `SetForegroundWindow` returns false, with no Focus event after it.
