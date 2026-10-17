@@ -28,9 +28,9 @@ and this project adheres to
   font directories on macOS. A family that isn't installed is drawn in the
   system's sans-serif face.
 - Characters the theme font lacks (emoji, CJK, symbols) are drawn from the
-  system's fallback fonts for it, colour emoji in colour. ZWJ sequences, skin
-  tones and flags draw as their parts, and scripts that need shaping, such as
-  Arabic, are not shaped yet.
+  system's fallback fonts for it, colour emoji in colour. Text is shaped, so ZWJ
+  sequences and skin tones draw as one emoji. Right-to-left text is not
+  reordered yet.
 - Windows: the panel is opaque with square outer corners until crcbl supports
   per-pixel window transparency there.
 - SVG icons are drawn by crcbl's own renderer, text included. An icon it cannot
