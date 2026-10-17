@@ -79,11 +79,13 @@
   the Esc-only tests passed by coincidence. The same holds for any virtual or
   remapped keyboard.
 - **Not verified (coverage gaps).**
-  - Linux and FreeBSD were not run locally at all. The first real check of
-    Wayland (layer-shell overlay panel, keyboard, lavapipe rendering) is CI's
-    sway e2e suite and the 500 ms startup gate, whose Vulkan startup time is
-    unknown.
-  - macOS was not built or run.
+  - Linux was verified only through CI's sway session on lavapipe: the e2e
+    keyboard suite and the startup gate passed (run 39002212977, 237 ms
+    launch-to-result against the 500 ms deadline). Hyprland, niri and KWin were
+    never run, and no Linux run was looked at by eye.
+  - FreeBSD was neither built nor run.
+  - macOS: CI builds it and runs the unit tests and the `--version`/`--help`
+    smoke tests; the window was never opened.
   - Windows (D3D12): the picker, match highlighting, a scrolled list with its
     scrollbar and the `--message` modal were rendered and looked at in
     screenshots. Keyboard input, clicks, the wheel and drun icons were not
@@ -91,12 +93,32 @@
     and synthesized keys would have gone to another window.
   - No icon from a real icon theme was drawn; icon decoding is covered by unit
     tests only. HiDPI (scale ≠ 1) was not exercised.
-  - `docs/gui-backend-research.md` is the migration's design doc; delete it,
-    keeping only what still binds, once CI has verified the port.
-- **wayr declined as a target.** It is Wayland-only by design, so Pikr would
-  still need separate Windows and macOS paths. wayr's own `README.md` still
-  lists Pikr as a consumer; that needs fixing in the wayr repo (no session was
-  available to do it).
+  - IME pre-edit and commit through text-input-v3, and accessibility reaching
+    AT-SPI (crcbl's AccessKit row), were never checked from pikr.
+- **Project constraints for the GUI** (from the migration's design, still
+  binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
+  by project direction; keep `ui/styles/default.css`, its class names and theme
+  placeholders as the styling contract; render only the visible rows of large
+  modes (emoji); and reach a usable picker in under 500 ms from a cold start.
+- **GUI stacks considered and declined** before crcbl was chosen (2026-10-15).
+  Re-propose one only with new evidence.
+  - Iced with `iced_layershell`: a third-party layer-shell event loop with
+    unproven IME, AT-SPI and FreeBSD support, and no CSS, so pikr would map
+    every style itself.
+  - COSMIC/libcosmic: brings COSMIC's own app and theme conventions, which
+    pikr's stylesheet would have to bypass.
+  - Slint: no layer-shell in its desktop backends, so pikr would own a custom
+    platform backend.
+  - egui: no mature layer-shell integration, and the whole CSS mapping would sit
+    in pikr.
+  - A pikr-only frontend on SCTK, tiny-skia and cosmic-text: pikr would own
+    surfaces, scaling, XKB/IME, clipboard, accessibility and compositor quirks
+    forever.
+  - A general toolkit from scratch, or a browser/WebView frontend: scope and
+    startup cost out of proportion for a transient launcher.
+  - wayr: Wayland-only by design, so pikr would still need separate Windows and
+    macOS paths. wayr's own `README.md` still lists pikr as a consumer; that
+    needs fixing in the wayr repo (no session was available to do it).
 
 ## Release pipeline
 
