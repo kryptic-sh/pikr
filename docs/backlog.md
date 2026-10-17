@@ -121,6 +121,13 @@
   it. Left as-is 2026-09-15: a deliberate pre-existing gate, not a v0.8.13
   regression.
 
+  Since the crcbl port a plain musl target would not do either: crcbl-vk opens
+  `libvulkan.so.1` with `dlopen` (`ash::Entry::load`), which a statically linked
+  musl binary (the target's default) cannot do, so it would build and then exit
+  "no usable GPU". An Alpine package needs a dynamically linked musl build
+  (`-C target-feature=-crt-static`, built on Alpine itself, e.g. in an `alpine`
+  container job), checked by running it against Mesa there.
+
 ## Hardening (correct today, fragile — not defects)
 
 Re-verified against the tree on 2026-10-18.
