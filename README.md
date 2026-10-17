@@ -58,6 +58,17 @@ pikr --show run           # run command
 echo -e "a\nb\nc" | pikr --dmenu
 ```
 
+pikr registers no global hotkey of its own; bind one to a command like the ones
+above:
+
+- **Wayland compositors:** in the compositor's config, e.g. sway's
+  `bindsym $mod+d exec pikr --show drun` or Hyprland's
+  `bind = SUPER, D, exec, pikr --show drun`.
+- **Windows:** with a hotkey tool such as PowerToys Keyboard Manager (a shortcut
+  remapped to run a program) or AutoHotkey (`#Space::Run "pikr --show drun"`).
+- **macOS:** with a hotkey tool such as skhd (`cmd - space : pikr --show drun`)
+  or a Shortcuts shortcut that runs a shell script.
+
 ### Custom accept keys (dmenu)
 
 `--kb-custom KEY` (with `--dmenu` or `--show dmenu`) adds an alternate key that

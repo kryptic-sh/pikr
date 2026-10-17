@@ -193,8 +193,6 @@ macOS and Windows.
   topmost `WS_EX_TOOLWINDOW` window, by crcbl's documentation of its Win32
   panel. Whether pikr is now absent from Alt-Tab and the taskbar was not looked
   at.
-- **README should document that a global hotkey is user-wired on Windows and
-  macOS** (PowerToys, AutoHotkey).
 
 ### Coverage gaps (not verified)
 
