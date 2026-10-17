@@ -22,21 +22,21 @@
 
 - **The port to crcbl landed on 2026-10-16.** floem, its winit fork, resvg,
   `freedesktop-icons`, `image`, `hjkl-css` and `imbl` are gone. Every crcbl
-  crate in the workspace `Cargo.toml` is pinned to crcbl main `3c023b2f`, past
-  0.2.1, for text shaping (harfrust). Bump them together, to CI-green revs only,
-  and move back to crates.io with the first crcbl release that carries it (crcbl
-  says 0.3.0, since shaping removed `font::fallback::map_char`, `map_text` and
-  `Font::kerning`; pikr calls none of them). Drop the crcbl entry from
-  `deny.toml`'s `allow-git` then.
+  crate in the workspace `Cargo.toml` is pinned to crcbl main `4d48eaf4`, past
+  0.2.1, for text shaping (harfrust) and Win32 transparency. Bump them together,
+  to CI-green revs only, and move back to crates.io with the first crcbl release
+  that carries it (crcbl says 0.3.0, since shaping removed
+  `font::fallback::map_char`, `map_text` and `Font::kerning`; pikr calls none of
+  them). Drop the crcbl entry from `deny.toml`'s `allow-git` then.
+- **Windows transparency is D3D12 only.** crcbl draws a transparent Win32 window
+  through a DirectComposition swapchain and refuses one on Vulkan, which pikr
+  does not use on Windows. Pixels with alpha 0 (outside the panel's rounded
+  corners) still take the pointer. Rounded, see-through corners were confirmed
+  in a `--dmenu` screenshot at `4d48eaf4`.
 - `picker::icons::tests::svg_text_is_drawn` needs a system sans-serif face; the
   Ubuntu test job installs no fonts, so it relies on the runner image.
 - **Waiting on crcbl.** Each is a gap in pikr until it lands; crcbl's session
   has every one queued and reports green revs as they land.
-  - Keycap sequences (`1️⃣`) draw as a monochrome boxed digit, not Segoe UI
-    Emoji's colour keycap. Seen in a `--dmenu` screenshot on Windows at
-    `3c023b2f`, where 👩‍💻, 👍🏽 and ❤️‍🔥 each drew as one colour glyph. crcbl
-    reported keycaps working against `seguiemj.ttf` directly, so the face chosen
-    for the cluster is the suspect; not diagnosed. Reported to crcbl.
   - Regional-indicator flags (🇺🇸) draw as two letters with Segoe UI Emoji, which
     has no flag ligatures; Noto Color Emoji draws them. Not a crcbl bug.
   - Bidi, UAX #14 line breaking, full UAX #29 clusters, and shaping in SVG text.
@@ -47,8 +47,6 @@
     face has is refused, and the icon falls back to the generic one. Coverage of
     real icon themes was not measured from pikr; crcbl's CI holds the breeze
     corpus against resvg (floors per crcbl's 0.2.1 release notes).
-  - Win32 per-pixel transparency (a DirectComposition swapchain): the Windows
-    panel is opaque with square outer corners.
   - S9 IME on/off on Win32 and AppKit.
   - D3D12 startup: at crcbl `6ca46474`, instance open plus adapter enumeration
     took ~0.7 s and device creation ~0.23 s of a ~1.1 s launch-to-first-paint

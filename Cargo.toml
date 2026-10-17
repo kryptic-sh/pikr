@@ -21,14 +21,14 @@ anyhow = "1"
 # image decoders and icon-theme lookup, and system font lookup. Pinned to a
 # CI-green crcbl main commit past 0.2.1 for text shaping; move back to the
 # crates.io release that carries it. Every crcbl crate must name the same rev.
-crcbl-dx12 = { git = "https://github.com/kryptic-sh/crcbl", rev = "3c023b2ff34890168a8085a7c90d561e87fe3077", version = "0.2.1" }
-crcbl-frame = { git = "https://github.com/kryptic-sh/crcbl", rev = "3c023b2ff34890168a8085a7c90d561e87fe3077", version = "0.2.1", features = ["parsed-font"] }
-crcbl-hal = { git = "https://github.com/kryptic-sh/crcbl", rev = "3c023b2ff34890168a8085a7c90d561e87fe3077", version = "0.2.1" }
-crcbl-image = { git = "https://github.com/kryptic-sh/crcbl", rev = "3c023b2ff34890168a8085a7c90d561e87fe3077", version = "0.2.1", features = ["png", "jpeg", "svg", "webp", "ico", "xpm", "svg-text", "theme"] }
-crcbl-mtl = { git = "https://github.com/kryptic-sh/crcbl", rev = "3c023b2ff34890168a8085a7c90d561e87fe3077", version = "0.2.1" }
-crcbl-shell = { git = "https://github.com/kryptic-sh/crcbl", rev = "3c023b2ff34890168a8085a7c90d561e87fe3077", version = "0.2.1" }
-crcbl-ui = { git = "https://github.com/kryptic-sh/crcbl", rev = "3c023b2ff34890168a8085a7c90d561e87fe3077", version = "0.2.1", features = ["system-fonts"] }
-crcbl-vk = { git = "https://github.com/kryptic-sh/crcbl", rev = "3c023b2ff34890168a8085a7c90d561e87fe3077", version = "0.2.1" }
+crcbl-dx12 = { git = "https://github.com/kryptic-sh/crcbl", rev = "4d48eaf4c076d5be733b5621329e0f47c52a63ee", version = "0.2.1" }
+crcbl-frame = { git = "https://github.com/kryptic-sh/crcbl", rev = "4d48eaf4c076d5be733b5621329e0f47c52a63ee", version = "0.2.1", features = ["parsed-font"] }
+crcbl-hal = { git = "https://github.com/kryptic-sh/crcbl", rev = "4d48eaf4c076d5be733b5621329e0f47c52a63ee", version = "0.2.1" }
+crcbl-image = { git = "https://github.com/kryptic-sh/crcbl", rev = "4d48eaf4c076d5be733b5621329e0f47c52a63ee", version = "0.2.1", features = ["png", "jpeg", "svg", "webp", "ico", "xpm", "svg-text", "theme"] }
+crcbl-mtl = { git = "https://github.com/kryptic-sh/crcbl", rev = "4d48eaf4c076d5be733b5621329e0f47c52a63ee", version = "0.2.1" }
+crcbl-shell = { git = "https://github.com/kryptic-sh/crcbl", rev = "4d48eaf4c076d5be733b5621329e0f47c52a63ee", version = "0.2.1" }
+crcbl-ui = { git = "https://github.com/kryptic-sh/crcbl", rev = "4d48eaf4c076d5be733b5621329e0f47c52a63ee", version = "0.2.1", features = ["system-fonts"] }
+crcbl-vk = { git = "https://github.com/kryptic-sh/crcbl", rev = "4d48eaf4c076d5be733b5621329e0f47c52a63ee", version = "0.2.1" }
 # crcbl-ui and crcbl-frame take glam vectors and do not re-export glam.
 glam = "0.34"
 clap = { version = "4", features = ["derive"] }

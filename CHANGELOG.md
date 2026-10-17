@@ -31,8 +31,6 @@ and this project adheres to
   system's fallback fonts for it, colour emoji in colour. Text is shaped, so ZWJ
   sequences and skin tones draw as one emoji. Right-to-left text is not
   reordered yet.
-- Windows: the panel is opaque with square outer corners until crcbl supports
-  per-pixel window transparency there.
 - SVG icons are drawn by crcbl's own renderer, text included. An icon it cannot
   draw, such as text in characters no installed font has, shows the generic
   application icon instead.
