@@ -57,6 +57,12 @@ jobs:
       - run: rustup update --no-self-update stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+      # FreeBSD has no runner here; linting its target from Linux at least
+      # compiles the FreeBSD arms (no link, no run).
+      - if: matrix.os == 'ubuntu-latest'
+        run: |
+          rustup target add x86_64-unknown-freebsd
+          cargo clippy --target x86_64-unknown-freebsd --all-targets --all-features --workspace -- -D warnings
 
   deny:
     name: cargo-deny

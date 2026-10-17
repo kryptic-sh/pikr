@@ -83,7 +83,8 @@
     keyboard suite and the startup gate passed (run 39002212977, 237 ms
     launch-to-result against the 500 ms deadline). Hyprland, niri and KWin were
     never run, and no Linux run was looked at by eye.
-  - FreeBSD was neither built nor run.
+  - FreeBSD is only type-checked: CI's Ubuntu clippy job lints the
+    `x86_64-unknown-freebsd` target. Nothing links or runs it.
   - macOS: CI builds it and runs the unit tests and the `--version`/`--help`
     smoke tests; the window was never opened.
   - Windows (D3D12): the picker, match highlighting, a scrolled list with its
