@@ -73,7 +73,6 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         count = entries.len(),
         "startup entries collected"
     );
-    tracing::debug!(count = entries.len(), "entries collected");
 
     let mut picker = PickerState::new();
     picker.vim_mode = cli.mode;
