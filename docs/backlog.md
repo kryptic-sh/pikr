@@ -122,21 +122,22 @@
 
 ## Hardening (correct today, fragile — not defects)
 
+Re-verified against the tree on 2026-10-18.
+
 - Symlinked-dir mtime cache blindness; coarse-granularity same-tick cache
   staleness; non-atomic state writes; `--lines 0` / `--width 0`; row-key
-  Arc-pointer fragility; non-UTF8 PATH names. (review pass 2026-08-06)
-- `freedesktop-icons` joins the icon name into the theme path; a name containing
-  `..` can escape the theme dir, and usvg's default resolver reads an
-  absolute-path `<image href>` from a crafted SVG. Display-only, same trust
-  domain; reject names containing `/` or `..` at `icons.rs:90` if the trust
-  model changes.
-- drun cache-hit skips re-validation — a same-user attacker with a predictable
-  cache key gets a second execution path.
-- run-mode label ↔ executed-binary mismatch — `scan_path` dedupes by name across
-  PATH dirs but spawn re-resolves the bare name via PATH at Accept, so the
-  listed entry can be a different binary than launched.
-- `Exec=` relative program (`Exec=./foo`) resolves against pikr's CWD.
-- dmenu stdin is unbounded (`dmenu.rs:22-28`) — a hostile caller piping
+  Arc-pointer fragility; non-UTF8 PATH names. (review pass 2026-08-06; not
+  re-checked individually)
+- drun cache hit skips re-validation (`drun::load_cache` returns the cached
+  entries once dirs, locales and the mtime key match) — a same-user attacker
+  with a predictable cache key gets a second execution path.
+- run-mode label ↔ executed-binary mismatch — `run::scan_path` dedupes by name
+  across PATH dirs and each entry is `Entry::exec(name, name)`, so spawn
+  re-resolves the bare name via PATH at accept and can launch a different binary
+  than the one listed.
+- `Exec=` relative program (`Exec=./foo`) resolves against pikr's CWD
+  (`drun::parse_exec` keeps the program as written).
+- dmenu stdin is unbounded (`dmenu::read_entries`) — a hostile caller piping
   gigabytes bloats the process.
 
 ## Accepted trade-offs (not scheduled)
@@ -333,13 +334,6 @@ source).
   (sub-agent-traced)
 - **Windows drun dedupe-before-sort** (`drun.rs:621-623`) — parallels the unix
   path. (sub-agent-traced; Windows-only, not executed)
-
-### Hardening (correct today, fragile — not defects)
-
-- **`Key::Character` multi-codepoint strings** — `keys.rs:101/190` take
-  `s.chars().next()?` and drop the rest. xkb delivers one scalar per event
-  today, but an IME composing a whole grapheme (or word) into one
-  `Key::Character` would silently insert only its first char.
 
 ### Coverage
 

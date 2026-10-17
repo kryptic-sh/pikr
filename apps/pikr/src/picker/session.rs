@@ -328,6 +328,12 @@ impl Session {
                 picker.query.insert(byte_idx, c);
                 picker.query_cursor += 1;
             }
+            Action::InsertText(text) => {
+                self.history_cursor = None;
+                let byte_idx = char_idx_to_byte(&picker.query, picker.query_cursor);
+                picker.query.insert_str(byte_idx, &text);
+                picker.query_cursor += text.chars().count();
+            }
             Action::Backspace => {
                 self.history_cursor = None;
                 let cur = picker.query_cursor;
@@ -478,6 +484,17 @@ mod tests {
         assert_eq!(s.app.picker.query_cursor, 3);
         assert_eq!(s.app.matches.len(), 1);
         assert_eq!(s.app.entries[s.app.matches[0].index].label, "beta");
+    }
+
+    #[test]
+    fn a_multi_character_commit_inserts_all_of_it() {
+        // An IME commits a whole word at once, as one text commit.
+        let mut s = session(CliMode::Dmenu, &["日本語", "english"]);
+        type_text(&mut s, "x");
+        s.handle_key(&named(NamedKey::ArrowLeft), none());
+        assert_eq!(s.handle_key(&ch("日本"), none()), Outcome::Continue);
+        assert_eq!(s.app.picker.query, "日本x");
+        assert_eq!(s.app.picker.query_cursor, 2);
     }
 
     #[test]

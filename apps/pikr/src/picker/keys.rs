@@ -33,6 +33,8 @@ pub enum Action {
     ConfirmKbCustom(usize),
     Cancel,
     InsertChar(char),
+    /// Insert several characters at once: an IME or compose commit.
+    InsertText(String),
     Backspace,
     // Query-bar caret editing (Insert mode).
     CursorLeft,
@@ -123,6 +125,9 @@ pub fn key_to_action(
                         'n' => Some(Action::HistoryNext),
                         _ => None,
                     };
+                }
+                if s.chars().nth(1).is_some() {
+                    return Some(Action::InsertText(s.clone()));
                 }
                 Some(Action::InsertChar(c))
             }

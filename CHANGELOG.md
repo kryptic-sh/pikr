@@ -46,6 +46,8 @@ and this project adheres to
 
 ### Fixed
 
+- Text committed by an input method in one piece, such as a word from a Japanese
+  IME, is inserted whole; only its first character used to reach the query.
 - `ssh` mode: `HostName` and `User` lines inside a `Match` block no longer
   change the description of the `Host` entry above it. A `Match` block now ends
   the previous `Host` block, as in ssh itself.
