@@ -28,6 +28,14 @@
   that carries it (crcbl says 0.3.0, since shaping removed
   `font::fallback::map_char`, `map_text` and `Font::kerning`; pikr calls none of
   them). Drop the crcbl entry from `deny.toml`'s `allow-git` then.
+- **Decision needed: silent opaque fallback in `ui::gpu::Gpu::open`.** When the
+  window asked for transparency but the surface offers no
+  `CompositeAlpha::PreMultiplied`, pikr draws opaque without saying so. The
+  owner's rule as relayed by crcbl's session on 2026-10-17 ("every feature works
+  on every backend or is refused loudly") would forbid that; not yet confirmed
+  for pikr by the user. Options: a `tracing::warn!` and carry on opaque (pikr
+  still works, corners go square), or fail with an error (loud, but a working
+  picker is lost over a cosmetic gap).
 - **Windows transparency is D3D12 only.** crcbl draws a transparent Win32 window
   through a DirectComposition swapchain and refuses one on Vulkan, which pikr
   does not use on Windows. Pixels with alpha 0 (outside the panel's rounded
