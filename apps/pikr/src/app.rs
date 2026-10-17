@@ -89,6 +89,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
     let app = AppState {
         picker,
         usage_keys: crate::picker::frecency::entry_keys(&entries),
+        match_keys: crate::picker::matcher::match_keys(&entries),
         entries,
         matches: Vec::new(),
         g_pending: false,

@@ -71,8 +71,8 @@ impl Session {
 
     /// Swaps in the `--loading` rows once stdin has closed.
     pub fn entries_arrived(&mut self, entries: &[Entry]) {
-        self.app.entries = entries.iter().cloned().map(Arc::new).collect();
-        self.app.usage_keys = crate::picker::frecency::entry_keys(&self.app.entries);
+        self.app
+            .set_entries(entries.iter().cloned().map(Arc::new).collect());
         self.app.rerank();
         self.loading = None;
     }

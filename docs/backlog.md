@@ -1,23 +1,5 @@
 # Backlog
 
-## Open findings
-
-### Performance
-
-- **`picker/matcher.rs:135-144` — every non-ASCII label is re-decomposed
-  (grapheme split + NFC) per entry, per keystroke, though labels never change.**
-  `match_field` runs inside the per-entry loop (`matcher.rs:101-102`, from
-  `Session::handle_key`'s rerank on every keystroke). In emoji mode all ~1800
-  labels are non-ASCII (glyph prefix, `modes/emoji.rs:21`), so every keystroke
-  re-runs unicode-segmentation + NFC over all of them. The per-entry allocation
-  was already removed (reused `text_buf`), but the processing is repeated. Fix:
-  precompute each entry's grapheme-normalized form once at collect/switch time
-  and have `match_field` consume it (keep `text_buf` for descriptions). ~2 kB
-  memory for 1800 labels. ~100–400 µs/keystroke in emoji mode (measure
-  before/after with the existing `RUST_LOG=pikr=debug` spans). _Deferred
-  2026-08-06: the win is emoji-mode-specific and was not profiled this session;
-  the review itself recommends measuring before optimizing._
-
 ## GUI on crcbl
 
 - **The port to crcbl landed on 2026-10-16.** floem, its winit fork, resvg,
@@ -158,6 +140,16 @@
 
 ## Accepted trade-offs (not scheduled)
 
+- **Rank cost after precomputed match keys** (`picker::matcher::MatchKey`),
+  measured 2026-10-18 with a throwaway release-build probe over emoji mode's
+  1914 entries: 168–303 µs per keystroke (865–1190 µs before), plus ~1.8 ms to
+  build the keys when the entries load. Declined from the 2026-08-06 perf
+  review: a two-phase rank (score everything, compute positions only for the
+  shown rows). `Atom::score` and `Atom::indices` cost the same (242 vs 233 µs
+  for "a"), so it would save only the survivors' position allocations, ~100 µs
+  at 1392 survivors. Also unscheduled: the double sort per keystroke (matcher,
+  then frecency) and calc mode rebuilding its ≤101 entries' keys on every
+  keystroke.
 - drun warm-start residual: the mtime cache key walks every file under the XDG
   applications dirs on every launch. Documented in the perf review; deliberate.
   (The second half of the original entry — the rerank frecency loop forming a
@@ -427,82 +419,3 @@ empirically on this host).
   cache through `write_private_state` — DONE 2026-08-12; (2) overflow-checked
   buffer size in `hicon_to_png` — DONE 2026-09-15. Remaining: (3) tracked dmenu
   stdin cap / cache re-validation if the threat model tightens.
-
-## perf review 2026-08-06
-
-Whole-codebase performance pass (clean tree), hot paths: startup (under the 500
-ms usable-picker target) and per-keystroke rerank. Two new findings, both on the
-per-keystroke rerank path — verified by the orchestrator at the cited lines; the
-fix-soundness claim for finding 1 checked against the installed
-nucleo-matcher-0.3.1 source. Estimates are allocation-count arithmetic, not
-profiles. No code changed.
-
-### Findings
-
-1. **`picker/matcher.rs:106-123` — every surviving match allocates 2-4 heap
-   objects (`Rc::new(lp.clone())` / `Rc::new(dp.clone())`) per keystroke; a
-   broad emoji query allocates for ~1500+ entries.** `rank` fills a position
-   vector for every survivor before the caller sorts and truncates to
-   `max_results` (256, `config.rs:30`), yet positions are only read for the
-   truncated top matches (`view.rs:1090-1103` row build + `row_key` /
-   `highlighted_label`). Emoji mode N≈1800 with a short broad query → ~3000-5000
-   small malloc+free per keystroke (rerank runs on every query-changing key,
-   `view.rs:1037-1055`). Est. ~100-200 µs/keystroke worst case — same order as
-   the tracked grapheme item. Fix: two-phase rank — pass 1 `Atom::score` over
-   all N (score-only), apply the frecency bonus + sort + truncate in `rerank`,
-   then pass 2 `Atom::indices` only for the ≤256 survivors. Verified
-   behavior-identical: `score` and `indices` are the same
-   `fuzzy_matcher_impl<const INDICES>` instantiation (nucleo-matcher-0.3.1
-   `lib.rs:191`/`209`/`212`, `pattern.rs:302`/`331`), so scores match exactly;
-   `indices` merely also backtracks positions. Trades per-survivor Vec+Rc churn
-   for one `(index, score)` Vec of N. Empty-query path (`matcher.rs:68-80`)
-   already shares one `empty` Rc — untouched.
-
-2. **`ui/view.rs:677-681` — `pairs: Vec<(&str, Option<&str>)>` rebuilt from
-   scratch every keystroke.** `rerank` materializes an N×16-byte tuple Vec (plus
-   ~11 growth reallocs from `collect()` with no capacity hint) solely to hand
-   `matcher.rank` a slice it immediately iterates — ~29 KB churn per keystroke
-   in emoji mode. Same pattern in `rerank_calc` (`view.rs:779-784`, small N).
-   Fix: change `rank`'s parameter to iterate the entries directly
-   (`&[Arc<Entry>]` or an iterator yielding `(&str, Option<&str>)`), keeping
-   tuples as transient stack values. Modest, zero-risk, removes an allocation
-   from every keystroke in every mode.
-
-### Minor, deliberately not ranked (each <10 µs/keystroke or cold)
-
-- `ui/css.rs:79-82` — `apply()` builds a fresh `(String, Vec<String>)` memo key
-  (2-3 allocs) per call; runs per row-style closure per rebuild (~30-100
-  calls/keystroke when matched rows rebuild). Fixable by interning keys once per
-  sheet; noise relative to findings 1-2 and the tracked items.
-- `ui/view.rs:751` — calc mode rebuilds `usage_keys` (`frecency::entry_keys`,
-  one String alloc per entry) every keystroke; N ≤ 101 (history cap), calc-only.
-- Double sort per keystroke (`matcher.rs:127` + `view.rs:696`) — ~42k comparison
-  ops for 1800 entries, ~µs. Not worth merging the frecency bonus into the
-  matcher.
-- `css.rs`/`state.rs`/`keys.rs` — no O(n²) or wrong-container patterns found.
-
-### Coverage
-
-- Traced in full: startup (config → per-mode `collect` → `entry_keys` →
-  usage/history load → calc precompute → initial rerank → first paint/focus via
-  the `view.rs:1037` effect + `startup_gate.rs` markers); per-keystroke
-  (`KeyDown` → `InsertChar` → rerank effect → `Matcher::rank` → frecency loop →
-  truncate → `rev` bump → virtual_stack data closure → row rebuild → icon
-  resolve/`file_bytes` stat → `highlighted_label`/styles); per-navigation
-  (MoveDown/Up/PageDown — no rerank, only the tracked rev rebuild); calc rerank;
-  `switch_mode`; mode collects (drun walk + cache, run PATH scan with `d_type`
-  fast path, ssh parse, clipboard spawn, dmenu stdin).
-- Verified against installed sources: nucleo-0.5.0 / nucleo-matcher-0.3.1
-  (`score`/`indices` equivalence for finding 1's fix).
-- Not measured: µs estimates are allocation-count arithmetic, not profiles; both
-  findings sit on the same path as the tracked matcher item and would show in
-  the same `RUST_LOG=pikr=debug` spans. Not executed (Linux host): Windows-only
-  arms — read, not compiled.
-- Could not settle without profiling: first-paint icon resolution (per-name
-  `freedesktop_icons::lookup().find()` walks on cold cache — bounded to distinct
-  names, cached after), the two `TextLayout` measurements in the query bar per
-  keystroke (`view.rs:981-1003`), the 530 ms blink rebuild — all
-  sub-µs-to-low-µs, none reaching the tracked items' magnitude.
-- Not re-reported (already tracked): matcher grapheme re-decomposition
-  (`matcher.rs:135-144`), virtual_stack rebuild-on-`rev` (`view.rs:1084-1104`),
-  drun mtime walk, icons stat-per-lookup.

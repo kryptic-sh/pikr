@@ -95,6 +95,9 @@ pub struct AppState {
     /// per-keystroke bonus loop looks up frecency by key instead of rebuilding
     /// a String per entry. Rebuilt whenever `entries` is replaced.
     pub usage_keys: Vec<String>,
+    /// Match keys parallel to `entries`, so a keystroke's rank does no
+    /// Unicode segmentation. Rebuilt with `usage_keys`.
+    pub match_keys: Vec<crate::picker::matcher::MatchKey>,
     pub matches: Vec<Match>,
     pub g_pending: bool,
     pub cli_mode: CliMode,
@@ -120,6 +123,13 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Replaces the entries and rebuilds everything kept parallel to them.
+    pub fn set_entries(&mut self, entries: Vec<Arc<Entry>>) {
+        self.usage_keys = crate::picker::frecency::entry_keys(&entries);
+        self.match_keys = crate::picker::matcher::match_keys(&entries);
+        self.entries = entries;
+    }
+
     pub fn rerank(&mut self) {
         let query = self.picker.query.clone();
         tracing::debug!(
@@ -132,12 +142,7 @@ impl AppState {
             self.hide_match_positions_if_password();
             return;
         }
-        let pairs: Vec<(&str, Option<&str>)> = self
-            .entries
-            .iter()
-            .map(|e| (e.label.as_str(), e.description.as_deref()))
-            .collect();
-        let mut ranked = self.matcher.rank(&pairs, &query);
+        let mut ranked = self.matcher.rank(&self.entries, &self.match_keys, &query);
         // Frecency bonus: per-entry, derived from accept history. Added to
         // the nucleo score then re-sort, so heavily-used recent payloads
         // surface above one-off matches with equal text score. Empty query
@@ -226,8 +231,7 @@ impl AppState {
         for (expr, result) in &history {
             entries.push(mk_entry(expr, result, false));
         }
-        self.entries = entries;
-        self.usage_keys = crate::picker::frecency::entry_keys(&self.entries);
+        self.set_entries(entries);
 
         let live_offset = usize::from(live_eval.is_some());
         let mut matches: Vec<Match> = Vec::new();
@@ -255,13 +259,11 @@ impl AppState {
         } else {
             // Non-empty query → fuzzy-rank history labels against the query
             // so users can recall past expressions while still typing.
-            let pairs: Vec<(&str, Option<&str>)> = self
-                .entries
-                .iter()
-                .skip(live_offset)
-                .map(|e| (e.label.as_str(), e.description.as_deref()))
-                .collect();
-            let ranked = self.matcher.rank(&pairs, query);
+            let ranked = self.matcher.rank(
+                &self.entries[live_offset..],
+                &self.match_keys[live_offset..],
+                query,
+            );
             for mut m in ranked {
                 m.index += live_offset;
                 matches.push(m);
@@ -297,7 +299,7 @@ impl AppState {
             #[cfg(not(unix))]
             CliMode::Ssh => None,
         };
-        self.entries = match m {
+        let entries = match m {
             Some(mut m) => m
                 .collect()
                 .unwrap_or_default()
@@ -306,7 +308,7 @@ impl AppState {
                 .collect(),
             None => Vec::new(),
         };
-        self.usage_keys = crate::picker::frecency::entry_keys(&self.entries);
+        self.set_entries(entries);
         self.picker.query.clear();
         self.picker.query_cursor = 0;
         self.picker.selected = 0;
@@ -348,6 +350,7 @@ pub(crate) mod tests {
         AppState {
             picker: crate::picker::state::PickerState::new(),
             usage_keys: crate::picker::frecency::entry_keys(&entries),
+            match_keys: crate::picker::matcher::match_keys(&entries),
             entries,
             matches: Vec::new(),
             g_pending: false,

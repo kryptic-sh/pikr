@@ -6,7 +6,9 @@
 //! UI uses those to highlight the matched spans independently.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
+use crate::modes::Entry;
 use nucleo::pattern::{Atom, AtomKind, CaseMatching, Normalization};
 use nucleo::{Config, Matcher as NucleoMatcher, Utf32Str};
 use unicode_normalization::UnicodeNormalization;
@@ -27,10 +29,55 @@ pub struct Match {
 pub struct Matcher {
     inner: NucleoMatcher,
     case_matching: CaseMatching,
-    /// Scratch buffer for the rare grapheme→codepoint index conversion.
+    /// Scratch buffer for the grapheme→codepoint index conversion.
     scratch: Vec<u32>,
-    /// Reused buffer for the per-field non-ASCII text reduction.
-    text_buf: Vec<char>,
+}
+
+/// One entry's text prepared for matching, built once when the entries are
+/// loaded so a keystroke's rank does no Unicode segmentation.
+pub struct MatchKey {
+    label: Option<Prepared>,
+    description: Option<Prepared>,
+}
+
+/// A non-ASCII field reduced to what nucleo matches on: one NFC char per
+/// grapheme. An ASCII field has none and is matched on its own bytes.
+struct Prepared {
+    chars: Box<[char]>,
+    /// Grapheme `g` spans codepoints `starts[g]..starts[g + 1]` of the field,
+    /// which maps a matched grapheme back to the chars it highlights.
+    starts: Box<[u32]>,
+}
+
+impl Prepared {
+    fn new(text: &str) -> Option<Self> {
+        if text.is_ascii() {
+            return None;
+        }
+        let mut chars = Vec::new();
+        let mut starts = vec![0];
+        let mut codepoint = 0_u32;
+        for grapheme in text.graphemes(true) {
+            chars.push(grapheme.nfc().next().expect("graphemes must be non-empty"));
+            codepoint += grapheme.chars().count() as u32;
+            starts.push(codepoint);
+        }
+        Some(Self {
+            chars: chars.into(),
+            starts: starts.into(),
+        })
+    }
+}
+
+/// Match keys parallel to `entries` (one per entry, same order).
+pub fn match_keys(entries: &[Arc<Entry>]) -> Vec<MatchKey> {
+    entries
+        .iter()
+        .map(|entry| MatchKey {
+            label: Prepared::new(&entry.label),
+            description: entry.description.as_deref().and_then(Prepared::new),
+        })
+        .collect()
 }
 
 impl Default for Matcher {
@@ -53,18 +100,19 @@ impl Matcher {
                 CaseMatching::Ignore
             },
             scratch: Vec::new(),
-            text_buf: Vec::new(),
         }
     }
 
     /// Rank `entries` (label + optional description) against `query`.
+    /// `keys` is `entries`' [`match_keys`].
     ///
     /// Empty query returns every entry in original order with score 0 and
     /// no positions. For a non-empty query each entry is matched against
     /// label and description independently — both fields score equally
     /// (raw nucleo score, no field-specific bonus). An entry survives if
     /// either field hits; if both hit, the scores sum.
-    pub fn rank(&mut self, entries: &[(&str, Option<&str>)], query: &str) -> Vec<Match> {
+    pub fn rank(&mut self, entries: &[Arc<Entry>], keys: &[MatchKey], query: &str) -> Vec<Match> {
+        debug_assert_eq!(entries.len(), keys.len(), "match keys out of step");
         if query.is_empty() {
             let empty: Rc<Vec<u32>> = Rc::new(Vec::new());
             return entries
@@ -95,11 +143,14 @@ impl Matcher {
         // per-entry allocation churn is gone.
         let mut lp = Vec::with_capacity(query_len);
         let mut dp = Vec::with_capacity(query_len);
-        for (i, (label, description)) in entries.iter().enumerate() {
+        for (i, (entry, key)) in entries.iter().zip(keys).enumerate() {
             lp.clear();
             dp.clear();
-            let label_score = self.match_field(&atom, label, &mut lp);
-            let desc_score = description.and_then(|text| self.match_field(&atom, text, &mut dp));
+            let label_score = self.match_field(&atom, &entry.label, key.label.as_ref(), &mut lp);
+            let desc_score = entry
+                .description
+                .as_deref()
+                .and_then(|text| self.match_field(&atom, text, key.description.as_ref(), &mut dp));
 
             match (label_score, desc_score) {
                 (None, None) => {}
@@ -128,41 +179,35 @@ impl Matcher {
         out
     }
 
-    fn match_field(&mut self, atom: &Atom, text: &str, positions: &mut Vec<u32>) -> Option<u16> {
+    fn match_field(
+        &mut self,
+        atom: &Atom,
+        text: &str,
+        prepared: Option<&Prepared>,
+        positions: &mut Vec<u32>,
+    ) -> Option<u16> {
         if text.is_empty() {
             return None;
         }
-        let utf32 = if text.is_ascii() {
-            Utf32Str::Ascii(text.as_bytes())
-        } else {
-            self.text_buf.clear();
-            self.text_buf.extend(
-                text.graphemes(true)
-                    .map(|grapheme| grapheme.nfc().next().expect("graphemes must be non-empty")),
-            );
-            Utf32Str::Unicode(&self.text_buf)
+        let utf32 = match prepared {
+            Some(prepared) => Utf32Str::Unicode(&prepared.chars),
+            None => Utf32Str::Ascii(text.as_bytes()),
         };
         positions.clear();
         let score = atom.indices(utf32, &mut self.inner, positions)?;
-        if text.is_ascii() {
-            Some(score)
-        } else {
+        if let Some(prepared) = prepared {
+            // Grapheme indices → the codepoints each grapheme covers.
+            positions.sort_unstable();
+            positions.dedup();
             self.scratch.clear();
-            grapheme_positions_to_codepoints(text, positions, &mut self.scratch);
+            for &grapheme in positions.iter() {
+                let g = grapheme as usize;
+                self.scratch
+                    .extend(prepared.starts[g]..prepared.starts[g + 1]);
+            }
             std::mem::swap(positions, &mut self.scratch);
-            Some(score)
         }
-    }
-}
-
-fn grapheme_positions_to_codepoints(text: &str, positions: &[u32], out: &mut Vec<u32>) {
-    let mut codepoint = 0_u32;
-    for (grapheme_index, grapheme) in text.graphemes(true).enumerate() {
-        let codepoint_count = grapheme.chars().count() as u32;
-        if positions.contains(&(grapheme_index as u32)) {
-            out.extend(codepoint..codepoint + codepoint_count);
-        }
-        codepoint += codepoint_count;
+        Some(score)
     }
 }
 
@@ -174,12 +219,25 @@ mod tests {
         labels.iter().map(|l| (*l, None)).collect()
     }
 
+    /// `matcher.rank` over entries built from `(label, description)` pairs.
+    fn rank(matcher: &mut Matcher, pairs: &[(&str, Option<&str>)], query: &str) -> Vec<Match> {
+        let entries: Vec<Arc<Entry>> = pairs
+            .iter()
+            .map(|(label, description)| {
+                let mut entry = Entry::stdout(*label);
+                entry.description = description.map(str::to_owned);
+                Arc::new(entry)
+            })
+            .collect();
+        matcher.rank(&entries, &match_keys(&entries), query)
+    }
+
     #[test]
     fn case_insensitive_matcher_matches_different_case() {
         let mut matcher = Matcher::with_case_sensitive(false);
         let pairs = no_desc(&["Foo"]);
 
-        assert_eq!(matcher.rank(&pairs, "foo").len(), 1);
+        assert_eq!(rank(&mut matcher, &pairs, "foo").len(), 1);
     }
 
     #[test]
@@ -187,7 +245,7 @@ mod tests {
         let mut matcher = Matcher::with_case_sensitive(false);
         let pairs = no_desc(&["Äpfel"]);
 
-        let matches = matcher.rank(&pairs, "äpfel");
+        let matches = rank(&mut matcher, &pairs, "äpfel");
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].positions.as_slice(), [0, 1, 2, 3, 4]);
@@ -203,8 +261,8 @@ mod tests {
             ("prefix é🙂", Some("prefix e\u{301}🙂")),
         ];
 
-        let composed_matches = matcher.rank(&entries, "é");
-        let decomposed_matches = matcher.rank(&entries, decomposed);
+        let composed_matches = rank(&mut matcher, &entries, "é");
+        let decomposed_matches = rank(&mut matcher, &entries, decomposed);
         let snapshot = |matches: &[Match]| {
             matches
                 .iter()
@@ -247,7 +305,7 @@ mod tests {
         let decomposed = "e\u{301}";
         let pairs = [(decomposed, Some(decomposed))];
 
-        let matches = matcher.rank(&pairs, decomposed);
+        let matches = rank(&mut matcher, &pairs, decomposed);
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].positions.as_slice(), [0, 1]);
@@ -261,10 +319,10 @@ mod tests {
         let label = format!("{family}x");
         let pairs = [(label.as_str(), None)];
 
-        let suffix = matcher.rank(&pairs, "x");
+        let suffix = rank(&mut matcher, &pairs, "x");
         assert_eq!(suffix[0].positions.as_slice(), [5]);
 
-        let grapheme = matcher.rank(&pairs, family);
+        let grapheme = rank(&mut matcher, &pairs, family);
         assert_eq!(grapheme[0].positions.as_slice(), [0, 1, 2, 3, 4]);
     }
 
@@ -273,8 +331,8 @@ mod tests {
         let mut matcher = Matcher::with_case_sensitive(true);
         let pairs = no_desc(&["Foo"]);
 
-        assert!(matcher.rank(&pairs, "foo").is_empty());
-        assert_eq!(matcher.rank(&pairs, "Foo").len(), 1);
+        assert!(rank(&mut matcher, &pairs, "foo").is_empty());
+        assert_eq!(rank(&mut matcher, &pairs, "Foo").len(), 1);
     }
 
     #[test]
@@ -282,7 +340,7 @@ mod tests {
         let mut matcher = Matcher::with_case_sensitive(false);
         let pairs = no_desc(&["Thunderbird", "thunderbird"]);
 
-        let matches = matcher.rank(&pairs, "Thunder");
+        let matches = rank(&mut matcher, &pairs, "Thunder");
 
         assert_eq!(matches.len(), 2);
         assert_eq!(matches[0].positions.as_slice(), [0, 1, 2, 3, 4, 5, 6]);
@@ -294,12 +352,12 @@ mod tests {
         let mut matcher = Matcher::new();
         let pairs = no_desc(&["foo bar", "bar foo", "foo ^bar", "foo bar$"]);
 
-        let spaced = matcher.rank(&pairs, "foo bar");
+        let spaced = rank(&mut matcher, &pairs, "foo bar");
         let mut spaced_indices: Vec<_> = spaced.iter().map(|matched| matched.index).collect();
         spaced_indices.sort_unstable();
         assert_eq!(spaced_indices, [0, 2, 3]);
 
-        let syntax = matcher.rank(&pairs, "^bar");
+        let syntax = rank(&mut matcher, &pairs, "^bar");
         assert_eq!(
             syntax
                 .iter()
@@ -313,7 +371,7 @@ mod tests {
     fn empty_query_returns_all_in_order() {
         let mut m = Matcher::new();
         let pairs = no_desc(&["a", "b", "c"]);
-        let out = m.rank(&pairs, "");
+        let out = rank(&mut m, &pairs, "");
         assert_eq!(out.len(), 3);
         assert_eq!(out[0].index, 0);
         assert_eq!(out[2].index, 2);
@@ -323,7 +381,7 @@ mod tests {
     fn ranks_by_match_quality() {
         let mut m = Matcher::new();
         let pairs = no_desc(&["Firefox", "Files", "Filezilla"]);
-        let out = m.rank(&pairs, "fir");
+        let out = rank(&mut m, &pairs, "fir");
         assert!(!out.is_empty());
         assert_eq!(out[0].index, 0); // "Firefox" — closest match
     }
@@ -332,7 +390,7 @@ mod tests {
     fn drops_non_matches() {
         let mut m = Matcher::new();
         let pairs = no_desc(&["foo", "bar"]);
-        let out = m.rank(&pairs, "xyz");
+        let out = rank(&mut m, &pairs, "xyz");
         assert!(out.is_empty());
     }
 
@@ -340,7 +398,7 @@ mod tests {
     fn rofi_does_not_match_fonts_or_tf2() {
         let mut m = Matcher::new();
         let pairs = no_desc(&["Fonts", "Team Fortress 2"]);
-        let out = m.rank(&pairs, "rofi");
+        let out = rank(&mut m, &pairs, "rofi");
         assert!(
             out.is_empty(),
             "expected no matches, got: {:?}",
@@ -352,7 +410,7 @@ mod tests {
     fn match_positions_populated() {
         let mut m = Matcher::new();
         let pairs = no_desc(&["Firefox"]);
-        let out = m.rank(&pairs, "fox");
+        let out = rank(&mut m, &pairs, "fox");
         assert_eq!(out.len(), 1);
         assert!(!out[0].positions.is_empty());
         assert!(
@@ -370,7 +428,7 @@ mod tests {
             ("Firefox", Some("Web Browser")),
             ("KCalc", Some("Scientific calculator")),
         ];
-        let out = m.rank(&pairs, "browser");
+        let out = rank(&mut m, &pairs, "browser");
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].index, 0);
         assert!(
@@ -388,7 +446,7 @@ mod tests {
         let mut matcher = Matcher::with_case_sensitive(false);
         let pairs = [("Mail", Some("thunderbird client"))];
 
-        let matches = matcher.rank(&pairs, "Thunder");
+        let matches = rank(&mut matcher, &pairs, "Thunder");
 
         assert_eq!(matches.len(), 1);
         assert!(matches[0].positions.is_empty());
@@ -409,7 +467,7 @@ mod tests {
             ("audio settings", Some("blank")),
             ("blank", Some("audio settings")),
         ];
-        let out = m.rank(&pairs, "audio");
+        let out = rank(&mut m, &pairs, "audio");
         assert_eq!(out.len(), 2);
         assert_eq!(
             out[0].score, out[1].score,
@@ -428,7 +486,7 @@ mod tests {
         let mut m = Matcher::new();
         let pairs = no_desc(&["Thunderbird"]);
         for q in ["Thunde", "Thunder", "Thunderb", "Thunderbird"] {
-            let out = m.rank(&pairs, q);
+            let out = rank(&mut m, &pairs, q);
             assert_eq!(
                 out.len(),
                 1,
@@ -444,7 +502,7 @@ mod tests {
     fn both_fields_can_match_together() {
         let mut m = Matcher::new();
         let pairs: Vec<(&str, Option<&str>)> = vec![("Editor", Some("text editor app"))];
-        let out = m.rank(&pairs, "edit");
+        let out = rank(&mut m, &pairs, "edit");
         assert_eq!(out.len(), 1);
         assert!(!out[0].positions.is_empty());
         assert!(!out[0].desc_positions.is_empty());
@@ -456,7 +514,7 @@ mod tests {
         // entry's match must not inherit the first's positions.
         let mut m = Matcher::new();
         let pairs = no_desc(&["firefox", "prefix fox tail"]);
-        let out = m.rank(&pairs, "fox");
+        let out = rank(&mut m, &pairs, "fox");
         assert_eq!(out.len(), 2);
         let second = out
             .iter()

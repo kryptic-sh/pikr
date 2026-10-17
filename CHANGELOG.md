@@ -10,6 +10,9 @@ and this project adheres to
 
 ### Changed
 
+- Typing in a list with non-ASCII labels, such as emoji mode, reranks about four
+  times faster: each label's Unicode segmentation is done once when the list
+  loads instead of on every keystroke.
 - **pikr is drawn with crcbl instead of floem.** The window, input, layout and
   rendering, icon-theme lookup and image decoding now come from
   [crcbl](https://github.com/kryptic-sh/crcbl); floem, its winit fork, wgpu,
