@@ -154,9 +154,9 @@ static BIN: OnceLock<PathBuf> = OnceLock::new();
 
 fn pikr_bin() -> PathBuf {
     BIN.get_or_init(|| {
-        // Prefer the pre-built release binary next to the workspace Cargo.toml.
-        // Tests run from the workspace root, so we can navigate from
-        // CARGO_MANIFEST_DIR (apps/pikr) up two levels to the workspace root.
+        // The release binary next to the workspace Cargo.toml. Tests run from
+        // the workspace root, so we can navigate from CARGO_MANIFEST_DIR
+        // (apps/pikr) up two levels to the workspace root.
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let workspace = manifest
             .parent() // apps/
@@ -164,13 +164,12 @@ fn pikr_bin() -> PathBuf {
             .expect("cannot resolve workspace root from CARGO_MANIFEST_DIR");
 
         let release_bin = workspace.join("target/release/pikr");
-        if release_bin.exists() {
-            return release_bin;
-        }
 
-        // Fall back: build it now (slow, but self-healing in CI).
-        eprintln!("target/release/pikr not found — building (this may take a while)…");
-        let status = Command::new("cargo")
+        // Always build: an existing binary may predate the sources (a pull
+        // since the last release build), and driving it reports its old
+        // behaviour as a regression. Cargo makes this a no-op when current.
+        let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+        let status = Command::new(cargo)
             .args(["build", "--release", "--bin", "pikr"])
             .current_dir(workspace)
             .status()

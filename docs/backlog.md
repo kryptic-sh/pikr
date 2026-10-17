@@ -136,20 +136,6 @@
   it. Left as-is 2026-09-15: a deliberate pre-existing gate, not a v0.8.13
   regression.
 
-## Test harness
-
-- `pikr_bin()` in `apps/pikr/tests/e2e/support/pikr.rs` prefers an existing
-  `target/release/pikr` and only builds when the file is absent, never checking
-  whether it is older than the sources. A local `cargo test` after pulling new
-  work therefore drives the previous release build: on 2026-09-15 a stale 0.8.12
-  binary failed all eleven `--kb-custom` / `--loading` e2e tests with clap's
-  `unexpected argument` and exit 2, which reads as a product regression rather
-  than a stale artifact. CI never sees it because each job builds fresh. Fix is
-  to always run `cargo build --release --bin pikr` (a no-op when current)
-  instead of the `exists()` short-circuit, or to honour a `PIKR_BIN` override as
-  `smoke.rs` already does. Not changed here: found while cutting v0.8.13 and
-  unrelated to that release.
-
 ## Hardening (correct today, fragile — not defects)
 
 - Symlinked-dir mtime cache blindness; coarse-granularity same-tick cache
