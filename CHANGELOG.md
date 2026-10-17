@@ -46,6 +46,10 @@ and this project adheres to
 
 ### Fixed
 
+- Events the window system sends before pikr's window first has a size are no
+  longer dropped. On Windows, a launch that is refused the foreground now logs
+  the refusal; the window's first scale factor, which pikr only learns from
+  those events, now reaches the drawing too.
 - Text committed by an input method in one piece, such as a word from a Japanese
   IME, is inserted whole; only its first character used to reach the query.
 - `ssh` mode: `HostName` and `User` lines inside a `Match` block no longer

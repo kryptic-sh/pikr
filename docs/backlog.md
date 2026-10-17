@@ -41,11 +41,12 @@
     `RUST_LOG=debug` launch logged ~306 ms for the RX 7900 XTX, ~272 ms for the
     integrated GPU and ~15 ms for WARP, then ~257 ms for `create_device`. crcbl
     is working on lazy adapter probing and will report before/after timings.
-  - `ShellEvent::FocusRefused` when Windows refuses pikr the foreground: crcbl
-    fixed it in the pinned rev (checks `GetForegroundWindow`), with no desktop
-    test on crcbl's side. Not yet confirmed from pikr: it needs pikr launched
-    from a background process while another app holds the foreground, and a look
-    at whether the event arrives.
+  - Win32 reports `Focus { focused: true }` right after `FocusRefused` when
+    Windows refuses pikr the foreground (seen 2026-10-18 at crcbl 0.3.0, pikr
+    launched from a background shell while explorer kept the foreground). The
+    window open judges focus by `GetFocus`, which is per thread, not the system
+    foreground, so pikr shows a blinking caret while keys go elsewhere. Reported
+    to crcbl.
   - crcbl-dx12 turns on DRED in every build; debug builds also ask for the D3D12
     debug layer (a WARN without the Graphics Tools feature). By design;
     `CRCBL_DX12_VALIDATION=0` turns the debug layer off.

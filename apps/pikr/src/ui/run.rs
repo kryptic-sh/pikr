@@ -64,7 +64,7 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
     };
     let mut shell = crcbl_shell::open().context("opening the window system")?;
     let (window, transparent_window) = create_window(shell.as_mut(), &spec)?;
-    let extent = wait_for_size(shell.as_mut(), window)?;
+    let (extent, early) = wait_for_size(shell.as_mut(), window)?;
     let mut gpu = Gpu::open(&shell.surface_target(window)?, extent, transparent_window)?;
     let fonts = fonts.join().unwrap_or_else(|_| Fonts {
         theme: Err("the font loader panicked".into()),
@@ -78,7 +78,7 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
         &mut gpu,
         startup_started,
     )
-    .and_then(|mut w| w.run(content));
+    .and_then(|mut w| w.run(content, early));
     // The surface goes before the window it was made from.
     gpu.destroy();
     drop(shell);
@@ -128,13 +128,17 @@ fn create_window(shell: &mut dyn Shell, spec: &WindowSpec) -> Result<(WindowId, 
     Ok((window, transparent))
 }
 
-/// Pumps until the window system gives the new window a size.
-fn wait_for_size(shell: &mut dyn Shell, window: WindowId) -> Result<(u32, u32)> {
+/// Pumps until the window system gives the new window a size. Returns the
+/// size and the events pumped on the way, which the window loop handles
+/// first: a refused focus, the scale factor and an early focus all arrive
+/// here.
+fn wait_for_size(shell: &mut dyn Shell, window: WindowId) -> Result<((u32, u32), Vec<ShellEvent>)> {
     let started = Instant::now();
+    let mut events = Vec::new();
     loop {
-        shell.pump(&mut |_| {});
+        shell.pump(&mut |event| events.push(event));
         if let Some(size) = shell.window_state(window)?.size() {
-            return Ok((size.width, size.height));
+            return Ok(((size.width, size.height), events));
         }
         if started.elapsed() > CONFIGURE_TIMEOUT {
             return Err(anyhow!("the window system never sized pikr's window"));
@@ -220,7 +224,12 @@ impl<'a> Window<'a> {
     }
 
     /// Runs until the content is done; returns what to run and the exit code.
-    fn run(&mut self, mut content: Content) -> Result<(Vec<modes::Payload>, i32)> {
+    /// `early` are events pumped before the window loop started.
+    fn run(
+        &mut self,
+        mut content: Content,
+        mut early: Vec<ShellEvent>,
+    ) -> Result<(Vec<modes::Payload>, i32)> {
         // The query is a text field: the input method composes into it, and
         // a password query is kept from learning and suggestions.
         let purpose = match &content {
@@ -247,7 +256,7 @@ impl<'a> Window<'a> {
                 dirty = true;
             }
 
-            let mut events = Vec::new();
+            let mut events = std::mem::take(&mut early);
             self.shell.pump(&mut |event| events.push(event));
             for event in events {
                 match self.handle(event, &mut content)? {
