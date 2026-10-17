@@ -36,10 +36,11 @@
     real icon themes was not measured from pikr; crcbl's CI holds the breeze
     corpus against resvg (floors per crcbl's 0.2.1 release notes).
   - S9 IME on/off on Win32 and AppKit.
-  - D3D12 startup: at crcbl `6ca46474`, instance open plus adapter enumeration
-    took ~0.7 s and device creation ~0.23 s of a ~1.1 s launch-to-first-paint
-    (release build here). crcbl recorded it under S13; the fix is lazy adapter
-    probing.
+  - D3D12 startup (crcbl's S13): `Dx12Instance::open` probes every adapter
+    before returning, and pikr pays for all of them. At crcbl 0.3.0 one
+    `RUST_LOG=debug` launch logged ~306 ms for the RX 7900 XTX, ~272 ms for the
+    integrated GPU and ~15 ms for WARP, then ~257 ms for `create_device`. crcbl
+    is working on lazy adapter probing and will report before/after timings.
   - `ShellEvent::FocusRefused` when Windows refuses pikr the foreground: crcbl
     fixed it in the pinned rev (checks `GetForegroundWindow`), with no desktop
     test on crcbl's side. Not yet confirmed from pikr: it needs pikr launched
@@ -176,18 +177,18 @@ macOS and Windows.
   are to document it or to stop filtering under `-P` (show all rows unranked).
   Needs a product call.
 - **Windows startup is past the 500 ms usable-picker target.** Release build on
-  crcbl/D3D12: ~1.1 s from launch to first paint at crcbl `6ca46474`, almost all
-  of it D3D12 instance, adapter and device setup (see "GUI on crcbl"). At
-  `4c53204e` three launches logged 682, 582 and 574 ms; why it dropped was not
-  looked into. Font lookup (theme face plus its fallbacks) took 100 ms cold and
-  31 ms warm, on a thread overlapping GPU setup.
-- **Windows window posture (issue #9) now comes from crcbl's panel role:** a
-  topmost `WS_EX_TOOLWINDOW` window, by crcbl's documentation of its Win32
-  panel. Whether pikr is now absent from Alt-Tab and the taskbar was not looked
-  at.
+  crcbl 0.3.0/D3D12, 2026-10-18: three launches reached first paint at 794, 869
+  and 990 ms (`RUST_LOG=pikr=debug`); earlier figures were ~1.1 s at `6ca46474`
+  and 574–682 ms at `4c53204e`, and the runs are too noisy to call that a
+  regression. GPU setup is nearly all of it (see "GUI on crcbl"); config,
+  entries, ranking and fonts are done within ~50 ms.
 
 ### Coverage gaps (not verified)
 
+- Window posture (issue #9): at crcbl 0.3.0 the visible window is unowned,
+  `WS_EX_TOOLWINDOW` and `WS_EX_TOPMOST`, without `WS_EX_APPWINDOW` (read with
+  `GetWindowLongPtr`), and no taskbar button showed in a screenshot. The Alt-Tab
+  switcher itself was not opened.
 - drun accept on Windows was not driven through the GUI keystroke path; only
   `drun_windows::launch` was called directly (Notepad from its WindowsApps
   package and `cmd.exe` from its known-folder id both started). dmenu, emoji and
