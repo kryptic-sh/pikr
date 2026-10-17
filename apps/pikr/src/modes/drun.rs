@@ -172,7 +172,10 @@ mod unix_impl {
 
     /// Split an `Exec=` string per freedesktop spec, dropping field codes
     /// (`%f` / `%F` / `%u` / `%U` / `%i` / `%c` / `%k`). Returns
-    /// `(program, args)` or `None` if the line is unusable.
+    /// `(program, args)` or `None` if the line is unusable — including a
+    /// relative program path (`./foo`), which the spec does not allow (a full
+    /// path or a bare name looked up in `PATH`) and which would otherwise
+    /// resolve against pikr's working directory.
     pub fn parse_exec(raw: &str) -> Option<(String, Vec<String>)> {
         let tokens = shlex::split(raw)?;
         let mut out = Vec::with_capacity(tokens.len());
@@ -185,6 +188,9 @@ mod unix_impl {
         }
         let mut iter = out.into_iter();
         let program = iter.next()?;
+        if program.contains('/') && !std::path::Path::new(&program).is_absolute() {
+            return None;
+        }
         Some((program, iter.collect()))
     }
 
@@ -502,6 +508,17 @@ mod tests {
         let (prog, args) = parse_exec("alacritty -e tmux %f").unwrap();
         assert_eq!(prog, "alacritty");
         assert_eq!(args, vec!["-e".to_string(), "tmux".to_string()]);
+    }
+
+    #[test]
+    fn parse_refuses_a_relative_program_path() {
+        assert_eq!(parse_exec("./foo --flag"), None);
+        assert_eq!(parse_exec("bin/foo"), None);
+        assert_eq!(
+            parse_exec("/usr/bin/foo").map(|(p, _)| p),
+            Some("/usr/bin/foo".into())
+        );
+        assert_eq!(parse_exec("foo").map(|(p, _)| p), Some("foo".into()));
     }
 
     #[test]

@@ -145,8 +145,9 @@ Re-verified against the tree on 2026-10-18.
   across PATH dirs and each entry is `Entry::exec(name, name)`, so spawn
   re-resolves the bare name via PATH at accept and can launch a different binary
   than the one listed.
-- `Exec=` relative program (`Exec=./foo`) resolves against pikr's CWD
-  (`drun::parse_exec` keeps the program as written).
+- A drun cache written before `parse_exec` refused relative `Exec=` programs can
+  still list one until the cache is invalidated (any `.desktop` change, or a
+  dirs or locale change); the cache has no format version to force it.
 - dmenu stdin is unbounded (`dmenu::read_entries`) — a hostile caller piping
   gigabytes bloats the process.
 

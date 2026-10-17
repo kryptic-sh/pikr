@@ -46,6 +46,9 @@ and this project adheres to
 
 ### Fixed
 
+- `drun` skips a `.desktop` entry whose `Exec=` program is a relative path such
+  as `./foo`. The specification allows only a full path or a bare name looked up
+  in `PATH`, and pikr used to run it relative to its own working directory.
 - Events the window system sends before pikr's window first has a size are no
   longer dropped. On Windows, a launch that is refused the foreground now logs
   the refusal; the window's first scale factor, which pikr only learns from
