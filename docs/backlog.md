@@ -22,12 +22,10 @@
 
 - **The port to crcbl landed on 2026-10-16.** floem, its winit fork, resvg,
   `freedesktop-icons`, `image`, `hjkl-css` and `imbl` are gone. Every crcbl
-  crate in the workspace `Cargo.toml` is pinned to crcbl main `4d48eaf4`, past
-  0.2.1, for text shaping (harfrust) and Win32 transparency. Bump them together,
-  to CI-green revs only, and move back to crates.io with the first crcbl release
-  that carries it (crcbl says 0.3.0, since shaping removed
-  `font::fallback::map_char`, `map_text` and `Font::kerning`; pikr calls none of
-  them). Drop the crcbl entry from `deny.toml`'s `allow-git` then.
+  crate in the workspace `Cargo.toml` is on crates.io 0.3.0; bump them together.
+  If a fix pikr needs is only on crcbl main, pin every crate to the same
+  CI-green rev and add the repo back to `deny.toml`'s `allow-git` until a
+  release carries it.
 - **Decision needed: silent opaque fallback in `ui::gpu::Gpu::open`.** When the
   window asked for transparency but the surface offers no
   `CompositeAlpha::PreMultiplied`, pikr draws opaque without saying so. The
