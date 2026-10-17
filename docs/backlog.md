@@ -307,30 +307,9 @@ Start itself launches — so pikr adds no path Start does not already expose.
 
 ## review review 2026-08-06 (evening sweep)
 
-Whole-codebase correctness pass (clean tree), evening re-run. One low finding;
-verified by the orchestrator at the cited lines (including the installed
-xdg-3.0.0 crate source). No code changed.
-
-### Findings
-
-**LOW — `modes/ssh.rs:128-133` — `Match` blocks' settings are attributed to the
-preceding `Host` block.** `parse_config` treats only the `host` keyword as a
-block boundary; a `Match` line falls into the `_ => {}` arm with no flush, so
-the `HostName` / `User` lines under it accumulate into the still-open previous
-block and bake into its entries' descriptions. Real ssh semantics: a `Match`
-block is an independent conditional context.
-
-```
-Repro: config = "Host github\n  HostName github.com\nMatch host prod\n  User deploy\nHost prod\n  HostName prod.example\n"
-Expect: github's description == "github.com"; prod's == "prod.example (deploy)"
-Actual: github's description == "github.com (deploy)"   (flush at "Host prod"
-        emits github with user=Some("deploy") from the Match block)
-```
-
-Impact is display-only: the executed argv is `terminal -e ssh <host>` built from
-the entry label (`make_entry`, ssh.rs:181-183), parsed independently of
-HostName/User — they never reach the payload. Fix: flush (or reset
-hostname/user) on a `Match` keyword, or document Match blocks as unsupported.
+Whole-codebase correctness pass (clean tree), evening re-run, verified by the
+orchestrator at the cited lines (including the installed xdg-3.0.0 crate
+source).
 
 ### Cleared (suspected, traced, disproved — verified by the orchestrator unless marked)
 
@@ -379,9 +358,6 @@ hostname/user) on a `Match` keyword, or document Match blocks as unsupported.
 
 ### Hardening (correct today, fragile — not defects)
 
-- **ssh `Match` keyword** — the finding above; if `Match` support is in scope,
-  flushing block state on the keyword is the fix. Currently treated as a
-  comment-level no-op that silently inherits the previous Host's block state.
 - **`Key::Character` multi-codepoint strings** — `keys.rs:101/190` take
   `s.chars().next()?` and drop the rest. xkb delivers one scalar per event
   today, but an IME composing a whole grapheme (or word) into one

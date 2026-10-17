@@ -103,7 +103,7 @@ pub fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
             None => continue,
         };
 
-        if key == "host" {
+        if key == "host" || key == "match" {
             // Flush the previous block before starting a new one.
             flush_hosts(
                 &mut entries,
@@ -112,6 +112,13 @@ pub fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
                 &mut user,
                 terminal,
             );
+            if key == "match" {
+                // A `Match` block names no hosts of its own; its settings
+                // apply conditionally, so they belong to no listed entry.
+                hostname = None;
+                user = None;
+                continue;
+            }
             // ssh_config(5) allows `Host a b` — one entry per pattern.
             // Wildcard patterns are not real hosts — skip them.
             current_hosts = value
@@ -455,6 +462,25 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].label, "foo");
         assert!(entries[0].description.is_none());
+    }
+
+    #[test]
+    fn match_block_settings_do_not_leak_into_previous_host() {
+        // A `Match` block is its own conditional context, not part of the
+        // `Host` block above it.
+        let input = "Host github\n  HostName github.com\nMatch host prod\n  User deploy\nHost prod\n  HostName prod.example\n";
+        let entries = parse_config(input, &Terminal::simple("xterm"));
+        let descriptions: Vec<_> = entries
+            .iter()
+            .map(|e| (e.label.as_str(), e.description.as_deref()))
+            .collect();
+        assert_eq!(
+            descriptions,
+            [
+                ("github", Some("github.com")),
+                ("prod", Some("prod.example"))
+            ]
+        );
     }
 
     // ── terminal arg-builder tests ─────────────────────────────────────────

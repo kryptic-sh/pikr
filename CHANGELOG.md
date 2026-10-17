@@ -41,6 +41,12 @@ and this project adheres to
 - XPM icons (`/usr/share/pixmaps` and the like) are drawn; pikr used to show the
   generic icon for them.
 
+### Fixed
+
+- `ssh` mode: `HostName` and `User` lines inside a `Match` block no longer
+  change the description of the `Host` entry above it. A `Match` block now ends
+  the previous `Host` block, as in ssh itself.
+
 ## [0.8.13] - 2026-09-15
 
 ### Added
