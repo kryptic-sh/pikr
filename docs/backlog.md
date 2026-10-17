@@ -43,10 +43,12 @@
     is working on lazy adapter probing and will report before/after timings.
   - Win32 reports `Focus { focused: true }` right after `FocusRefused` when
     Windows refuses pikr the foreground (seen 2026-10-18 at crcbl 0.3.0, pikr
-    launched from a background shell while explorer kept the foreground). The
-    window open judges focus by `GetFocus`, which is per thread, not the system
-    foreground, so pikr shows a blinking caret while keys go elsewhere. Reported
-    to crcbl.
+    launched from a background shell while explorer kept the foreground), so
+    pikr blinks its caret while keys go elsewhere. crcbl's diagnosis:
+    `ShowWindow(SW_SHOWNORMAL)` activates the panel within its own thread, and
+    the `WM_SETFOCUS` that follows is reported as focus. crcbl will report focus
+    only while the thread also holds the foreground; recheck on a desktop when
+    it lands.
   - crcbl-dx12 turns on DRED in every build; debug builds also ask for the D3D12
     debug layer (a WARN without the Graphics Tools feature). By design;
     `CRCBL_DX12_VALIDATION=0` turns the debug layer off.
