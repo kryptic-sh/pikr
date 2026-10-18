@@ -70,7 +70,10 @@
     scrollbar and the `--message` modal were rendered and looked at in
     screenshots. Keyboard input, clicks, the wheel and drun icons were not
     exercised: pikr launched from a background shell never got the foreground,
-    and synthesized keys would have gone to another window.
+    and synthesized keys would have gone to another window. A launch Windows
+    should grant the foreground (from a hotkey tool or a foreground terminal)
+    was never tried, so pikr receiving focus on Windows is unverified; only the
+    refused case was checked (`FocusRefused` and no `Focus`, crcbl 0.4.0+).
   - No icon from a real icon theme was drawn; icon decoding is covered by unit
     tests only. HiDPI (scale ≠ 1) was not exercised.
   - IME pre-edit and commit through text-input-v3, and accessibility reaching
