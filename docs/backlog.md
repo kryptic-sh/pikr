@@ -4,10 +4,10 @@
 
 - **The port to crcbl landed on 2026-10-16.** floem, its winit fork, resvg,
   `freedesktop-icons`, `image`, `hjkl-css` and `imbl` are gone. Every crcbl
-  crate in the workspace `Cargo.toml` is on crates.io 0.3.0; bump them together.
-  If a fix pikr needs is only on crcbl main, pin every crate to the same
-  CI-green rev and add the repo back to `deny.toml`'s `allow-git` until a
-  release carries it.
+  crate in the workspace `Cargo.toml` is on the same crates.io release; bump
+  them together. If a fix pikr needs is only on crcbl main, pin every crate to
+  the same CI-green rev and add the repo back to `deny.toml`'s `allow-git` until
+  a release carries it.
 - **Decision needed: silent opaque fallback in `ui::gpu::Gpu::open`.** When the
   window asked for transparency but the surface offers no
   `CompositeAlpha::PreMultiplied`, pikr draws opaque without saying so. The
@@ -36,24 +36,12 @@
     real icon themes was not measured from pikr; crcbl's CI holds the breeze
     corpus against resvg (floors per crcbl's 0.2.1 release notes).
   - S9 IME on/off on Win32 and AppKit.
-  - D3D12 startup (crcbl's S13): `Dx12Instance::open` probes every adapter
-    before returning, and pikr pays for all of them. At crcbl 0.3.0 one
-    `RUST_LOG=debug` launch logged ~306 ms for the RX 7900 XTX, ~272 ms for the
-    integrated GPU and ~15 ms for WARP, then ~257 ms for `create_device`. crcbl
-    main `da8e5b88` (unreleased, for 0.4.0) keeps each probe device and reuses
-    it for the first open; see the Windows startup entry for pikr's figures.
-    Bump when 0.4.0 is on crates.io.
-  - Win32 reports `Focus { focused: true }` right after `FocusRefused` when
-    Windows refuses pikr the foreground (seen 2026-10-18 at crcbl 0.3.0, pikr
-    launched from a background shell while explorer kept the foreground), so
-    pikr blinks its caret while keys go elsewhere. crcbl's diagnosis:
-    `ShowWindow(SW_SHOWNORMAL)` activates the panel within its own thread, and
-    the `WM_SETFOCUS` that follows is reported as focus. Fixed on crcbl main
-    `da8e5b88` (unreleased, for 0.4.0): focus now also needs the foreground.
-    Checked on this desktop with a background `--dmenu` launch: the 0.3.0 build
-    logged "startup first focus received" right after the refusal, and a build
-    patched to crcbl main logged the refusal and no focus. Bump when 0.4.0 is on
-    crates.io.
+  - D3D12 startup (crcbl's S13): `Dx12Instance::open` still creates one driver
+    device per hardware adapter before returning, and pikr pays for each of
+    them. crcbl 0.4.0 reuses the probe device for the first open, which took
+    `create_device` from ~257 ms to near nothing; see the Windows startup entry.
+    crcbl's remaining option, describing adapters lazily, would change
+    `Instance::adapters`' contract and is undecided on their side.
   - crcbl-dx12 turns on DRED in every build; debug builds also ask for the D3D12
     debug layer (a WARN without the Graphics Tools feature). By design;
     `CRCBL_DX12_VALIDATION=0` turns the debug layer off.
@@ -193,25 +181,21 @@ macOS and Windows.
   equal to the live expression. Inherent to filtering on a secret; the options
   are to document it or to stop filtering under `-P` (show all rows unranked).
   Needs a product call.
-- **Windows startup is past the 500 ms usable-picker target.** Release build on
-  crcbl 0.3.0/D3D12, 2026-10-18: three launches reached first paint at 794, 869
-  and 990 ms (`RUST_LOG=pikr=debug`); earlier figures were ~1.1 s at `6ca46474`
-  and 574–682 ms at `4c53204e`, and the runs are too noisy to call that a
-  regression. GPU setup is nearly all of it (see "GUI on crcbl"); config,
-  entries, ranking and fonts are done within ~50 ms. Built against crcbl main
-  `da8e5b88` through a local `[patch]`, three background `--dmenu` launches
-  reached first paint at 482, 464 and 436 ms, against 693, 652 and 677 ms for
-  the 0.3.0 build in the same interleaved session. Re-measure once 0.4.0 is
-  bumped and drop this entry if it holds.
-- **Adopt crcbl-app when crcbl 0.4.0 ships.** crcbl main adds `crcbl-app`, a
-  leaf crate for UI-only programs: the backend walk with fall-through, the
-  adapter pin, `open_window`, `wait_for_configure`, `TextPump` and
-  `present::Presenter` (composite alpha, frame ring, pacing, acquire, present,
-  resize). pikr's `ui::gpu` and the start of `ui::run` hand-roll much of that.
-  Its `examples/ui_window.rs` draws a crcbl-ui frame through a `Presenter`.
-  crcbl's caveat: keep `PresenterDesc::frames_in_flight` at the default until
-  crcbl-frame's UI pass stops using its own fixed ring depth. Not reviewed
-  against pikr's code yet.
+- **Windows startup is at the edge of the 500 ms usable-picker target.** Release
+  build on crcbl 0.4.0/D3D12 (RX 7900 XTX + iGPU + WARP), 2026-10-18: three
+  background `--dmenu` launches reached first paint at 539, 457 and 460 ms
+  (`RUST_LOG=pikr=debug`), against 794, 869 and 990 ms on crcbl 0.3.0 earlier
+  the same day; the runs are noisy. GPU setup is nearly all of it (see "GUI on
+  crcbl"); config, entries, ranking and fonts are done within ~50 ms.
+- **Consider adopting crcbl-app.** crcbl 0.4.0 adds `crcbl-app`, a leaf crate
+  for UI-only programs: the backend walk with fall-through, the adapter pin,
+  `open_window`, `wait_for_configure`, `TextPump` and `present::Presenter`
+  (composite alpha, frame ring, pacing, acquire, present, resize). pikr's
+  `ui::gpu` and the start of `ui::run` hand-roll much of that. Its
+  `examples/ui_window.rs` draws a crcbl-ui frame through a `Presenter`. A
+  `Presenter` with a non-default `frames_in_flight` needs crcbl-frame's
+  `UiRenderer::with_ring` at the same depth. Not reviewed against pikr's code
+  yet.
 
 ### Coverage gaps (not verified)
 
