@@ -40,15 +40,20 @@
     before returning, and pikr pays for all of them. At crcbl 0.3.0 one
     `RUST_LOG=debug` launch logged ~306 ms for the RX 7900 XTX, ~272 ms for the
     integrated GPU and ~15 ms for WARP, then ~257 ms for `create_device`. crcbl
-    is working on lazy adapter probing and will report before/after timings.
+    main `da8e5b88` (unreleased, for 0.4.0) keeps each probe device and reuses
+    it for the first open; see the Windows startup entry for pikr's figures.
+    Bump when 0.4.0 is on crates.io.
   - Win32 reports `Focus { focused: true }` right after `FocusRefused` when
     Windows refuses pikr the foreground (seen 2026-10-18 at crcbl 0.3.0, pikr
     launched from a background shell while explorer kept the foreground), so
     pikr blinks its caret while keys go elsewhere. crcbl's diagnosis:
     `ShowWindow(SW_SHOWNORMAL)` activates the panel within its own thread, and
-    the `WM_SETFOCUS` that follows is reported as focus. crcbl will report focus
-    only while the thread also holds the foreground; recheck on a desktop when
-    it lands.
+    the `WM_SETFOCUS` that follows is reported as focus. Fixed on crcbl main
+    `da8e5b88` (unreleased, for 0.4.0): focus now also needs the foreground.
+    Checked on this desktop with a background `--dmenu` launch: the 0.3.0 build
+    logged "startup first focus received" right after the refusal, and a build
+    patched to crcbl main logged the refusal and no focus. Bump when 0.4.0 is on
+    crates.io.
   - crcbl-dx12 turns on DRED in every build; debug builds also ask for the D3D12
     debug layer (a WARN without the Graphics Tools feature). By design;
     `CRCBL_DX12_VALIDATION=0` turns the debug layer off.
@@ -193,7 +198,20 @@ macOS and Windows.
   and 990 ms (`RUST_LOG=pikr=debug`); earlier figures were ~1.1 s at `6ca46474`
   and 574–682 ms at `4c53204e`, and the runs are too noisy to call that a
   regression. GPU setup is nearly all of it (see "GUI on crcbl"); config,
-  entries, ranking and fonts are done within ~50 ms.
+  entries, ranking and fonts are done within ~50 ms. Built against crcbl main
+  `da8e5b88` through a local `[patch]`, three background `--dmenu` launches
+  reached first paint at 482, 464 and 436 ms, against 693, 652 and 677 ms for
+  the 0.3.0 build in the same interleaved session. Re-measure once 0.4.0 is
+  bumped and drop this entry if it holds.
+- **Adopt crcbl-app when crcbl 0.4.0 ships.** crcbl main adds `crcbl-app`, a
+  leaf crate for UI-only programs: the backend walk with fall-through, the
+  adapter pin, `open_window`, `wait_for_configure`, `TextPump` and
+  `present::Presenter` (composite alpha, frame ring, pacing, acquire, present,
+  resize). pikr's `ui::gpu` and the start of `ui::run` hand-roll much of that.
+  Its `examples/ui_window.rs` draws a crcbl-ui frame through a `Presenter`.
+  crcbl's caveat: keep `PresenterDesc::frames_in_flight` at the default until
+  crcbl-frame's UI pass stops using its own fixed ring depth. Not reviewed
+  against pikr's code yet.
 
 ### Coverage gaps (not verified)
 
