@@ -98,10 +98,14 @@ pub fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let (key, value) = match trimmed.split_once(|c: char| c.is_whitespace()) {
-            Some((k, v)) => (k.to_ascii_lowercase(), v.trim().to_string()),
-            None => continue,
+        // ssh_config(5): the keyword and its arguments are separated by
+        // whitespace or by optional whitespace and exactly one `=`.
+        let Some((key, rest)) = trimmed.split_once(|c: char| c.is_whitespace() || c == '=') else {
+            continue;
         };
+        let rest = rest.trim_start();
+        let value = rest.strip_prefix('=').unwrap_or(rest).trim().to_string();
+        let key = key.to_ascii_lowercase();
 
         if key == "host" || key == "match" {
             // Flush the previous block before starting a new one.
@@ -120,10 +124,11 @@ pub fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
                 continue;
             }
             // ssh_config(5) allows `Host a b` — one entry per pattern.
-            // Wildcard patterns are not real hosts — skip them.
+            // Wildcard and negated (`!host`) patterns are not real hosts —
+            // skip them.
             current_hosts = value
                 .split_whitespace()
-                .filter(|p| !p.contains('*') && !p.contains('?'))
+                .filter(|p| !p.contains('*') && !p.contains('?') && !p.starts_with('!'))
                 .map(str::to_string)
                 .collect();
             if current_hosts.is_empty() {
@@ -133,9 +138,10 @@ pub fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
                 user = None;
             }
         } else if !current_hosts.is_empty() {
+            // ssh uses the first value it reads for each keyword.
             match key.as_str() {
-                "hostname" => hostname = Some(value),
-                "user" => user = Some(value),
+                "hostname" => _ = hostname.get_or_insert(value),
+                "user" => _ = user.get_or_insert(value),
                 _ => {}
             }
         }
@@ -200,10 +206,11 @@ fn make_entry(
 ///   `-NoExit` keeps the window open after ssh exits so the user can see
 ///   error messages before the pane closes. The host is single-quoted —
 ///   pwsh `-Command` parses a script, and single quotes are literal there.
-/// - `cmd.exe`: `/K ssh "<host>"` for a safe host, else the `-e` argv form.
-///   `/K` runs the command and keeps the prompt alive afterwards; cmd has
-///   no reliable quoting, so a host outside the safe charset never reaches
-///   its script string.
+/// - `cmd.exe`: `/K ssh <host>` for a host in the safe charset, which needs
+///   no quoting; `/K` runs the command and keeps the prompt alive
+///   afterwards. cmd has no reliable quoting, so any other host is refused
+///   with a fixed message in the window rather than reaching its command
+///   line.
 fn build_terminal_args(terminal: &str, host: &str) -> Vec<String> {
     let binary = std::path::Path::new(terminal)
         .file_name()
@@ -217,23 +224,45 @@ fn build_terminal_args(terminal: &str, host: &str) -> Vec<String> {
             "-NoExit".to_string(),
             "-Command".to_string(),
             // pwsh -Command parses a script; single quotes are literal in pwsh
-            // and an embedded quote is escaped by doubling, so the host can
-            // never inject into the script.
-            format!("ssh '{}'", host.replace('\'', "''")),
+            // and an embedded quote is escaped by doubling. PowerShell takes
+            // the typographic single quotes as quotes too, so each is doubled.
+            format!("ssh '{}'", pwsh_single_quoted(host)),
         ],
         "cmd.exe" | "cmd" => {
+            // Separate arguments: one `ssh "host"` argument reaches cmd as
+            // `"ssh \"host\""`, and ssh gets the quotes as part of the host.
             if is_safe_host(host) {
-                vec!["/K".to_string(), format!("ssh \"{host}\"")]
+                vec!["/K".to_string(), "ssh".to_string(), host.to_string()]
             } else {
-                // cmd has no reliable quoting — fall back to the argv form so a
-                // pathological host errors visibly in the terminal instead of
-                // executing its metacharacters.
-                vec!["-e".to_string(), "ssh".to_string(), host.to_string()]
+                vec![
+                    "/K".to_string(),
+                    "echo".to_string(),
+                    CMD_UNSAFE_HOST.to_string(),
+                ]
             }
         }
         // Unix terminals (alacritty, kitty, foot, xterm) and anything unknown.
         _ => vec!["-e".to_string(), "ssh".to_string(), host.to_string()],
     }
+}
+
+/// What cmd shows for a host it cannot be given safely. A fixed string: no
+/// part of the host reaches cmd's command line.
+const CMD_UNSAFE_HOST: &str =
+    "pikr: this host has characters cmd.exe cannot be passed safely; use wt.exe or pwsh";
+
+/// `text` for a PowerShell single-quoted string: every character PowerShell
+/// reads as a single quote (`'`, `‘`, `’`, `‚`, `‛`) is doubled, which is how
+/// it escapes one inside such a string.
+fn pwsh_single_quoted(text: &str) -> String {
+    let mut quoted = String::with_capacity(text.len());
+    for c in text.chars() {
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            quoted.push(c);
+        }
+        quoted.push(c);
+    }
+    quoted
 }
 
 /// Hosts are interpolated into a shell string for pwsh/cmd, so reject
@@ -483,6 +512,54 @@ mod tests {
         );
     }
 
+    /// Labels and descriptions `input` parses to.
+    fn parsed(input: &str) -> Vec<(String, Option<String>)> {
+        parse_config(input, &Terminal::simple("xterm"))
+            .into_iter()
+            .map(|e| (e.label, e.description))
+            .collect()
+    }
+
+    #[test]
+    fn keyword_and_value_may_be_joined_by_equals() {
+        // ssh_config(5): whitespace, or optional whitespace and one `=`.
+        let input = "Host=alpha
+  HostName=alpha.example
+Host = beta
+  HostName = beta.example
+";
+        assert_eq!(
+            parsed(input),
+            [
+                ("alpha".to_string(), Some("alpha.example".to_string())),
+                ("beta".to_string(), Some("beta.example".to_string())),
+            ]
+        );
+    }
+
+    #[test]
+    fn negated_patterns_are_not_hosts() {
+        let input = "Host !bastion web
+  HostName web.example
+";
+        assert_eq!(
+            parsed(input),
+            [("web".to_string(), Some("web.example".to_string()))]
+        );
+    }
+
+    #[test]
+    fn the_first_value_of_a_keyword_wins_as_in_ssh() {
+        let input = "Host web
+  HostName first.example
+  HostName second.example
+";
+        assert_eq!(
+            parsed(input),
+            [("web".to_string(), Some("first.example".to_string()))]
+        );
+    }
+
     // ── terminal arg-builder tests ─────────────────────────────────────────
 
     #[test]
@@ -506,7 +583,22 @@ mod tests {
     #[test]
     fn cmd_args_use_slash_k() {
         let args = build_terminal_args("cmd.exe", "myserver");
-        assert_eq!(args, vec!["/K", "ssh \"myserver\""]);
+        assert_eq!(args, vec!["/K", "ssh", "myserver"]);
+    }
+
+    /// The argv cmd builds its command line from must give ssh the bare
+    /// host: run the same shape with `/C echo` and read what cmd ran.
+    #[cfg(windows)]
+    #[test]
+    fn cmd_passes_the_host_without_quotes() {
+        let mut args = build_terminal_args("cmd.exe", "my.server-1");
+        args[0] = "/C".into();
+        args[1] = "echo".into();
+        let out = std::process::Command::new("cmd.exe")
+            .args(&args)
+            .output()
+            .expect("run cmd.exe");
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "my.server-1");
     }
 
     #[test]
@@ -526,17 +618,18 @@ mod tests {
     }
 
     #[test]
-    fn cmd_host_with_metacharacters_falls_back_to_argv() {
-        // cmd has no reliable quoting — an unsafe host must take the argv
-        // path (visible error) rather than a /K script string.
-        let args = build_terminal_args("cmd.exe", "foo; notepad");
-        assert_eq!(args, vec!["-e", "ssh", "foo; notepad"]);
+    fn cmd_host_with_metacharacters_is_refused() {
+        // cmd has no reliable quoting — an unsafe host must not reach its
+        // command line at all; cmd shows a fixed message instead.
+        let args = build_terminal_args("cmd.exe", "foo & notepad");
+        assert_eq!(args, vec!["/K", "echo", CMD_UNSAFE_HOST]);
+        assert!(!args.iter().any(|a| a.contains("notepad")));
     }
 
     #[test]
-    fn cmd_safe_host_quoted() {
-        let args = build_terminal_args("cmd.exe", "myserver");
-        assert_eq!(args, vec!["/K", "ssh \"myserver\""]);
+    fn pwsh_doubles_every_kind_of_single_quote() {
+        let args = build_terminal_args("pwsh.exe", "foo\u{2019};calc;\u{2019}");
+        assert_eq!(args[2], "ssh 'foo\u{2019}\u{2019};calc;\u{2019}\u{2019}'");
     }
 
     #[test]

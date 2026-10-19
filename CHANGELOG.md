@@ -70,6 +70,17 @@ and this project adheres to
 
 ### Fixed
 
+- `ssh` mode on Windows with `cmd.exe` as the terminal connects again: the host
+  reached ssh wrapped in literal quotes (`"myserver"`), so every host failed to
+  resolve. A host with characters cmd cannot be passed safely now shows a
+  message in the window instead of opening an idle prompt.
+- `ssh` mode reads `~/.ssh/config` as ssh does: `Host=name` and `HostName = x`
+  (keyword and value joined by `=`) are understood, `!negated` host patterns are
+  no longer listed as hosts, and a repeated `HostName` or `User` shows the first
+  value, the one ssh uses.
+- `ssh` mode with PowerShell as the terminal doubles the typographic single
+  quotes (`‘ ’ ‚ ‛`) in a host as well as `'`; PowerShell reads them as quotes
+  too, so a host containing one could end the quoted string.
 - Theme colours in CSS's short or alpha hex forms (`#fff`, `#89b4fa80`) give the
   right hover, Visual-range, count and status-bar colours, which pikr blends
   from them. `#fff` used to be read as `#000fff`, and an alpha byte shifted

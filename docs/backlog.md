@@ -96,7 +96,30 @@
     (`tree/widgets/list.rs`, documented to make `clicked` read the row). In
     `ui::run::Window::frame` the click comes from the first build; the second
     runs with the pointer at rest.
-  - Not reviewed by it: `modes/` (a separate review is running).
+- **Open findings from the 2026-10-19 review of `modes/`** (one read-only agent;
+  its ssh findings are fixed: cmd quoting, `=` separators, negated patterns,
+  first value wins, PowerShell's typographic quotes). Not yet fixed or
+  re-verified by the orchestrator:
+  - `drun::pick_locale` splits off `.codeset` before `@modifier`, so the POSIX
+    order `sr_RS.UTF-8@latin` loses `@latin` and `Name[sr@latin]` is never
+    chosen; its test uses the non-standard `sr_RS@latin.UTF-8`.
+  - `drun::strip_field_codes` keeps the deprecated `%d %D %n %N %v %m`, which
+    the Desktop Entry spec says to remove; `Exec=foo %m` passes a literal `%m`.
+  - Plausible, Windows: `modes::spawn_detached` gives console children a null
+    stdin, so `pwsh -NoExit -Command ssh …` and `cmd /K ssh …` launched from the
+    GUI build may get EOF and close at once (wt.exe and Unix terminals make
+    their own pty). Not run.
+  - Windows `run`: within one directory the first listed of `foo.cmd` and
+    `foo.exe` wins, where a shell follows `PATHEXT` order.
+  - Windows icons: `drun::icons_windows::hbitmap_to_png` treats
+    `IShellItemImageFactory` bitmaps as straight alpha; they are generally
+    premultiplied, darkening antialiased edges. Cosmetic, unverified.
+  - The drun cache key (`collect_tree_mtimes`) does not descend into symlinked
+    subdirectories, which the `.desktop` walker does.
+  - Not done, by design so far: `TryExec`, `OnlyShowIn`/`NotShowIn`; no `--`
+    before the ssh host (the config is trusted); no `setsid` for Unix spawns.
+  - ssh has no `known_hosts` parsing and no `Include` support; `~/.ssh/config`
+    files that split hosts across `Include`d files list only the main file's.
 - **Not verified (coverage gaps).**
   - No whole-codebase correctness or security review since the crcbl port. The
     last ones (2026-08-06) read the floem UI, which is gone; `ui/` and
