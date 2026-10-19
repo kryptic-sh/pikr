@@ -135,14 +135,17 @@ mod unix_impl {
     pub(crate) fn pick_locale(get: impl Fn(&str) -> Option<String>) -> Vec<String> {
         for var in ["LC_ALL", "LC_MESSAGES", "LANG"] {
             if let Some(v) = get(var) {
-                let no_codeset = v.split('.').next().unwrap_or(&v);
-                if no_codeset.is_empty() || no_codeset == "C" || no_codeset == "POSIX" {
+                // POSIX: `lang[_TERRITORY][.codeset][@modifier]`. The modifier
+                // comes off first, so the codeset before it does not take it
+                // along; a codeset after it (seen in the wild) is dropped too.
+                let (base, modifier) = match v.split_once('@') {
+                    Some((base, m)) => (base, m.split('.').next().filter(|m| !m.is_empty())),
+                    None => (v.as_str(), None),
+                };
+                let lang_country = base.split('.').next().unwrap_or(base);
+                if lang_country.is_empty() || lang_country == "C" || lang_country == "POSIX" {
                     continue;
                 }
-                let (lang_country, modifier) = match no_codeset.split_once('@') {
-                    Some((lc, m)) => (lc, Some(m.to_string())),
-                    None => (no_codeset, None),
-                };
                 let lang = lang_country.split('_').next().unwrap_or(lang_country);
                 if lang.is_empty() {
                     continue;
@@ -171,7 +174,7 @@ mod unix_impl {
     }
 
     /// Split an `Exec=` string per freedesktop spec, dropping field codes
-    /// (`%f` / `%F` / `%u` / `%U` / `%i` / `%c` / `%k`). Returns
+    /// (see [`strip_field_codes`]). Returns
     /// `(program, args)` or `None` if the line is unusable — including a
     /// relative program path (`./foo`), which the spec does not allow (a full
     /// path or a bare name looked up in `PATH`) and which would otherwise
@@ -195,7 +198,9 @@ mod unix_impl {
     }
 
     /// Remove freedesktop field-code substitutions (`%f` / `%F` / `%u` / `%U` /
-    /// `%i` / `%c` / `%k`) from a token. A `%%` literal collapses to `%`.
+    /// `%i` / `%c` / `%k`, and the deprecated `%d` / `%D` / `%n` / `%N` / `%v` /
+    /// `%m`, which the spec says to remove and ignore) from a token. A `%%`
+    /// literal collapses to `%`.
     /// Unknown `%X` pairs and a trailing `%` are NOT field codes — the spec
     /// does not define them to be deleted, and `Exec=notify-send "50%"` or
     /// `yt-dlp -o "%(title)s.%(ext)s"` legitimately carry them.
@@ -206,7 +211,9 @@ mod unix_impl {
             if c == '%' {
                 match chars.next() {
                     Some('%') => out.push('%'),
-                    Some('f' | 'F' | 'u' | 'U' | 'i' | 'c' | 'k') => {} // field code — drop
+                    // A field code, current or deprecated — drop.
+                    Some('f' | 'F' | 'u' | 'U' | 'i' | 'c' | 'k')
+                    | Some('d' | 'D' | 'n' | 'N' | 'v' | 'm') => {}
                     Some(other) => {
                         // Unknown code / literal `%X` — keep both characters.
                         out.push('%');
@@ -226,7 +233,7 @@ mod unix_impl {
     /// The drun cache's format. Bump it whenever parsing changes which
     /// entries a `.desktop` file yields or what they hold, so a cache written
     /// by an older pikr is rebuilt instead of trusted.
-    pub const CACHE_FORMAT: u32 = 1;
+    pub const CACHE_FORMAT: u32 = 2;
 
     /// On-disk cache for drun entries.
     ///
@@ -489,8 +496,11 @@ mod tests {
 
     #[test]
     fn spec_field_codes_all_stripped() {
-        // The freedesktop spec's codes, each standalone and inline.
-        for code in ["f", "F", "u", "U", "i", "c", "k"] {
+        // The freedesktop spec's codes, deprecated ones included, each
+        // standalone and inline.
+        for code in [
+            "f", "F", "u", "U", "i", "c", "k", "d", "D", "n", "N", "v", "m",
+        ] {
             assert_eq!(
                 strip_field_codes(&format!("%{code}")),
                 "",
@@ -794,6 +804,20 @@ mod tests {
         assert_eq!(
             pick_locale(posix),
             vec!["en_US".to_string(), "en".to_string()]
+        );
+    }
+
+    #[test]
+    fn locale_modifier_after_the_codeset_is_kept() {
+        // POSIX order puts the codeset before the modifier, as glibc names
+        // its locales: `sr_RS.UTF-8@latin`.
+        let lookup = |v: &str| match v {
+            "LANG" => Some("sr_RS.UTF-8@latin".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            pick_locale(lookup),
+            ["sr_RS@latin", "sr@latin", "sr_RS", "sr"]
         );
     }
 

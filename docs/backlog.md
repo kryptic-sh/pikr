@@ -97,14 +97,8 @@
     `ui::run::Window::frame` the click comes from the first build; the second
     runs with the pointer at rest.
 - **Open findings from the 2026-10-19 review of `modes/`** (one read-only agent;
-  its ssh findings are fixed: cmd quoting, `=` separators, negated patterns,
-  first value wins, PowerShell's typographic quotes). Not yet fixed or
-  re-verified by the orchestrator:
-  - `drun::pick_locale` splits off `.codeset` before `@modifier`, so the POSIX
-    order `sr_RS.UTF-8@latin` loses `@latin` and `Name[sr@latin]` is never
-    chosen; its test uses the non-standard `sr_RS@latin.UTF-8`.
-  - `drun::strip_field_codes` keeps the deprecated `%d %D %n %N %v %m`, which
-    the Desktop Entry spec says to remove; `Exec=foo %m` passes a literal `%m`.
+  its ssh findings and the drun locale-modifier and deprecated field-code ones
+  are fixed). Not yet fixed or re-verified by the orchestrator:
   - Plausible, Windows: `modes::spawn_detached` gives console children a null
     stdin, so `pwsh -NoExit -Command ssh …` and `cmd /K ssh …` launched from the
     GUI build may get EOF and close at once (wt.exe and Unix terminals make

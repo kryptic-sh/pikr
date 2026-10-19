@@ -70,6 +70,12 @@ and this project adheres to
 
 ### Fixed
 
+- `drun` picks localized names for locales written the POSIX way with a
+  modifier, such as `LANG=sr_RS.UTF-8@latin`: the `@latin` was dropped with the
+  codeset, so `Name[sr@latin]` never applied.
+- `drun` removes the deprecated `Exec=` field codes (`%d %D %n %N %v %m`), as
+  the Desktop Entry spec asks, instead of passing them to the program literally.
+  Existing drun caches are rebuilt once to pick this up.
 - `ssh` mode on Windows with `cmd.exe` as the terminal connects again: the host
   reached ssh wrapped in literal quotes (`"myserver"`), so every host failed to
   resolve. A host with characters cmd cannot be passed safely now shows a
