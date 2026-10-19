@@ -99,18 +99,14 @@
 - **Open findings from the 2026-10-19 review of `modes/`** (one read-only agent;
   its ssh findings and the drun locale-modifier and deprecated field-code ones
   are fixed). Not yet fixed or re-verified by the orchestrator:
-  - Windows, partly fixed 2026-10-19: `modes::spawn_detached` gave console
-    children NUL stdio, and `pwsh -NoExit` and `cmd /K` (the ssh terminals)
-    exited within 4 s, measured with a GUI-subsystem probe on Windows 11 (with
-    inherited stdio, or `CREATE_NEW_CONSOLE`, they stayed open). A console-less
-    pikr (hotkey, Start menu) now passes no stdio and the shell opens its own
-    console. Still broken: pikr launched from a terminal has that console
-    attached (`console_attach`), still hands children NUL, so those shells still
-    close; inheriting there would put the session in the launching terminal, and
-    `CREATE_NEW_CONSOLE` with inherited handles would read the old one.
-    Launching through `ShellExecuteExW` (as `drun_windows::launch` does) would
-    give the child its own console in both cases. Interactive input in the fixed
-    case was not typed into; only that the shell stays open was checked.
+  - Fixed 2026-10-19, behaviour worth knowing: on Windows
+    `modes::spawn_detached` runs inside `console_attach::without_console` (free
+    the console, clear the std handles, spawn, re-attach) and passes no stdio.
+    Measured with a GUI-subsystem probe on Windows 11: `pwsh -NoExit` and
+    `cmd /K` given NUL handles closed within 4 s, with or without an attached
+    parent console; spawned that way they stayed open, and the probe
+    re-attached. Not checked: typing into the opened shell, and that pikr's own
+    output after the spawn still reaches the launching terminal.
   - Cleared 2026-10-19: the review's guess that
     `drun::icons_windows::hbitmap_to_png` should treat `IShellItemImageFactory`
     bitmaps as premultiplied. The 139 icons in this Windows 11 host's cache,

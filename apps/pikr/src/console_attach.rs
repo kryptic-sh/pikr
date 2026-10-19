@@ -30,12 +30,37 @@ pub fn attach_parent_console() {
 #[inline]
 pub fn attach_parent_console() {}
 
-/// Whether pikr has a console: launched from a shell, which
-/// [`attach_parent_console`] attached to, rather than from a hotkey, the
-/// Start menu or Explorer.
+/// Runs `f` with no console and no standard handles, then re-attaches to
+/// the parent's console if pikr had one, so later output still reaches it.
+///
+/// For launching a program that must get a console of its own: a child of a
+/// process without std handles inherits none, and a console program given
+/// none opens its own console with working ones. Measured on Windows 11 with
+/// `pwsh -NoExit` and `cmd /K`: given NUL handles, or pikr's attached
+/// console's handles, they closed or would share the launching terminal;
+/// spawned in here they stayed open.
 #[cfg(windows)]
-pub fn has_console() -> bool {
-    use windows::Win32::System::Console::GetConsoleWindow;
-    // SAFETY: GetConsoleWindow takes nothing and only reads process state.
-    !unsafe { GetConsoleWindow() }.0.is_null()
+pub fn without_console<T>(f: impl FnOnce() -> T) -> T {
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::Console::{
+        FreeConsole, GetConsoleWindow, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+        SetStdHandle,
+    };
+    // SAFETY: these calls take no pointers; they change only which console
+    // and std handles this process has, which nothing else in pikr holds
+    // across this call (the UI is gone by the time payloads run).
+    let had_console = !unsafe { GetConsoleWindow() }.0.is_null();
+    if had_console {
+        unsafe {
+            let _ = FreeConsole();
+            for handle in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+                let _ = SetStdHandle(handle, HANDLE::default());
+            }
+        }
+    }
+    let result = f();
+    if had_console {
+        attach_parent_console();
+    }
+    result
 }

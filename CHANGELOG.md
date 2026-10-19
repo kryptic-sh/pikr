@@ -70,11 +70,11 @@ and this project adheres to
 
 ### Fixed
 
-- Windows: an ssh session opened in PowerShell or cmd from pikr started from a
-  hotkey or the Start menu closed within seconds, since pikr handed the shell an
-  empty input stream. A console-less pikr now passes nothing, and the shell gets
-  its own console. Launched from a terminal, pikr still detaches its children
-  from that terminal's input; see the backlog.
+- Windows: an ssh session opened in PowerShell or cmd from pikr closed within
+  seconds, since pikr handed the shell an empty input stream. pikr now launches
+  programs with no console and no standard handles, so a console program opens a
+  console of its own; when pikr was started from a terminal it re-attaches to
+  that terminal afterwards.
 - `drun` notices an application added or removed inside a symlinked subdirectory
   of an applications directory; its cache used to keep listing the old set until
   something else changed.
