@@ -79,7 +79,7 @@
     not seen on screen). Tracked in crcbl's backlog; seeing the reading twice
     during the Microsoft IME check is this bug.
   - Not reviewed by it: the list's click attribution under the double build in
-    `frame`, an acquire that keeps returning out-of-date, and `modes/`.
+    `frame`, and `modes/`.
 - **Not verified (coverage gaps).**
   - No whole-codebase correctness or security review since the crcbl port. The
     last ones (2026-08-06) read the floem UI, which is gone; `ui/` and
@@ -95,7 +95,12 @@
     suite in `tests/e2e` keeps only what needs the binary: stdin and
     `--loading`, the config file, state files, and keys arriving through
     Wayland. crcbl's `HeadlessShell` gives named keys (Enter, Escape, arrows) no
-    keysym, so those tests inject raw `ShellEvent::Key`s with X11 keysyms.
+    keysym, so those tests inject raw `ShellEvent::Key`s with X11 keysyms. The
+    loop handles every scripted event in its first pump, so these runs end
+    before a frame is drawn: layout, presenting and the swapchain's out-of-date
+    retry (`ui::run`, which now waits `PRESENT_RETRY` before redrawing rather
+    than spinning) are not exercised by them. Scripting input across frames
+    would need a hook in the loop.
   - FreeBSD is only type-checked: CI's Ubuntu clippy job lints the
     `x86_64-unknown-freebsd` target. Nothing links or runs it.
   - macOS: CI builds it and runs the unit tests and the `--version`/`--help`

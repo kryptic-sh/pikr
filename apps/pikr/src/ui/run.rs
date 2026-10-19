@@ -35,6 +35,9 @@ const WHEEL_LINE_PIXELS: f32 = 40.0;
 /// How often `--loading` checks for its rows when the window system gave no
 /// way to wake the loop.
 const LOADING_POLL: Duration = Duration::from_millis(50);
+/// How long to wait for the window system after an out-of-date swapchain
+/// before drawing again: a new size is usually on its way.
+const PRESENT_RETRY: Duration = Duration::from_millis(16);
 /// The `--message` modal's height.
 pub const MESSAGE_HEIGHT: f64 = 120.0;
 
@@ -298,6 +301,10 @@ impl<'a> Window<'a> {
                 if self.gpu.present(&self.list, &self.atlas)? {
                     dirty = false;
                     self.log_first_paint();
+                } else {
+                    // Out of date and reconfigured. Retrying at once would
+                    // spin while it stays out of date (a window with no size).
+                    self.shell.wait_events(Some(PRESENT_RETRY));
                 }
                 continue;
             }
