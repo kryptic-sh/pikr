@@ -90,8 +90,13 @@
     over pikr's inline pre-edit (confirmed from crcbl's source by its session,
     not seen on screen). Tracked in crcbl's backlog; seeing the reading twice
     during the Microsoft IME check is this bug.
-  - Not reviewed by it: the list's click attribution under the double build in
-    `frame`, and `modes/`.
+  - Cleared 2026-10-19: click attribution. `ui::view::result_row` reads
+    `Ui::clicked` after its `.row` closes, so it reads the enclosing block,
+    which is the per-row `.list-row` crcbl-ui's `Ui::list` opens around each row
+    (`tree/widgets/list.rs`, documented to make `clicked` read the row). In
+    `ui::run::Window::frame` the click comes from the first build; the second
+    runs with the pointer at rest.
+  - Not reviewed by it: `modes/` (a separate review is running).
 - **Not verified (coverage gaps).**
   - No whole-codebase correctness or security review since the crcbl port. The
     last ones (2026-08-06) read the floem UI, which is gone; `ui/` and
