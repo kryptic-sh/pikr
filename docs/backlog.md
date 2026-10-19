@@ -8,14 +8,6 @@
   them together. If a fix pikr needs is only on crcbl main, pin every crate to
   the same CI-green rev and add the repo back to `deny.toml`'s `allow-git` until
   a release carries it.
-- **Decision needed: silent opaque fallback in `ui::gpu::Gpu::open`.** When the
-  window asked for transparency but the surface offers no
-  `CompositeAlpha::PreMultiplied`, pikr draws opaque without saying so. The
-  owner's rule as relayed by crcbl's session on 2026-10-17 ("every feature works
-  on every backend or is refused loudly") would forbid that; not yet confirmed
-  for pikr by the user. Options: a `tracing::warn!` and carry on opaque (pikr
-  still works, corners go square), or fail with an error (loud, but a working
-  picker is lost over a cosmetic gap).
 - **Windows transparency is D3D12 only.** crcbl draws a transparent Win32 window
   through a DirectComposition swapchain and refuses one on Vulkan, which pikr
   does not use on Windows. Pixels with alpha 0 (outside the panel's rounded

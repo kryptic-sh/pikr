@@ -114,6 +114,12 @@ fn create_window(shell: &mut dyn Shell, spec: &WindowSpec) -> Result<(WindowId, 
         WindowRole::Toplevel
     };
     let transparent = caps.contains(ShellCaps::TRANSPARENT);
+    if !transparent {
+        tracing::warn!(
+            backend = ?shell.backend(),
+            "the window system cannot make pikr transparent; drawing it opaque, with square corners"
+        );
+    }
     let window = shell
         .create_window(&WindowDesc {
             title: "pikr",

@@ -121,6 +121,13 @@ impl Gpu {
             && caps
                 .composite_alpha
                 .contains(&CompositeAlpha::PreMultiplied);
+        if want_alpha && !transparent {
+            tracing::warn!(
+                adapter = adapter.name,
+                offered = ?caps.composite_alpha,
+                "the GPU surface cannot draw pikr transparent; drawing it opaque, with square corners"
+            );
+        }
         let desc = SwapchainDesc {
             label: Some("pikr"),
             surface,
