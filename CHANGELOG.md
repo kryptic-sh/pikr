@@ -65,7 +65,9 @@ and this project adheres to
   over once, since it is recorded per launched path.
 - `drun` skips a `.desktop` entry whose `Exec=` program is a relative path such
   as `./foo`. The specification allows only a full path or a bare name looked up
-  in `PATH`, and pikr used to run it relative to its own working directory.
+  in `PATH`, and pikr used to run it relative to its own working directory. The
+  drun cache now records its format, so a cache an earlier pikr wrote is rebuilt
+  on the first launch rather than still listing such an entry.
 - Events the window system sends before pikr's window first has a size are no
   longer dropped. On Windows, a launch that is refused the foreground now logs
   the refusal; the window's first scale factor, which pikr only learns from

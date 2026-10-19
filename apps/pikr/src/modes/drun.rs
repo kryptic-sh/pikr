@@ -223,14 +223,24 @@ mod unix_impl {
 
     // ── Cache types ───────────────────────────────────────────────────────────
 
+    /// The drun cache's format. Bump it whenever parsing changes which
+    /// entries a `.desktop` file yields or what they hold, so a cache written
+    /// by an older pikr is rebuilt instead of trusted.
+    pub const CACHE_FORMAT: u32 = 1;
+
     /// On-disk cache for drun entries.
     ///
-    /// Keyed by the applications dirs that existed at cache time (in
-    /// `default_paths()` order), the locale list, and the max mtime across
-    /// every dir and file under those dirs.  If any of the three changed since
-    /// the cache was written the whole cache is stale and the parse re-runs.
+    /// Keyed by the cache format, the applications dirs that existed at cache
+    /// time (in `default_paths()` order), the locale list, and the max mtime
+    /// across every dir and file under those dirs.  If any of them changed
+    /// since the cache was written the whole cache is stale and the parse
+    /// re-runs.
     #[derive(Serialize, Deserialize)]
     struct CachedDrun {
+        /// [`CACHE_FORMAT`] at cache time; caches from before it existed read
+        /// as 0.
+        #[serde(default)]
+        format: u32,
         /// The applications dirs that existed at cache time, in
         /// `default_paths()` order.  Order matters: user-local dirs iterate
         /// first and their entries win the dedupe, so a reordered dirs list
@@ -342,8 +352,8 @@ mod unix_impl {
     }
 
     /// Try to load a valid cache. Returns `Some(entries)` on hit, `None` on
-    /// miss (missing file, parse error, or any key component changed — dirs,
-    /// locales, or tree mtime).
+    /// miss (missing file, parse error, or any key component changed — format,
+    /// dirs, locales, or tree mtime).
     pub fn load_cache(
         dirs: &[PathBuf],
         locales: &[String],
@@ -356,11 +366,13 @@ mod unix_impl {
         let cached: CachedDrun = toml::from_str(text)
             .map_err(|e| tracing::warn!("drun cache parse error: {e}"))
             .ok()?;
-        if cached.dirs != dirs
+        if cached.format != CACHE_FORMAT
+            || cached.dirs != dirs
             || cached.locales != locales
             || cached.max_mtime_unix_nanos != current_mtime
         {
             tracing::debug!(
+                format_match = cached.format == CACHE_FORMAT,
                 dirs_match = cached.dirs == dirs,
                 locales_match = cached.locales == locales,
                 mtime_match = cached.max_mtime_unix_nanos == current_mtime,
@@ -382,6 +394,7 @@ mod unix_impl {
     ) {
         let _span = tracing::debug_span!("drun_cache_write", path = %path.display()).entered();
         let cached = CachedDrun {
+            format: CACHE_FORMAT,
             dirs: dirs.to_vec(),
             locales: locales.to_vec(),
             max_mtime_unix_nanos: mtime,
@@ -406,8 +419,8 @@ mod unix_impl {
 mod tests {
     use super::super::{Entry, Payload};
     use super::unix_impl::{
-        insert_first, load_cache, parse_exec, pick_locale, strip_field_codes, tree_mtime,
-        write_cache,
+        CACHE_FORMAT, insert_first, load_cache, parse_exec, pick_locale, strip_field_codes,
+        tree_mtime, write_cache,
     };
     use std::collections::HashMap;
 
@@ -604,6 +617,44 @@ mod tests {
             mode, 0o600,
             "drun cache must follow the 0600 state-file policy"
         );
+    }
+
+    #[test]
+    fn load_cache_invalidates_on_another_format() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("drun-cache.toml");
+        let dirs = vec![std::path::PathBuf::from("/usr/share/applications")];
+        let locales = vec!["en_US".to_string()];
+        write_cache(
+            &dirs,
+            &locales,
+            1,
+            &[Entry::exec("TestApp", "testapp")],
+            &path,
+        );
+        let current = std::fs::read_to_string(&path).unwrap();
+        let format_line = format!(
+            "format = {CACHE_FORMAT}
+"
+        );
+        assert!(current.contains(&format_line), "{current}");
+        assert!(load_cache(&dirs, &locales, 1, &path).is_some());
+
+        // A cache from before the format field, and one from a newer pikr.
+        for stale in [
+            current.replace(&format_line, ""),
+            current.replace(
+                &format_line,
+                &format!(
+                    "format = {}
+",
+                    CACHE_FORMAT + 1
+                ),
+            ),
+        ] {
+            std::fs::write(&path, stale).unwrap();
+            assert!(load_cache(&dirs, &locales, 1, &path).is_none());
+        }
     }
 
     #[test]
