@@ -129,9 +129,10 @@ impl Icons {
 pub struct View {
     /// The result list, as last frame built it.
     list: Option<NodeKey>,
-    /// The selection the list was last scrolled to, so wheel scrolling is
-    /// left alone until the selection moves.
-    scrolled_to: Option<usize>,
+    /// The selection, and the query its rows were ranked for, that the list
+    /// was last scrolled to: wheel scrolling is left alone until either
+    /// changes, so a new ranking brings its best match back into view.
+    scrolled_to: Option<(usize, String)>,
     /// The caret's blink phase.
     pub blink_on: bool,
     /// An input method's composition in progress, drawn at the caret.
@@ -170,7 +171,7 @@ impl View {
     ) -> Option<usize> {
         let app = &session.app;
         let picker = &app.picker;
-        self.scroll_to_selection(ui, picker.selected, app.matches.is_empty());
+        self.scroll_to_selection(ui, picker.selected, &picker.query, app.matches.is_empty());
         let mut clicked = None;
         ui.block(".panel", &[], |ui| {
             ui.block(".input-row", &[], |ui| {
@@ -289,19 +290,24 @@ impl View {
     }
 
     /// Scrolls the list so the selection, and [`SCROLLOFF`] rows around it,
-    /// are in view — once per selection change, so the wheel can still move
-    /// the list away from it.
-    fn scroll_to_selection(&mut self, ui: &mut Ui, selected: usize, empty: bool) {
+    /// are in view — once per selection or query change, so the wheel can
+    /// still move the list away from it.
+    fn scroll_to_selection(&mut self, ui: &mut Ui, selected: usize, query: &str, empty: bool) {
         let Some(list) = self.list else {
             return;
         };
-        if empty || self.scrolled_to == Some(selected) {
+        if empty
+            || self
+                .scrolled_to
+                .as_ref()
+                .is_some_and(|(at, ranked)| *at == selected && ranked == query)
+        {
             return;
         }
         let Some((min, max)) = ui.rect(list) else {
             return;
         };
-        self.scrolled_to = Some(selected);
+        self.scrolled_to = Some((selected, query.to_owned()));
         let view = f64::from(max.y - min.y);
         let offset = f64::from(ui.scroll_offset_of(list).y);
         let top = (selected as f64 - SCROLLOFF).max(0.0) * ROW_PITCH;
@@ -319,10 +325,9 @@ impl View {
 
 /// The query text with its caret: a thin bar between characters in Insert,
 /// a block over the character under it in Normal and Visual. The caret hides
-/// on the blink-off phase without moving the text.
-/// The query with its caret at `cursor`. In Insert mode an input method's
-/// `preedit`, split at its own cursor, is drawn around the caret. Returns the
-/// caret's node.
+/// on the blink-off phase without moving the text. In Insert mode an input
+/// method's `preedit`, split at its own cursor, is drawn around the caret.
+/// Returns the caret's node.
 fn query(
     ui: &mut Ui,
     text: &str,

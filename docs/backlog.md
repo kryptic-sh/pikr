@@ -57,9 +57,6 @@
   (one read-only agent; the two confirmed defects it found, the panel border
   missing from `ui::view::window_height` and the "square corners" wording of the
   opaque-fallback warnings, are fixed). Not re-verified by the orchestrator:
-  - `ui::view::View::scroll_to_selection` re-scrolls only when `selected`
-    changes, so after a wheel scroll a rerank that keeps `selected == 0` can
-    leave the best match above the view.
   - Plausible, IME: `TextCommit` uses the modifiers of the last key press, so on
     Wayland (where the IME consumes the composing keys) a commit after a Ctrl
     chord may be read as a chord and dropped; `set_text_input` stays on outside
