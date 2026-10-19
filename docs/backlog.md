@@ -103,9 +103,13 @@
     stdin, so `pwsh -NoExit -Command ssh …` and `cmd /K ssh …` launched from the
     GUI build may get EOF and close at once (wt.exe and Unix terminals make
     their own pty). Not run.
-  - Windows icons: `drun::icons_windows::hbitmap_to_png` treats
-    `IShellItemImageFactory` bitmaps as straight alpha; they are generally
-    premultiplied, darkening antialiased edges. Cosmetic, unverified.
+  - Cleared 2026-10-19: the review's guess that
+    `drun::icons_windows::hbitmap_to_png` should treat `IShellItemImageFactory`
+    bitmaps as premultiplied. The 139 icons in this Windows 11 host's cache,
+    stored byte-for-byte as `GetImage` returned them, hold 15,071 partly
+    transparent pixels, 7,105 of them with a colour channel above alpha (in 110
+    icons), which premultiplied data cannot have. `Alpha::Straight` is right
+    here; another Windows version or shell extension was not checked.
   - Not done, by design so far: `TryExec`, `OnlyShowIn`/`NotShowIn`; no `--`
     before the ssh host (the config is trusted); no `setsid` for Unix spawns.
   - ssh has no `known_hosts` parsing and no `Include` support; `~/.ssh/config`
