@@ -79,8 +79,6 @@ and this project adheres to
 
 ### Fixed
 
-- Spaces typed at the end of the query are drawn: they were dropped on screen,
-  so the caret sat left of where the next character would go.
 - Windows: an ssh session opened in PowerShell or cmd from pikr closed within
   seconds, since pikr handed the shell an empty input stream. pikr now launches
   programs with no console and no standard handles, so a console program opens a
