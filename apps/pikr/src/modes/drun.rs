@@ -42,7 +42,7 @@ mod unix_impl {
     use super::{Entry, Result};
     use freedesktop_desktop_entry::{DesktopEntry, Iter, default_paths};
     use serde::{Deserialize, Serialize};
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::path::{Path, PathBuf};
     use std::time::SystemTime;
 
@@ -320,17 +320,25 @@ mod unix_impl {
     /// or no entry's mtime is readable.
     pub(crate) fn tree_mtime(dirs: &[PathBuf]) -> Option<u64> {
         let mut mtimes: Vec<u64> = Vec::new();
+        let mut visited = HashSet::new();
         for dir in dirs.iter().filter(|d| d.exists()) {
-            collect_tree_mtimes(dir, &mut mtimes);
+            collect_tree_mtimes(dir, &mut mtimes, &mut visited);
         }
         mtimes.into_iter().max()
     }
 
     /// Walk `dir` and push the mtime of every dir and file under it,
-    /// including `dir` itself.  Symlinked dirs are not descended into
-    /// (`DirEntry::file_type()` does not follow links), which keeps the walk
-    /// cycle-free.
-    fn collect_tree_mtimes(dir: &Path, out: &mut Vec<u64>) {
+    /// including `dir` itself.  Symlinked dirs are followed, as the
+    /// `.desktop` walker follows them, so a file added inside one moves the
+    /// key; `visited` holds each directory's canonical path, so a link back
+    /// up the tree is walked once rather than to the OS's path-length limit.
+    fn collect_tree_mtimes(dir: &Path, out: &mut Vec<u64>, visited: &mut HashSet<PathBuf>) {
+        let Ok(real) = dir.canonicalize() else {
+            return;
+        };
+        if !visited.insert(real) {
+            return;
+        }
         if let Some(nanos) = mtime_nanos(dir) {
             out.push(nanos);
         }
@@ -342,8 +350,9 @@ mod unix_impl {
             if let Some(nanos) = mtime_nanos(&path) {
                 out.push(nanos);
             }
-            if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
-                collect_tree_mtimes(&path, out);
+            // `Path::is_dir` follows a symlink; `DirEntry::file_type` would not.
+            if path.is_dir() {
+                collect_tree_mtimes(&path, out, visited);
             }
         }
     }
@@ -768,6 +777,41 @@ mod tests {
             t2 > t1,
             "a same-second mtime advance must move the tree key (t1={t1}, t2={t2})"
         );
+    }
+
+    #[test]
+    fn tree_mtime_follows_symlinked_dirs() {
+        // A file added two levels inside a symlinked directory must move the
+        // key. The link back to the root only shows the walk ends; it would
+        // end without `visited` too, at the path-length limit.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("applications");
+        let elsewhere = dir.path().join("elsewhere");
+        let deep = elsewhere.join("sub");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&deep).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, root.join("linked")).unwrap();
+        std::os::unix::fs::symlink(&root, root.join("loop")).unwrap();
+
+        let before = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        for path in [&root, &elsewhere, &deep] {
+            std::fs::File::open(path)
+                .unwrap()
+                .set_modified(before)
+                .unwrap();
+        }
+        let dirs = vec![root.clone()];
+        let t1 = tree_mtime(&dirs).unwrap();
+
+        std::fs::write(deep.join("new.desktop"), b"x").unwrap();
+        // Writing the file moved `sub`'s own mtime too; pin it back so only
+        // the new file can move the key.
+        std::fs::File::open(&deep)
+            .unwrap()
+            .set_modified(before)
+            .unwrap();
+        let t2 = tree_mtime(&dirs).unwrap();
+        assert!(t2 > t1, "a file inside a symlinked dir must move the key");
     }
 
     #[test]

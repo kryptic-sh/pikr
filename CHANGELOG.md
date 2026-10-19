@@ -70,6 +70,9 @@ and this project adheres to
 
 ### Fixed
 
+- `drun` notices an application added or removed inside a symlinked subdirectory
+  of an applications directory; its cache used to keep listing the old set until
+  something else changed.
 - `drun` picks localized names for locales written the POSIX way with a
   modifier, such as `LANG=sr_RS.UTF-8@latin`: the `@latin` was dropped with the
   codeset, so `Name[sr@latin]` never applied.

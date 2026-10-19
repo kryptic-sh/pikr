@@ -106,8 +106,6 @@
   - Windows icons: `drun::icons_windows::hbitmap_to_png` treats
     `IShellItemImageFactory` bitmaps as straight alpha; they are generally
     premultiplied, darkening antialiased edges. Cosmetic, unverified.
-  - The drun cache key (`collect_tree_mtimes`) does not descend into symlinked
-    subdirectories, which the `.desktop` walker does.
   - Not done, by design so far: `TryExec`, `OnlyShowIn`/`NotShowIn`; no `--`
     before the ssh host (the config is trusted); no `setsid` for Unix spawns.
   - ssh has no `known_hosts` parsing and no `Include` support; `~/.ssh/config`
