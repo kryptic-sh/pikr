@@ -10,62 +10,39 @@
   a release carries it.
 - **Windows transparency is D3D12 only.** crcbl draws a transparent Win32 window
   through a DirectComposition swapchain and refuses one on Vulkan, which pikr
-  does not use on Windows. Pixels with alpha 0 (outside the panel's rounded
-  corners) still take the pointer. Rounded, see-through corners were confirmed
-  in a `--dmenu` screenshot at `4d48eaf4`.
+  does not use on Windows. From crcbl 0.6.0 `ui::run`'s `update_input_region`
+  gives a transparent window a rounded input region (`PhysicalRect::rounded`),
+  so a click on a see-through corner reaches the window beneath; on Win32 the
+  region also clips drawing, so it is the corners' outer bound. Checked on the
+  Windows test desktop against crcbl main `588ce48b`: `GetWindowRgnBox` reports
+  a complex region covering the 720x447 window, and a magnified screenshot shows
+  the rounded border whole with the desktop behind the corner. A click on the
+  corner was not tried.
 - `picker::icons::tests::svg_text_is_drawn` needs a system sans-serif face; the
   Ubuntu test job installs no fonts, so it relies on the runner image.
-- **Render on the GPU that drives the window's display (asked 2026-10-19).** On
-  a laptop the internal panel hangs off the iGPU, so pikr renders there and the
-  dGPU can stay asleep; on a desktop, or a laptop's external monitor wired to
-  the dGPU, the display's own GPU avoids copying every frame across adapters.
-  When that GPU cannot be found, prefer the low-power (integrated) adapter.
-  Today `ui::gpu::Gpu::open` takes the first adapter crcbl lists that can
-  present (the RX 7900 XTX on the Windows test desktop, which does drive its
-  display); it neither knows the display's GPU nor prefers low power.
-  Mechanisms, from the platform APIs and not yet checked in crcbl: Win32, the
-  DXGI adapter whose outputs include the window's monitor (`MonitorFromWindow`);
-  Wayland, the compositor's main device from linux-dmabuf feedback matched
-  against Vulkan's DRM device properties; macOS,
-  `CGDirectDisplayCopyCurrentMetalDevice`. crcbl's plan (2026-10-19,
-  owner-refined), part of its D3D12 start-up slice: the device request takes a
-  `PowerPreference` (`HighPerformance` or `LowPower`), and an explicit adapter
-  pick through the API or `CRCBL_ADAPTER` always wins. Otherwise a display
-  driven by a discrete adapter uses that adapter whatever the preference; on a
-  hybrid laptop's iGPU-driven panel the preference decides; with the display's
-  adapter unknown, the preference picks. crcbl-app's `Presenter` defaults to
-  `LowPower`, the engine to `HighPerformance`. pikr runs its own loop, so
-  `ui::gpu::Gpu::open` must ask for `LowPower` explicitly when it lands. Not
-  handled: a window moved to another GPU's display after start (pikr is
-  short-lived).
-- **Waiting on crcbl.** Each is a gap in pikr until it lands; crcbl's session
-  has every one queued and reports green revs as they land.
+- **GPU choice is crcbl-app's rule (crcbl 0.6.0).** `ui::gpu::Gpu::open` ranks
+  adapters with `crcbl_app::adapter::choose`: `CRCBL_ADAPTER` if set, else the
+  adapter driving the window's display when it is discrete, else `LowPower`
+  (integrated before discrete), so a laptop's dGPU can sleep. On the Windows
+  test desktop `Instance::display_adapter` named the RX 7900 XTX, which drives
+  the display, and it was chosen. Not verified: a hybrid laptop (none to hand),
+  and Wayland, X11 and macOS, where crcbl's `display_adapter` answers `None` so
+  the preference alone decides. Not handled: a window moved to another GPU's
+  display after start (pikr is short-lived).
+- **Unverified from pikr after crcbl 0.6.0.**
   - Regional-indicator flags (🇺🇸) draw as two letters with Segoe UI Emoji, which
     has no flag ligatures; Noto Color Emoji draws them. Not a crcbl bug.
-  - Bidi, UAX #14 line breaking, full UAX #29 clusters, and shaping in SVG text.
-    Shaped text beyond Latin and emoji (Arabic, Indic) was not checked from
-    pikr.
-  - SVG text is drawn one glyph per character from cmap, without shaping, and
-    `flowRoot` is skipped as browsers skip it. Text in characters no installed
-    face has is refused, and the icon falls back to the generic one. Coverage of
-    real icon themes was not measured from pikr; crcbl's CI holds the breeze
-    corpus against resvg (floors per crcbl's 0.2.1 release notes).
-  - S9 IME on/off on Win32 and AppKit.
-  - `HeadlessShell` gives named keys no keysym at 0.5.0; from 0.6.0 it falls
-    back to `keysym::named_keysym`, so `ui::run::headless` can drop its raw
-    `ShellEvent::Key` injection for `key_press`. An "events due at pump N"
-    queue, which would let those tests script input across frames, is in crcbl's
-    backlog, unscheduled.
-  - Win32 reports keys the input method consumes (`VK_PROCESSKEY`) as ordinary
-    `ShellEvent::Key`s at 0.5.0; crcbl drops them from 0.6.0, as Wayland already
-    does. Until then `ui::run` ignores key presses while a pre-edit is showing;
-    remove that guard with the 0.6.0 bump.
-  - D3D12 startup (crcbl's S13): `Dx12Instance::open` still creates one driver
-    device per hardware adapter before returning, and pikr pays for each of
-    them. crcbl 0.4.0 reuses the probe device for the first open, which took
-    `create_device` from ~257 ms to near nothing; see the Windows startup entry.
-    crcbl's remaining option, describing adapters lazily, would change
-    `Instance::adapters`' contract and is undecided on their side.
+  - crcbl-ui now lays out right-to-left text (UAX #9), breaks lines by UAX #14
+    and moves the caret by UAX #29 clusters, and SVG `<text>` is shaped with
+    harfrust. Not checked from pikr: right-to-left labels or queries with a real
+    Arabic or Hebrew font, and icon-theme SVG text. crcbl's own gaps: arrow keys
+    move in logical order, and SVG text clusters are approximate.
+  - IME: pikr's pre-edit key guard is gone, since crcbl no longer reports keys
+    the input method consumes. No real input method has been driven through pikr
+    yet (the Microsoft IME check is the user's).
+  - `ui::run::headless` drives named keys through `HeadlessShell::key_press`. An
+    "events due at pump N" queue, which would let those tests script input
+    across frames, is in crcbl's backlog, unscheduled.
   - crcbl-dx12 turns on DRED in every build; debug builds also ask for the D3D12
     debug layer (a WARN without the Graphics Tools feature). By design;
     `CRCBL_DX12_VALIDATION=0` turns the debug layer off.
@@ -199,7 +176,7 @@
 ## Release pipeline
 
 - Package runtime dependencies (`pkg/nfpm/nfpm.yaml.in`, `pkg/aur/`,
-  `pkg/alpine/`) were taken from the libraries crcbl 0.5.0 `dlopen`s
+  `pkg/alpine/`) were taken from the libraries crcbl 0.6.0 `dlopen`s
   (crcbl-shell, crcbl-vk, crcbl-font sources) and the package names from memory
   of each distribution; no package was installed on a clean system to prove the
   list complete or the names right. CI builds the `.deb` and `.rpm` but does not
@@ -264,28 +241,22 @@ macOS and Windows.
 
 ### Open
 
-- **Windows startup is at the edge of the 500 ms usable-picker target.** Release
-  build on crcbl 0.4.0/D3D12 (RX 7900 XTX + iGPU + WARP), 2026-10-18: three
-  background `--dmenu` launches reached first paint at 539, 457 and 460 ms
-  (`RUST_LOG=pikr=debug`), against 794, 869 and 990 ms on crcbl 0.3.0 earlier
-  the same day; the runs are noisy. GPU setup is nearly all of it (see "GUI on
-  crcbl"); config, entries, ranking and fonts are done within ~50 ms.
-- **crcbl-app considered and not adopted (2026-10-19, crcbl 0.5.0).** It would
-  replace `ui::gpu` and the window bring-up in `ui::run` with `Presenter`,
-  `open_window` and `wait_for_configure`, but as of 0.5.0 it would undo three
-  things pikr does on purpose:
-  - `window::wait_for_configure` counts and discards the events it pumps; pikr's
-    `wait_for_size` keeps them, which is how an early `FocusRefused` and the
-    first scale factor reach the loop. Fixed on crcbl main `4d67ff24` for 0.6.0:
-    it hands every pumped event to a sink.
-  - `Presenter` skips an adapter whose surface offers no premultiplied alpha for
-    a transparent window and fails when none does; pikr's rule is to warn and
-    draw opaque instead (`ui::gpu::Gpu::open`).
-  - `text_input::TextPump` feeds crcbl-ui's `TextInput`, while pikr edits its
-    query itself (vim modes, history recall, `-P`). What it would add, backend
-    fall-through, matters little here: pikr opens one backend per OS, and on
-    Windows the alternative (Vulkan) cannot draw a transparent window. Revisit
-    if crcbl changes the first two.
+- **Windows startup is around the 500 ms usable-picker target.** Release build
+  on crcbl main `588ce48b` (0.6.0: lazy adapter description, display-adapter
+  choice), D3D12, RX 7900 XTX + iGPU + WARP, 2026-10-20: six background
+  `--dmenu` launches reached first paint at 898, 575, 276, 282, 402 and 458 ms
+  (`RUST_LOG=pikr=debug`), the first just after the build; on crcbl 0.5.0 three
+  launches gave 617, 443 and 493 ms. The runs are noisy. GPU setup is nearly all
+  of it; config, entries, ranking and fonts are done within ~50 ms.
+- **crcbl-app: only its adapter choice is adopted (crcbl 0.6.0).** pikr uses
+  `crcbl_app::adapter::{choose, pin}` in `ui::gpu::Gpu::open` and nothing else.
+  The rest would replace `ui::gpu` and the window bring-up in `ui::run`:
+  `window::wait_for_configure` now hands pumped events to a sink (fixed for
+  0.6.0 after pikr's report), and `Presenter` gained `Transparency::Preferred`,
+  an opaque fallback with a warning, which matches pikr's rule. Both objections
+  from 2026-10-19 are answered; what is left is `text_input::TextPump`, which
+  feeds crcbl-ui's `TextInput` while pikr edits its own query. Moving `ui::gpu`
+  onto `Presenter` is open and not reviewed against pikr's code.
 
 ### Coverage gaps (not verified)
 

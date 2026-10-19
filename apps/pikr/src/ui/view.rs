@@ -30,6 +30,8 @@ pub const PANEL_PAD: f64 = 10.0;
 /// The panel's border width; the panel is border-box, so it eats into the
 /// height too.
 pub const PANEL_BORDER: f64 = 1.5;
+/// The panel's corner radius.
+pub const PANEL_RADIUS: f64 = 10.0;
 /// The ex bar: height + top margin + bottom margin.
 pub const EX_BAR_TOTAL: f64 = 22.0 + 8.0 + 2.0;
 /// The status bar's height, padding included.

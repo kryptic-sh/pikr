@@ -13,30 +13,30 @@ use crate::picker::app_state::tests::app_state;
 use crate::picker::keyspec::KbCustom;
 use crate::ui::view::{VISIBLE_ROWS, window_height};
 use crcbl_hal::null::NullInstance;
-use crcbl_shell::{DeviceId, HeadlessShell, Keysym, Modifiers as ShellModifiers, Scancode};
+use crcbl_shell::{HeadlessShell, KeyCode, Modifiers as ShellModifiers};
 
 /// One scripted input.
 enum Input {
     /// Text the keyboard layout or an input method commits.
     Text(&'static str),
-    /// A key press, by X11 keysym, with the modifiers held.
-    Key(u32, ShellModifiers),
+    /// A key press with the modifiers held.
+    Key(KeyCode, ShellModifiers),
 }
 
-const ESCAPE: u32 = 0xFF1B;
-const RETURN: u32 = 0xFF0D;
-const LEFT: u32 = 0xFF51;
-const RIGHT: u32 = 0xFF53;
-const DOWN: u32 = 0xFF54;
-const DELETE: u32 = 0xFFFF;
-const F2: u32 = 0xFFBF;
+const ESCAPE: KeyCode = KeyCode::Escape;
+const RETURN: KeyCode = KeyCode::Enter;
+const LEFT: KeyCode = KeyCode::ArrowLeft;
+const RIGHT: KeyCode = KeyCode::ArrowRight;
+const DOWN: KeyCode = KeyCode::ArrowDown;
+const DELETE: KeyCode = KeyCode::Delete;
+const F2: KeyCode = KeyCode::F2;
 
-fn key(keysym: u32) -> Input {
-    Input::Key(keysym, ShellModifiers::empty())
+fn key(code: KeyCode) -> Input {
+    Input::Key(code, ShellModifiers::empty())
 }
 
-fn shifted(keysym: u32) -> Input {
-    Input::Key(keysym, ShellModifiers::SHIFT)
+fn shifted(code: KeyCode) -> Input {
+    Input::Key(code, ShellModifiers::SHIFT)
 }
 
 /// Runs `content` through pikr's window loop, feeding it `input` and then a
@@ -63,17 +63,11 @@ fn run(content: Content, input: &[Input]) -> (Vec<Payload>, i32) {
     for input in input {
         match *input {
             Input::Text(text) => shell.commit_text(window, text).unwrap(),
-            Input::Key(keysym, modifiers) => shell.inject(ShellEvent::Key {
-                window,
-                device: DeviceId(0),
-                time: shell.now(),
-                scancode: Scancode(0),
-                key_code: None,
-                keysym: Keysym(keysym),
-                state: ButtonState::Pressed,
-                repeat: false,
-                modifiers,
-            }),
+            Input::Key(code, modifiers) => {
+                shell.set_modifiers(modifiers);
+                shell.key_press(window, code).unwrap();
+                shell.set_modifiers(ShellModifiers::empty());
+            }
         }
     }
     shell.request_close(window).unwrap();

@@ -18,16 +18,17 @@ authors = ["mxaddict <mxaddict@kryptic.sh>"]
 [workspace.dependencies]
 anyhow = "1"
 # The GUI: crcbl's window shell, GPU layer, UI tree and draw pass, its
-# image decoders and icon-theme lookup, and system font lookup. Every crcbl
-# crate must name the same version.
-crcbl-dx12 = "0.5.0"
-crcbl-frame = { version = "0.5.0", features = ["parsed-font"] }
-crcbl-hal = "0.5.0"
-crcbl-image = { version = "0.5.0", features = ["png", "jpeg", "svg", "webp", "ico", "xpm", "svg-text", "theme"] }
-crcbl-mtl = "0.5.0"
-crcbl-shell = "0.5.0"
-crcbl-ui = { version = "0.5.0", features = ["system-fonts"] }
-crcbl-vk = "0.5.0"
+# image decoders and icon-theme lookup, system font lookup, and (crcbl-app)
+# its GPU adapter choice. Every crcbl crate must name the same version.
+crcbl-app = "0.6.0"
+crcbl-dx12 = "0.6.0"
+crcbl-frame = { version = "0.6.0", features = ["parsed-font"] }
+crcbl-hal = "0.6.0"
+crcbl-image = { version = "0.6.0", features = ["png", "jpeg", "svg", "webp", "ico", "xpm", "svg-text", "theme"] }
+crcbl-mtl = "0.6.0"
+crcbl-shell = "0.6.0"
+crcbl-ui = { version = "0.6.0", features = ["system-fonts"] }
+crcbl-vk = "0.6.0"
 # crcbl-ui and crcbl-frame take glam vectors and do not re-export glam.
 glam = "0.34"
 clap = { version = "4", features = ["derive"] }

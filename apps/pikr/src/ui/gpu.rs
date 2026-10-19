@@ -7,6 +7,7 @@
 #![allow(unsafe_code)]
 
 use anyhow::{Context, Result, anyhow};
+use crcbl_app::adapter::{PowerPreference, choose, pin};
 use crcbl_frame::graph::{ImportedImage, InitialClaim, RenderGraph};
 use crcbl_frame::{TransientPool, UiRenderer};
 use crcbl_hal::{
@@ -90,10 +91,33 @@ impl Gpu {
         // `open` runs on the thread that pumps that window.
         let surface = unsafe { instance.create_surface(target) }.context("creating the surface")?;
 
-        // An adapter that cannot present to this surface is skipped, not
-        // fatal: the first one that can, wins.
+        // crcbl's rule: `CRCBL_ADAPTER` if set, else the GPU driving the
+        // window's display when it is discrete, else integrated before
+        // discrete, so a launcher lets a laptop's dGPU sleep. Within that
+        // order an adapter that cannot present to this surface is skipped,
+        // not fatal: the first one that can, wins.
+        let adapters = instance.adapters();
+        let on_display = instance
+            .display_adapter(surface)
+            .inspect_err(|e| tracing::debug!("no display adapter: {e}"))
+            .ok()
+            .flatten();
+        let choice = choose(
+            &adapters,
+            pin().as_deref(),
+            None,
+            PowerPreference::LowPower,
+            on_display,
+        );
+        let candidates = match &choice {
+            Ok(choice) => choice.candidates(),
+            Err(e) => {
+                instance.destroy_surface(surface);
+                return Err(anyhow!("no usable GPU: {e}"));
+            }
+        };
         let mut chosen = None;
-        for adapter in instance.adapters() {
+        for &adapter in candidates {
             match instance.surface_caps(surface, adapter.id) {
                 Ok(caps) if caps.preferred_format().is_some() => {
                     chosen = Some((adapter, caps));
@@ -109,7 +133,12 @@ impl Gpu {
                 "no usable GPU: no adapter can present to the window"
             ));
         };
-        tracing::debug!(adapter = adapter.name, backend = ?instance.backend(), "GPU chosen");
+        tracing::debug!(
+            adapter = adapter.name,
+            backend = ?instance.backend(),
+            display_adapter = ?on_display,
+            "GPU chosen"
+        );
 
         let device = instance
             .create_device(&DeviceDesc {

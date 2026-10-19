@@ -10,6 +10,12 @@ and this project adheres to
 
 ### Changed
 
+- pikr renders on the GPU that drives its display when that GPU is discrete, and
+  otherwise prefers the integrated one, so a laptop's discrete GPU can stay
+  asleep. `CRCBL_ADAPTER` still picks one explicitly.
+- Clicks on the see-through corners outside the rounded panel reach the window
+  beneath, where the window system supports an input region (Windows, Wayland,
+  X11 with libxcb-shape).
 - dmenu reads at most 256 MiB from stdin. More is an error
   (`more than 256 MiB on stdin`, exit 1), with or without `--loading`, rather
   than a picker holding whatever the producer writes in memory.

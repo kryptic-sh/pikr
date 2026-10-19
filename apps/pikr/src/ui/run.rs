@@ -23,7 +23,7 @@ use crate::picker::session::{Outcome, Session};
 use crate::picker::state::VimMode;
 use crate::ui::gpu::Gpu;
 use crate::ui::keyboard::{key_from_commit, key_from_press, modifiers_from_crcbl};
-use crate::ui::view::{Icons, Preedit, View};
+use crate::ui::view::{Icons, PANEL_RADIUS, Preedit, View};
 
 /// The caret's blink half-period: crcbl's own, so pikr's query caret blinks
 /// with every crcbl text field.
@@ -250,6 +250,7 @@ impl<'a> Window<'a> {
         mut early: Vec<ShellEvent>,
     ) -> Result<(Vec<modes::Payload>, i32)> {
         self.sync_text_input(&content)?;
+        self.update_input_region()?;
         // `--loading` rows, and whether their arrival wakes the loop.
         let mut arrived = match &mut content {
             Content::Picker { pending, .. } => pending.take().map(|rx| self.forward(rx)),
@@ -318,6 +319,22 @@ impl<'a> Window<'a> {
         }
     }
 
+    /// Where the window is transparent, takes the pointer only inside the
+    /// rounded panel, so a click on a see-through corner reaches the window
+    /// beneath. The region is the corners' outer bound: on Win32 it also
+    /// clips drawing, and must not cut the antialiased edge.
+    fn update_input_region(&mut self) -> Result<()> {
+        let caps = self.shell.caps();
+        if !caps.contains(ShellCaps::INPUT_REGION) || !caps.contains(ShellCaps::TRANSPARENT) {
+            return Ok(());
+        }
+        let (width, height) = self.extent;
+        let radius = (PANEL_RADIUS * f64::from(self.scale)).ceil() as u32;
+        let region = PhysicalRect::new(0, 0, width, height).rounded(radius);
+        self.shell.set_input_region(self.window, Some(&region))?;
+        Ok(())
+    }
+
     /// Tells the input method whether the query is taking typing, whenever
     /// that changes. Turning it off drops any composition in progress.
     fn sync_text_input(&mut self, content: &Content) -> Result<()> {
@@ -368,6 +385,7 @@ impl<'a> Window<'a> {
                 self.scale = scale_factor as f32;
                 self.icons.scale = scale_factor.ceil().max(1.0) as u32;
                 self.gpu.resize(self.extent)?;
+                self.update_input_region()?;
                 Ok(Step::Continue(true))
             }
             ShellEvent::CloseRequested { window } => {
@@ -404,12 +422,6 @@ impl<'a> Window<'a> {
                 modifiers,
                 ..
             } => {
-                // Keys belong to the input method while it composes: Enter
-                // and Backspace there edit or commit the composition. crcbl
-                // 0.5.0's Win32 backend still reports them as keys.
-                if !self.view.preedit.text.is_empty() {
-                    return Ok(Step::Continue(false));
-                }
                 self.mods = modifiers_from_crcbl(modifiers);
                 let key = key_from_press(keysym, self.mods);
                 Ok(key.map_or(Step::Continue(false), |key| self.key(&key, content)))
