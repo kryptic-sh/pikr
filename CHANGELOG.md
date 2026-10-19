@@ -39,6 +39,14 @@ and this project adheres to
   draw, such as text in characters no installed font has, shows the generic
   application icon instead.
 - The minimum supported Rust version is 1.98.
+- **`-P` / `--password` is a bare password prompt.** It shows only the masked
+  input and the status bar: no list, no filtering, and stdin is not read. Enter
+  prints exactly what was typed, surrounding spaces included, in any mode;
+  before, it accepted the highlighted row, and which rows stayed visible hinted
+  at the secret. The `:` prompt and Ctrl-P / Ctrl-N history recall are off under
+  `-P`, and `--loading` or a `--kb-custom KEY=PROMPT` binding alongside it is
+  refused (exit 2), as neither has a list to show on. A plain `--kb-custom KEY`
+  still works and prints the typed text with its exit code.
 
 ### Added
 

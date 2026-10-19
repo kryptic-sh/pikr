@@ -128,9 +128,16 @@ impl Session {
             .collect()
     }
 
-    /// The typed query as a dmenu answer.
+    /// The typed query as a dmenu answer. A `-P` password is returned as
+    /// typed: its spaces are part of it.
     fn query_payload(&self) -> Payload {
-        Payload::Stdout(self.app.picker.query.trim().to_string())
+        let query = &self.app.picker.query;
+        let text = if self.app.password {
+            query
+        } else {
+            query.trim()
+        };
+        Payload::Stdout(text.to_string())
     }
 
     /// A click on result row `mi`: accept it, as Enter does on the cursor
@@ -205,6 +212,16 @@ impl Session {
         };
         // Rows haven't arrived yet (--loading): nothing to accept.
         if self.loading.is_some() && needs_loaded_rows(&action) {
+            return Outcome::Continue;
+        }
+        // -P is a bare password prompt: no `:` mode switch onto a list, and
+        // no recall of another query into it.
+        if self.app.password
+            && matches!(
+                action,
+                Action::StartEx | Action::HistoryPrev | Action::HistoryNext
+            )
+        {
             return Outcome::Continue;
         }
         self.apply(action)
@@ -387,6 +404,9 @@ impl Session {
     fn accept(&mut self) -> Outcome {
         let payloads = self.selected_payloads();
         let query = self.app.picker.query.clone();
+        if self.app.password {
+            return Outcome::exit(vec![self.query_payload()], 0);
+        }
         if payloads.is_empty() {
             // In dmenu mode with no matches, Enter returns the typed query —
             // rofi parity (rofi --dmenu returns the unmatched input).
@@ -517,14 +537,51 @@ mod tests {
     }
 
     #[test]
-    fn password_accept_records_nothing() {
+    fn password_accept_returns_the_input_not_a_row_and_records_nothing() {
+        // "al" would match the row; Enter must still return what was typed.
         let mut s = Session::new(app_state(CliMode::Dmenu, &["alpha"], true), None);
         type_text(&mut s, "al");
-        assert!(matches!(
+        assert_eq!(
             s.handle_key(&named(NamedKey::Enter), none()),
-            Outcome::Exit { code: 0, .. }
-        ));
+            Outcome::exit(vec![Payload::Stdout("al".into())], 0)
+        );
         assert!(!s.usage_dirty && !s.history_dirty);
+    }
+
+    #[test]
+    fn password_accept_keeps_surrounding_spaces() {
+        let mut s = Session::new(app_state(CliMode::Dmenu, &[], true), None);
+        type_text(&mut s, " pw ");
+        assert_eq!(
+            s.handle_key(&named(NamedKey::Enter), none()),
+            Outcome::exit(vec![Payload::Stdout(" pw ".into())], 0)
+        );
+    }
+
+    #[test]
+    fn password_accept_in_any_mode_returns_the_input() {
+        let mut s = Session::new(app_state(CliMode::Calc, &[], true), None);
+        type_text(&mut s, "6*7");
+        assert_eq!(
+            s.handle_key(&named(NamedKey::Enter), none()),
+            Outcome::exit(vec![Payload::Stdout("6*7".into())], 0)
+        );
+    }
+
+    #[test]
+    fn password_ignores_the_ex_prompt_and_history_recall() {
+        let mut state = app_state(CliMode::Dmenu, &[], true);
+        state.history.push(CliMode::Dmenu, "earlier");
+        let mut s = Session::new(state, None);
+        let ctrl = Modifiers {
+            ctrl: true,
+            ..none()
+        };
+        s.handle_key(&ch("p"), ctrl);
+        assert_eq!(s.app.picker.query, "");
+        s.handle_key(&named(NamedKey::Escape), none());
+        s.handle_key(&ch(":"), none());
+        assert_eq!(s.app.picker.ex_buf, None);
     }
 
     #[test]

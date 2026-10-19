@@ -37,15 +37,11 @@ pub(crate) fn mask_password(enabled: bool, text: &str) -> String {
     }
 }
 
-/// Empty-state hint for a query with no matching rows. With `--password` the
-/// query is left out: echoing it would print the secret in plain text right
-/// under the masked query bar. A masked echo would only repeat the bar's ●
-/// run, so the hint just says there are no results.
-pub(crate) fn empty_state_text(query: &str, password: bool) -> String {
+/// Empty-state hint for a query with no matching rows. `--password` draws
+/// no list, so this never echoes a secret.
+pub(crate) fn empty_state_text(query: &str) -> String {
     if query.is_empty() {
         "No entries.".to_owned()
-    } else if password {
-        "No results".to_owned()
     } else {
         format!("No results for \u{201C}{query}\u{201D}")
     }
@@ -106,24 +102,15 @@ mod tests {
 
     #[test]
     fn empty_state_no_query() {
-        assert_eq!(empty_state_text("", false), "No entries.");
-        assert_eq!(empty_state_text("", true), "No entries.");
+        assert_eq!(empty_state_text(""), "No entries.");
     }
 
     #[test]
     fn empty_state_echoes_query() {
         assert_eq!(
-            empty_state_text("fire", false),
+            empty_state_text("fire"),
             "No results for \u{201C}fire\u{201D}"
         );
-    }
-
-    #[test]
-    fn empty_state_password_hides_query_and_length() {
-        let text = empty_state_text("hunter2", true);
-        assert_eq!(text, "No results");
-        assert!(!text.contains("hunter2"));
-        assert!(!text.contains('\u{25CF}'));
     }
 
     // ── mask_password tests ───────────────────────────────────────────────

@@ -46,6 +46,12 @@ pub fn window_height(rows: usize) -> f64 {
         + STATUS_BAR_TOTAL
 }
 
+/// The `-P` window height: the input row and status bar, with no list and
+/// no ex bar.
+pub fn password_window_height() -> f64 {
+    window_height(0) - EX_BAR_TOTAL
+}
+
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
 /// Icons registered in the renderer's image atlas, by file.
@@ -166,7 +172,10 @@ impl View {
                 );
             });
 
-            if let Some(text) = &session.loading {
+            // -P is a bare password prompt: no list under it.
+            if app.password {
+                self.list = None;
+            } else if let Some(text) = &session.loading {
                 ui.block(".loading", &[], |ui| {
                     ui.span(".loading-text", text.as_str(), &[]);
                 });
@@ -175,7 +184,7 @@ impl View {
                     if app.matches.is_empty() {
                         self.list = None;
                         ui.block(".empty-row", &[], |ui| {
-                            let text = empty_state_text(&picker.query, app.password);
+                            let text = empty_state_text(&picker.query);
                             ui.span(".empty-row-text", text.as_str(), &[]);
                             ui.block(".spacer", &[], |_| {});
                             confirm_card(ui, session);
@@ -194,13 +203,16 @@ impl View {
                 });
             }
 
-            ui.block(".ex-bar", &[], |ui| {
-                if let Some(buf) = &picker.ex_buf {
-                    let line = format!(":{buf}");
-                    let end = line.chars().count();
-                    query(ui, &line, end, VimMode::Insert, self.blink_on);
-                }
-            });
+            // -P never opens the `:` prompt, so its bar is left out too.
+            if !app.password {
+                ui.block(".ex-bar", &[], |ui| {
+                    if let Some(buf) = &picker.ex_buf {
+                        let line = format!(":{buf}");
+                        let end = line.chars().count();
+                        query(ui, &line, end, VimMode::Insert, self.blink_on);
+                    }
+                });
+            }
 
             ui.block(".status-bar", &[], |ui| {
                 let (chip, label) = match picker.vim_mode {
@@ -209,8 +221,16 @@ impl View {
                     VimMode::Visual => (".mode-chip.visual", "VISUAL"),
                 };
                 ui.span(chip, label, &[]);
-                ui.span(".mode-name", app.cli_mode.key().as_str(), &[]);
+                let mode_name = if app.password {
+                    "password".to_string()
+                } else {
+                    app.cli_mode.key()
+                };
+                ui.span(".mode-name", mode_name.as_str(), &[]);
                 ui.block(".spacer", &[], |_| {});
+                if app.password {
+                    return;
+                }
                 let total = app.matches.len();
                 let count = if total == 0 {
                     "0/0".to_string()

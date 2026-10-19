@@ -11,7 +11,6 @@ use crate::modes::Entry;
 use crate::picker::input::{Key, Modifiers, NamedKey};
 use crate::picker::keys::Action;
 use crate::picker::matcher::{Match, Matcher};
-use crate::picker::query_text::mask_password;
 use crate::picker::state::{PickerState, VimMode};
 
 /// A pending `--kb-custom KEY=PROMPT` confirmation, shown as a card on the
@@ -137,9 +136,14 @@ impl AppState {
             query_len = query.chars().count(),
             "picker query reranked"
         );
+        // -P is a bare password prompt: rows ranked against the secret
+        // would reveal which of them it matches.
+        if self.password {
+            self.matches.clear();
+            return;
+        }
         if matches!(self.cli_mode, CliMode::Calc) {
             self.rerank_calc(&query);
-            self.hide_match_positions_if_password();
             return;
         }
         let mut ranked = self.matcher.rank(&self.entries, &self.match_keys, &query);
@@ -160,21 +164,6 @@ impl AppState {
         self.matches = ranked;
         self.matches.truncate(self.max_results);
         self.picker.clamp_selected(self.matches.len());
-        self.hide_match_positions_if_password();
-    }
-
-    /// `-P`: painting the matched characters would show which typed
-    /// characters are in each row, spelling out the secret. Rows render as
-    /// plain labels instead.
-    fn hide_match_positions_if_password(&mut self) {
-        if !self.password {
-            return;
-        }
-        let none: Rc<Vec<u32>> = Rc::new(Vec::new());
-        for m in &mut self.matches {
-            m.positions = Rc::clone(&none);
-            m.desc_positions = Rc::clone(&none);
-        }
     }
 
     /// Calc-mode rerank: build a row list from on-disk history plus the live
@@ -210,14 +199,9 @@ impl AppState {
             })
             .collect();
 
-        // `masked` hides both sides of the label; the payload keeps the result.
-        let mk_entry = |expr: &str, result: &str, masked: bool| {
+        let mk_entry = |expr: &str, result: &str| {
             Arc::new(Entry {
-                label: format!(
-                    "{} = {}",
-                    mask_password(masked, expr),
-                    mask_password(masked, result)
-                ),
+                label: format!("{expr} = {result}"),
                 description: None,
                 icon: None,
                 payload: crate::modes::Payload::Stdout(result.to_owned()),
@@ -225,11 +209,10 @@ impl AppState {
         };
         let mut entries: Vec<Arc<Entry>> = Vec::with_capacity(history.len() + 1);
         if let Some((expr, result)) = live_eval.as_ref() {
-            // -P: the live row is the typed secret and its value.
-            entries.push(mk_entry(expr, result, self.password));
+            entries.push(mk_entry(expr, result));
         }
         for (expr, result) in &history {
-            entries.push(mk_entry(expr, result, false));
+            entries.push(mk_entry(expr, result));
         }
         self.set_entries(entries);
 
@@ -340,7 +323,6 @@ pub(crate) fn move_down_selection(cur: usize, n: usize, total: usize) -> usize {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::modes::Payload;
     use std::cell::Cell;
 
     /// An `AppState` with in-memory usage/history and no disk state, for
@@ -372,52 +354,19 @@ pub(crate) mod tests {
         state
     }
 
-    // ── -P / --password rendering ─────────────────────────────────────────
+    // ── -P / --password ───────────────────────────────────────────────────
 
     #[test]
-    fn password_calc_live_row_masks_expression_and_result() {
-        let s = ranked_with_query(app_state(CliMode::Calc, &[], true), "6*7");
-        let live = &s.entries[s.matches[0].index];
-        assert!(!live.label.contains("6*7"), "label: {}", live.label);
-        assert!(!live.label.contains("42"), "label: {}", live.label);
-        assert_eq!(live.label, "\u{25CF}\u{25CF}\u{25CF} = \u{25CF}\u{25CF}");
-        // The accepted value is still the real result.
-        assert!(matches!(&live.payload, Payload::Stdout(r) if r == "42"));
-
-        let plain = ranked_with_query(app_state(CliMode::Calc, &[], false), "6*7");
-        assert_eq!(plain.entries[0].label, "6*7 = 42");
-    }
-
-    #[test]
-    fn password_rows_carry_no_match_highlights() {
+    fn password_ranks_no_rows() {
         let labels = ["hunter2", "hunt", "other"];
         let plain = ranked_with_query(app_state(CliMode::Dmenu, &labels, false), "hun");
-        assert!(
-            plain.matches.iter().any(|m| !m.positions.is_empty()),
-            "without -P the rows are highlighted"
-        );
-
+        assert!(!plain.matches.is_empty());
         let masked = ranked_with_query(app_state(CliMode::Dmenu, &labels, true), "hun");
-        assert_eq!(masked.matches.len(), plain.matches.len());
-        for m in &masked.matches {
-            assert!(m.positions.is_empty() && m.desc_positions.is_empty());
-        }
-    }
+        assert!(masked.matches.is_empty());
 
-    #[test]
-    fn password_calc_history_rows_carry_no_match_highlights() {
-        let calc_state = |password| {
-            let mut s = app_state(CliMode::Calc, &[], password);
-            s.history.push(CliMode::Calc, "12+30");
-            s.calc_results.insert("12+30".into(), "42".into());
-            ranked_with_query(s, "12")
-        };
-        let plain = calc_state(false);
-        assert!(plain.matches.iter().any(|m| !m.positions.is_empty()));
-
-        let masked = calc_state(true);
-        assert_eq!(masked.matches.len(), plain.matches.len());
-        assert!(masked.matches.iter().all(|m| m.positions.is_empty()));
+        // Calc builds its own rows from the query; -P must stop that too.
+        let calc = ranked_with_query(app_state(CliMode::Calc, &[], true), "6*7");
+        assert!(calc.matches.is_empty());
     }
 
     #[test]

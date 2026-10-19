@@ -133,6 +133,16 @@ example on invalid UTF-8), pikr prints the error and exits 1, as it does without
 slow_scan | pikr --dmenu --loading 'Scanning…'
 ```
 
+### Password prompt
+
+`-P` / `--password` opens a bare prompt: the input is masked, no list is shown,
+stdin is not read, and Enter prints exactly what was typed. Nothing typed is
+kept in history.
+
+```sh
+pass=$(pikr --dmenu -P --prompt Password)
+```
+
 ## Keybindings (planned)
 
 Normal mode:

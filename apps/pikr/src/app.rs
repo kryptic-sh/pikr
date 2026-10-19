@@ -10,7 +10,7 @@ use crate::picker::app_state::AppState;
 use crate::picker::session::Session;
 use crate::picker::state::PickerState;
 use crate::ui::run::{Content, MESSAGE_HEIGHT, WindowSpec};
-use crate::ui::view::{VISIBLE_ROWS, window_height};
+use crate::ui::view::{VISIBLE_ROWS, password_window_height, window_height};
 use anyhow::Result;
 
 /// The window width when `--width` doesn't set one.
@@ -59,10 +59,12 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
     let phase_started = Instant::now();
     // --loading: open now, read stdin on a thread; rows arrive later.
     let pending = match (&cli.loading, chosen_mode) {
+        // `Cli::validate` refuses --loading with -P.
         (Some(_), Mode::Dmenu) => Some(modes::dmenu::read_stdin_in_background()?),
         _ => None,
     };
-    let entries: Vec<Arc<modes::Entry>> = if pending.is_some() {
+    // -P is a bare password prompt: no rows, and stdin is left unread.
+    let entries: Vec<Arc<modes::Entry>> = if pending.is_some() || cli.password {
         Vec::new()
     } else {
         mode.collect()?.into_iter().map(Arc::new).collect()
@@ -110,9 +112,13 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         "startup state ranked"
     );
 
-    let rows = cli.lines.unwrap_or(VISIBLE_ROWS);
+    let height = if cli.password {
+        password_window_height()
+    } else {
+        window_height(cli.lines.unwrap_or(VISIBLE_ROWS))
+    };
     crate::ui::run::run(
-        spec(window_height(rows)),
+        spec(height),
         Content::Picker {
             session: Box::new(session),
             pending,

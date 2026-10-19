@@ -169,13 +169,6 @@ macOS and Windows.
 
 ### Open
 
-- **`-P` still leaks through filtering.** Masking the calc live row and dropping
-  match highlights (`AppState::hide_match_positions_if_password`) closed the
-  direct echoes, but which dmenu / calc-history rows stay visible still reveals
-  which rows match the secret, and calc's dedupe hides a history row exactly
-  equal to the live expression. Inherent to filtering on a secret; the options
-  are to document it or to stop filtering under `-P` (show all rows unranked).
-  Needs a product call.
 - **Windows startup is at the edge of the 500 ms usable-picker target.** Release
   build on crcbl 0.4.0/D3D12 (RX 7900 XTX + iGPU + WARP), 2026-10-18: three
   background `--dmenu` launches reached first paint at 539, 457 and 460 ms

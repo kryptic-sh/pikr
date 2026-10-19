@@ -45,8 +45,10 @@ pub struct Cli {
     #[arg(long = "mode", value_enum, default_value_t = VimMode::Insert)]
     pub mode: VimMode,
 
-    /// Mask the query bar with ● (U+25CF) per character. Real chars still
-    /// drive the matcher; the payload on accept is still the typed text.
+    /// Password prompt: the input is masked with ● (U+25CF) per character,
+    /// no list is shown and nothing is filtered, and Enter prints the typed
+    /// text exactly as typed. Stdin is not read, and nothing typed is kept
+    /// in history.
     #[arg(short = 'P', long = "password")]
     pub password: bool,
 
@@ -120,6 +122,21 @@ impl Cli {
                 return fail(
                     ErrorKind::MissingRequiredArgument,
                     "--loading requires --dmenu or --show dmenu".into(),
+                );
+            }
+        }
+
+        if self.password {
+            if self.loading.is_some() {
+                return fail(
+                    ErrorKind::ArgumentConflict,
+                    "--loading cannot be used with --password, which shows no list".into(),
+                );
+            }
+            if self.kb_custom.iter().any(|b| b.confirm.is_some()) {
+                return fail(
+                    ErrorKind::ArgumentConflict,
+                    "--kb-custom KEY=PROMPT cannot be used with --password: the prompt needs a row to show on".into(),
                 );
             }
         }
@@ -331,6 +348,20 @@ mod tests {
     fn kb_custom_default_empty() {
         let cli = parse(&["-d"]);
         assert!(cli.kb_custom.is_empty());
+    }
+
+    #[test]
+    fn password_refuses_flags_that_need_a_list() {
+        for args in [
+            &["--dmenu", "-P", "--loading", "…"][..],
+            &["--dmenu", "-P", "--kb-custom", "Alt+1=Sure?"],
+        ] {
+            let err = try_parse(args).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::ArgumentConflict, "{args:?}");
+            assert_eq!(err.exit_code(), 2);
+        }
+        // A binding without a prompt prints the input, as Enter does.
+        assert!(try_parse(&["--dmenu", "-P", "--kb-custom", "Alt+1"]).is_ok());
     }
 
     #[test]
