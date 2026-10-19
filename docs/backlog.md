@@ -40,9 +40,13 @@
     Hebrew and Arabic dmenu rows draw in visual order, Arabic shaped and joined,
     and `mixed: hello עולם 123` draws as `mixed: hello 123 עולם`, UAX #9's
     answer. Rows stay left-aligned whatever their direction (pikr's row layout,
-    as rofi does). Not checked: typing right-to-left text into the query (caret
-    movement), and icon-theme SVG text. crcbl's own gaps: arrow keys move in
-    logical order, and SVG text clusters are approximate.
+    as rofi does). Breeze icons (KDE `breeze-icons` at `6ee38f1`, 2026-10-20):
+    the six of its SVGs that still hold `<text>` (applets-template, kbruch,
+    khangman, kile, kwave, xorg) all render through `crcbl_image::svg::decode`
+    with `svg-text` at 96 px, every label in place, on Windows with its system
+    fonts. Not checked: typing right-to-left text into the query (caret
+    movement), and SVG text in scripts beyond Latin. crcbl's own gaps: arrow
+    keys move in logical order, and SVG text clusters are approximate.
   - IME: pikr's pre-edit key guard is gone, since crcbl no longer reports keys
     the input method consumes. No real input method has been driven through pikr
     yet (the Microsoft IME check is the user's).
