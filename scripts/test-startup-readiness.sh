@@ -154,7 +154,8 @@ setsid "$timeout_bin" --signal=TERM --kill-after=0.1 "$watchdog_seconds" \
   >"$out_file" 2>"$err_file" &
 pid=$!
 focus_line=""
-focus_pattern='^[^[:space:]]+[[:space:]]+DEBUG[[:space:]]+pikr::ui::view:[[:space:]]+startup first focus received[[:space:]]+elapsed_us=[0-9]+$'
+# Any pikr module: the marker has moved between modules before.
+focus_pattern='^[^[:space:]]+[[:space:]]+DEBUG[[:space:]]+pikr(::[a-z_]+)*:[[:space:]]+startup first focus received[[:space:]]+elapsed_us=[0-9]+$'
 focus_attempts="${PIKR_FOCUS_ATTEMPTS:-$default_focus_attempts}"
 
 for ((attempt = 0; attempt < focus_attempts; attempt++)); do

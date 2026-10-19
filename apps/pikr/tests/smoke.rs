@@ -141,7 +141,7 @@ mod startup_readiness_script {
         executable(
             &pikr,
             &format!(
-                "#!/usr/bin/env bash\nprintf '%s\\n' \"$$\" >\"$PIKR_TEST_PID\"\ncat >/dev/null\nprintf '2026-08-04T00:00:00Z DEBUG pikr::app: config loaded cfg=Config {{ font: \"startup first focus received elapsed_us=1\" }}\\n' >&2\nif [[ \"${{NO_COLOR:-}}\" == 1 && -n \"${{PIKR_TEST_FOCUS_US:-}}\" ]]; then printf '2026-08-04T00:00:00Z DEBUG pikr::ui::view: startup first focus received elapsed_us=%s\\n' \"$PIKR_TEST_FOCUS_US\" >&2; fi\nprintf 'banana\\n' >&2\nwhile [[ ! -e \"$PIKR_TEST_TRIGGER\" ]]; do sleep 0.01; done\nprintf '%s\\n' '{result}'\nexit {status}\n"
+                "#!/usr/bin/env bash\nprintf '%s\\n' \"$$\" >\"$PIKR_TEST_PID\"\ncat >/dev/null\nprintf '2026-08-04T00:00:00Z DEBUG pikr::app: config loaded cfg=Config {{ font: \"startup first focus received elapsed_us=1\" }}\\n' >&2\nif [[ \"${{NO_COLOR:-}}\" == 1 && -n \"${{PIKR_TEST_FOCUS_US:-}}\" ]]; then printf '2026-08-04T00:00:00Z DEBUG pikr::ui::run: startup first focus received elapsed_us=%s\\n' \"$PIKR_TEST_FOCUS_US\" >&2; fi\nprintf 'banana\\n' >&2\nwhile [[ ! -e \"$PIKR_TEST_TRIGGER\" ]]; do sleep 0.01; done\nprintf '%s\\n' '{result}'\nexit {status}\n"
             ),
         );
         let wtype_body = match wtype_behavior {

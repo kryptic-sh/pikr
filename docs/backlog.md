@@ -133,9 +133,6 @@
   of each distribution; no package was installed on a clean system to prove the
   list complete or the names right. CI builds the `.deb` and `.rpm` but does not
   install them.
-- `performance-review.md` at the repo root is a pre-port (floem) review whose
-  file:line findings point at code since replaced; keep what still binds (its
-  native readiness test, if used) and delete the rest.
 - The Alpine `.apk` job in `.github/workflows/ci.yml` (`alpine`, named "Build
   .apk for Alpine (x86_64)") is gated `if: false`, so every tag run skips it and
   no release carries an Alpine package — confirmed on the v0.8.13 run, where the

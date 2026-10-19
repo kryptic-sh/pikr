@@ -31,7 +31,7 @@ const E2E_DEADLINE: Duration = Duration::from_millis(500);
 
 /// Parse `elapsed_us=N` from the first stderr region naming `marker` (e.g.
 /// `startup first focus received`). pikr's perf markers print as
-/// `... DEBUG pikr::ui::view: <name> elapsed_us=<us>`; the collect marker has
+/// `... DEBUG pikr::<module>: <name> elapsed_us=<us>`; the collect marker has
 /// `phase_us=` before `elapsed_us=`, so search after the name, not adjacent.
 ///
 /// ANSI escape codes are stripped first: tracing-subscriber emits colors
