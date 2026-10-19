@@ -27,10 +27,12 @@
   DXGI adapter whose outputs include the window's monitor (`MonitorFromWindow`);
   Wayland, the compositor's main device from linux-dmabuf feedback matched
   against Vulkan's DRM device properties; macOS,
-  `CGDirectDisplayCopyCurrentMetalDevice`. Asked of crcbl as an adapter-for-
-  surface query, since it owns adapter selection; pikr then opens on what it
-  returns. Not handled: a window moved to another GPU's display after start
-  (pikr is short-lived), and `CRCBL_ADAPTER`, which should still override.
+  `CGDirectDisplayCopyCurrentMetalDevice`. crcbl decided (2026-10-19) to build
+  it into its D3D12 start-up slice: adapters described lazily in preference
+  order, the display's adapter first through an `Instance` query for a surface's
+  adapter, then integrated before discrete, `CRCBL_ADAPTER` still overriding.
+  pikr then opens on what that returns; lyr follows the same rule. Not handled:
+  a window moved to another GPU's display after start (pikr is short-lived).
 - **Waiting on crcbl.** Each is a gap in pikr until it lands; crcbl's session
   has every one queued and reports green revs as they land.
   - Regional-indicator flags (🇺🇸) draw as two letters with Segoe UI Emoji, which
