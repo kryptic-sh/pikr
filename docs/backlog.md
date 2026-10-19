@@ -15,6 +15,22 @@
   in a `--dmenu` screenshot at `4d48eaf4`.
 - `picker::icons::tests::svg_text_is_drawn` needs a system sans-serif face; the
   Ubuntu test job installs no fonts, so it relies on the runner image.
+- **Render on the GPU that drives the window's display (asked 2026-10-19).** On
+  a laptop the internal panel hangs off the iGPU, so pikr renders there and the
+  dGPU can stay asleep; on a desktop, or a laptop's external monitor wired to
+  the dGPU, the display's own GPU avoids copying every frame across adapters.
+  When that GPU cannot be found, prefer the low-power (integrated) adapter.
+  Today `ui::gpu::Gpu::open` takes the first adapter crcbl lists that can
+  present (the RX 7900 XTX on the Windows test desktop, which does drive its
+  display); it neither knows the display's GPU nor prefers low power.
+  Mechanisms, from the platform APIs and not yet checked in crcbl: Win32, the
+  DXGI adapter whose outputs include the window's monitor (`MonitorFromWindow`);
+  Wayland, the compositor's main device from linux-dmabuf feedback matched
+  against Vulkan's DRM device properties; macOS,
+  `CGDirectDisplayCopyCurrentMetalDevice`. Asked of crcbl as an adapter-for-
+  surface query, since it owns adapter selection; pikr then opens on what it
+  returns. Not handled: a window moved to another GPU's display after start
+  (pikr is short-lived), and `CRCBL_ADAPTER`, which should still override.
 - **Waiting on crcbl.** Each is a gap in pikr until it lands; crcbl's session
   has every one queued and reports green revs as they land.
   - Regional-indicator flags (🇺🇸) draw as two letters with Segoe UI Emoji, which
