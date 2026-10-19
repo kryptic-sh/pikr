@@ -117,10 +117,10 @@
     morning), the Linux suite was run locally in WSL (Ubuntu 26.04, uutils
     coreutils) with `WAYLAND_DISPLAY`, `DISPLAY` and `WAYLAND_SOCKET` unset and
     an empty `XDG_RUNTIME_DIR`, so no test could reach WSLg: every test passed
-    at `af04097`'s successors (288 unit, 10 smoke). The sway suite and the
-    startup gate were skipped there (no sway or wtype). Run WSL tests that way:
-    with WSLg's `wayland-0` reachable, a test that launches pikr opens a real
-    window on the Windows desktop.
+    at `0cb21fa` (288 unit, 10 smoke). The sway suite and the startup gate were
+    skipped there (no sway or wtype). Run WSL tests that way: with WSLg's
+    `wayland-0` reachable, a test that launches pikr opens a real window on the
+    Windows desktop.
   - FreeBSD is only type-checked: CI's Ubuntu clippy job lints the
     `x86_64-unknown-freebsd` target. Nothing links or runs it.
   - macOS: CI builds it and runs the unit tests and the `--version`/`--help`
