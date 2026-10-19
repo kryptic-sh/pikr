@@ -28,6 +28,10 @@
     real icon themes was not measured from pikr; crcbl's CI holds the breeze
     corpus against resvg (floors per crcbl's 0.2.1 release notes).
   - S9 IME on/off on Win32 and AppKit.
+  - Win32 reports keys the input method consumes (`VK_PROCESSKEY`) as ordinary
+    `ShellEvent::Key`s at 0.5.0; crcbl drops them from 0.6.0, as Wayland already
+    does. Until then `ui::run` ignores key presses while a pre-edit is showing;
+    remove that guard with the 0.6.0 bump.
   - D3D12 startup (crcbl's S13): `Dx12Instance::open` still creates one driver
     device per hardware adapter before returning, and pikr pays for each of
     them. crcbl 0.4.0 reuses the probe device for the first open, which took

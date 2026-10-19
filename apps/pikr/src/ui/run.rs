@@ -363,6 +363,12 @@ impl<'a> Window<'a> {
                 modifiers,
                 ..
             } => {
+                // Keys belong to the input method while it composes: Enter
+                // and Backspace there edit or commit the composition. crcbl
+                // 0.5.0's Win32 backend still reports them as keys.
+                if !self.view.preedit.text.is_empty() {
+                    return Ok(Step::Continue(false));
+                }
                 self.mods = modifiers_from_crcbl(modifiers);
                 let key = key_from_press(keysym, self.mods);
                 Ok(key.map_or(Step::Continue(false), |key| self.key(&key, content)))
