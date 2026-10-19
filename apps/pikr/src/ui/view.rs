@@ -338,7 +338,10 @@ fn query(
     blink_on: bool,
     preedit: &[String; 2],
 ) -> Option<NodeKey> {
-    let chars: Vec<char> = text.chars().collect();
+    let chars: Vec<char> = text.chars().map(uncollapsed).collect();
+    let preedit = preedit
+        .each_ref()
+        .map(|part| part.chars().map(uncollapsed).collect::<String>());
     let cursor = cursor.min(chars.len());
     let before: String = chars[..cursor].iter().collect();
     let blink = if blink_on { ".blink-on" } else { "" };
@@ -354,11 +357,8 @@ fn query(
                 ui.span(".query-text", after.as_str(), &[]);
             }
             VimMode::Normal | VimMode::Visual => {
-                // Past the end the block sits on a no-break space: a plain
-                // space alone in a span collapses to nothing.
-                let under = chars
-                    .get(cursor)
-                    .map_or("\u{A0}".to_string(), char::to_string);
+                // Past the end the block sits on a no-break space.
+                let under = chars.get(cursor).map_or(NBSP.to_string(), char::to_string);
                 caret = Some(
                     ui.span(&format!(".caret-block{blink}"), under.as_str(), &[])
                         .key,
@@ -369,6 +369,18 @@ fn query(
         }
     });
     caret
+}
+
+/// U+00A0, a space crcbl-ui never collapses.
+const NBSP: char = '\u{A0}';
+
+/// `c` as the query draws it. crcbl-ui drops plain spaces at the end of a
+/// span (it has no `white-space: pre`), so a query ending in spaces drew the
+/// caret left of where typing goes (seen on Windows with `--filter "a  b  "`).
+/// A no-break space is drawn the same width and keeps the character count, so
+/// the caret's char index still lines up.
+fn uncollapsed(c: char) -> char {
+    if c == ' ' { NBSP } else { c }
 }
 
 /// Result row `mi`. Returns whether it was clicked.
@@ -463,6 +475,13 @@ pub fn build_message(ui: &mut Ui, text: &str) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn query_spaces_are_drawn_as_no_break_spaces() {
+        let shown: String = "a  b ".chars().map(super::uncollapsed).collect();
+        assert_eq!(shown, "a\u{A0}\u{A0}b\u{A0}");
+        assert_eq!(shown.chars().count(), "a  b ".chars().count());
+    }
+
     use super::runs;
 
     #[test]
