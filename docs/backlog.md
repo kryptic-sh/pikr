@@ -63,8 +63,7 @@
     not seen on screen). Tracked in crcbl's backlog; seeing the reading twice
     during the Microsoft IME check is this bug.
   - Not reviewed by it: the list's click attribution under the double build in
-    `frame`, backends returning no waker (`--loading` rows wait for the next
-    event), an acquire that keeps returning out-of-date, and `modes/`.
+    `frame`, an acquire that keeps returning out-of-date, and `modes/`.
 - **Not verified (coverage gaps).**
   - No whole-codebase correctness or security review since the crcbl port. The
     last ones (2026-08-06) read the floem UI, which is gone; `ui/` and

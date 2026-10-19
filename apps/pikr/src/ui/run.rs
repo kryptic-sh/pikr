@@ -32,6 +32,9 @@ const BLINK: Duration = crcbl_ui::console::CARET_BLINK;
 const CONFIGURE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Pixels one wheel detent scrolls.
 const WHEEL_LINE_PIXELS: f32 = 40.0;
+/// How often `--loading` checks for its rows when the window system gave no
+/// way to wake the loop.
+const LOADING_POLL: Duration = Duration::from_millis(50);
 /// The `--message` modal's height.
 pub const MESSAGE_HEIGHT: f64 = 120.0;
 
@@ -244,14 +247,15 @@ impl<'a> Window<'a> {
         mut early: Vec<ShellEvent>,
     ) -> Result<(Vec<modes::Payload>, i32)> {
         self.sync_text_input(&content)?;
-        let arrived = match &mut content {
+        // `--loading` rows, and whether their arrival wakes the loop.
+        let mut arrived = match &mut content {
             Content::Picker { pending, .. } => pending.take().map(|rx| self.forward(rx)),
             Content::Message(_) => None,
         };
 
         let mut dirty = true;
         loop {
-            if let (Some(rx), Content::Picker { session, .. }) = (&arrived, &mut content)
+            if let (Some((rx, _)), Content::Picker { session, .. }) = (&arrived, &mut content)
                 && let Ok(loaded) = rx.try_recv()
             {
                 match loaded {
@@ -259,6 +263,7 @@ impl<'a> Window<'a> {
                     // Same outcome as a read error without --loading.
                     Err(e) => return Err(anyhow!("reading stdin: {e}")),
                 }
+                arrived = None;
                 dirty = true;
             }
 
@@ -296,9 +301,12 @@ impl<'a> Window<'a> {
                 }
                 continue;
             }
-            let timeout = self
+            let mut timeout = self
                 .focused
                 .then(|| self.blink_at.saturating_duration_since(Instant::now()));
+            if matches!(arrived, Some((_, false))) {
+                timeout = Some(timeout.map_or(LOADING_POLL, |t| t.min(LOADING_POLL)));
+            }
             self.shell.wait_events(timeout);
         }
     }
@@ -318,10 +326,18 @@ impl<'a> Window<'a> {
     }
 
     /// Relays `--loading` rows from the reader thread, waking the loop when
-    /// they arrive.
-    fn forward(&mut self, rx: mpsc::Receiver<LoadedEntries>) -> mpsc::Receiver<LoadedEntries> {
+    /// they arrive. The flag says whether it can: without a waker the loop
+    /// has to poll for them.
+    fn forward(
+        &mut self,
+        rx: mpsc::Receiver<LoadedEntries>,
+    ) -> (mpsc::Receiver<LoadedEntries>, bool) {
         let (tx, forwarded) = mpsc::channel();
         let waker = self.shell.waker();
+        let wakes = waker.is_some();
+        if !wakes {
+            tracing::warn!("the window system cannot wake pikr; polling for --loading rows");
+        }
         std::thread::spawn(move || {
             if let Ok(loaded) = rx.recv() {
                 let _ = tx.send(loaded);
@@ -330,7 +346,7 @@ impl<'a> Window<'a> {
                 }
             }
         });
-        forwarded
+        (forwarded, wakes)
     }
 
     fn handle(&mut self, event: ShellEvent, content: &mut Content) -> Result<Step> {
