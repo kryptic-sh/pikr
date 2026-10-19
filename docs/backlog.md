@@ -190,15 +190,21 @@ macOS and Windows.
   (`RUST_LOG=pikr=debug`), against 794, 869 and 990 ms on crcbl 0.3.0 earlier
   the same day; the runs are noisy. GPU setup is nearly all of it (see "GUI on
   crcbl"); config, entries, ranking and fonts are done within ~50 ms.
-- **Consider adopting crcbl-app.** crcbl 0.4.0 adds `crcbl-app`, a leaf crate
-  for UI-only programs: the backend walk with fall-through, the adapter pin,
-  `open_window`, `wait_for_configure`, `TextPump` and `present::Presenter`
-  (composite alpha, frame ring, pacing, acquire, present, resize). pikr's
-  `ui::gpu` and the start of `ui::run` hand-roll much of that. Its
-  `examples/ui_window.rs` draws a crcbl-ui frame through a `Presenter`. A
-  `Presenter` with a non-default `frames_in_flight` needs crcbl-frame's
-  `UiRenderer::with_ring` at the same depth. Not reviewed against pikr's code
-  yet.
+- **crcbl-app considered and not adopted (2026-10-19, crcbl 0.5.0).** It would
+  replace `ui::gpu` and the window bring-up in `ui::run` with `Presenter`,
+  `open_window` and `wait_for_configure`, but as of 0.5.0 it would undo three
+  things pikr does on purpose:
+  - `window::wait_for_configure` counts and discards the events it pumps; pikr's
+    `wait_for_size` keeps them, which is how an early `FocusRefused` and the
+    first scale factor reach the loop (reported to crcbl).
+  - `Presenter` skips an adapter whose surface offers no premultiplied alpha for
+    a transparent window and fails when none does; pikr's rule is to warn and
+    draw opaque instead (`ui::gpu::Gpu::open`).
+  - `text_input::TextPump` feeds crcbl-ui's `TextInput`, while pikr edits its
+    query itself (vim modes, history recall, `-P`). What it would add, backend
+    fall-through, matters little here: pikr opens one backend per OS, and on
+    Windows the alternative (Vulkan) cannot draw a transparent window. Revisit
+    if crcbl changes the first two.
 
 ### Coverage gaps (not verified)
 
