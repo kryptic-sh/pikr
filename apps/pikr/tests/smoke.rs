@@ -27,9 +27,12 @@ fn prints_help() {
     assert!(stdout.contains("--dmenu"));
 }
 
-/// With no display server at all (neither `WAYLAND_DISPLAY` nor `DISPLAY`),
-/// pikr must exit non-zero and say it could not open the window system,
-/// rather than panic or hang. The full live-render path is exercised by the
+/// With no display server at all (neither `WAYLAND_DISPLAY` nor `DISPLAY`,
+/// and an empty `XDG_RUNTIME_DIR`, since libwayland falls back to the
+/// `wayland-0` socket there), pikr must exit non-zero and say it could not
+/// open the window system, rather than panic or hang. Without the empty
+/// runtime dir a desktop session (WSLg, a developer's own compositor) is
+/// found anyway and a real picker opens. The full live-render path is exercised by the
 /// e2e harness (`tests/e2e/`), which runs pikr inside a `sway --headless`
 /// fixture so dev machines don't see a stray window pop on every `cargo test`
 /// invocation.
@@ -39,10 +42,13 @@ fn prints_help() {
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 #[test]
 fn no_display_server_exits_with_error() {
+    let runtime_dir = tempfile::tempdir().expect("tempdir");
     let out = Command::new(bin())
         .args(["--show", "drun"])
         .env_remove("WAYLAND_DISPLAY")
+        .env_remove("WAYLAND_SOCKET")
         .env_remove("DISPLAY")
+        .env("XDG_RUNTIME_DIR", runtime_dir.path())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())

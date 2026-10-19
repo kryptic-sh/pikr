@@ -143,7 +143,14 @@ out_file=$(mktemp) || exit 2
 
 printf 'Testing first focus within %s seconds, end-to-end within %s seconds, then candidate acceptance...\n' \
   "$delay" "$e2e_delay"
-e2e_start_ms=$(date +%s%3N)
+# Wall-clock milliseconds from bash itself (5.0+): `date +%s%3N` is a GNU
+# extension that uutils' date (Ubuntu 25.10+) prints as nanoseconds.
+now_ms() {
+  local us=${EPOCHREALTIME/[.,]/}
+  printf '%s
+' "$((10#$us / 1000))"
+}
+e2e_start_ms=$(now_ms)
 # Capture stdout/stderr in regular files instead of pipes: after `wait` the
 # files are complete, so a line Pikr wrote just before exiting can never be
 # lost to a pipe-EOF race. setsid keeps the process group intact so
@@ -207,7 +214,7 @@ fi
 wait "$pid"
 status=$?
 pid=""
-e2e_ms=$(( $(date +%s%3N) - e2e_start_ms ))
+e2e_ms=$(( $(now_ms) - e2e_start_ms ))
 
 result=""
 if grep -qx 'banana' "$out_file"; then
