@@ -54,6 +54,10 @@
   the Esc-only tests passed by coincidence. The same holds for any virtual or
   remapped keyboard.
 - **Not verified (coverage gaps).**
+  - No whole-codebase correctness or security review since the crcbl port. The
+    last ones (2026-08-06) read the floem UI, which is gone; `ui/` and
+    `picker::session` (the event loop, view, key dispatch, `-P` prompt and IME
+    handling) have only had the review of the commits that wrote them.
   - Linux was verified only through CI's sway session on lavapipe: the e2e
     keyboard suite and the startup gate passed (run 39002212977, 237 ms
     launch-to-result against the 500 ms deadline). Hyprland, niri and KWin were
@@ -135,9 +139,15 @@
 Re-verified against the tree on 2026-10-18.
 
 - Symlinked-dir mtime cache blindness; coarse-granularity same-tick cache
-  staleness; non-atomic state writes; `--lines 0` / `--width 0`; row-key
-  Arc-pointer fragility; non-UTF8 PATH names. (review pass 2026-08-06; not
-  re-checked individually)
+  staleness; non-atomic state writes; `--lines 0` / `--width 0`; non-UTF8 PATH
+  names (skipped by `run::scan_dir`). (review pass 2026-08-06; not re-checked
+  individually)
+- No accept path runs a shell on a string pikr builds from untrusted text:
+  launches are `Command::new(program).args(args)`. The two script strings are
+  clipboard's `cliphist decode {id} | wl-copy` (`clipboard::make_entry`, `id`
+  parsed as `u64`) and ssh's pwsh and cmd arms (`ssh::build_terminal_args`: pwsh
+  single-quotes the host, cmd takes only hosts in `is_safe_host`'s charset).
+  Re-checked 2026-10-19; keep it that way.
 - drun cache hit skips re-validation (`drun::load_cache` returns the cached
   entries once dirs, locales and the mtime key match) — a same-user attacker
   with a predictable cache key gets a second execution path.
@@ -210,213 +220,3 @@ macOS and Windows.
   `kb_custom_confirm_with_no_match_prints_query` covers the behaviour (CI,
   Linux).
 - run, ssh and clipboard modes were not exercised on Windows beyond unit tests.
-
-## review review 2026-08-06
-
-Whole-codebase correctness pass (clean tree). Findings verified by the
-orchestrator at the cited lines, including an empirical probe of the symlink
-semantics. Both findings FIXED 2026-08-06 (run symlinks `aebd016`; Windows
-dedupe `9cc7dfb`).
-
-### Cleared (sub-agent-traced, not independently re-verified by orchestrator)
-
-- ssh inline-comment hosts — matches ssh's own token semantics.
-- visual-anchor staleness, calc row-key pointer reuse, marker parsing, deadlock
-  batching, `%20` field codes — traced through, safe.
-
-### Coverage
-
-- Whole codebase read: entry/app/cli/config, all modes, picker, ui, xtask,
-  tests. Windows/macOS arms read but NOT executed locally — the icon-cache PNG
-  write race (fixed 2026-09-15) was in that gap.
-
-## audit review 2026-08-06
-
-Whole-codebase security audit (clean tree). Verdict: no critical/high/medium;
-four low findings. Findings 1-2 and 4 re-verified by the orchestrator (finding 1
-empirically: evalexpr probe crashes the 8 MB stack at ~100k chars of nested
-parens, survives at 80k); finding 3 is Windows-only, code-traced, not
-runtime-verified. Findings 1, 2, 4 FIXED 2026-08-06 (calc cap `b65c2d9`, field
-codes `c7d1c14`, 0600 state `081faf4`/`acc5e0c`); finding 3 (all-users Start
-Menu writable → planted shortcut) CLOSED 2026-09-15: `icacls` on a Windows 11
-host shows `BUILTIN\Users:(RX)` on `%ProgramData%\...\Start Menu\Programs`, so
-only admins can plant there. drun now lists `shell:AppsFolder` — exactly what
-Start itself launches — so pikr adds no path Start does not already expose.
-
-### Cleared
-
-- **Command injection in `.desktop` Exec / run-mode / ssh payloads** — every
-  execution path is `Command::new(program).args(args)` (`modes/mod.rs:137-143`),
-  argv, no shell; the only `sh -c` is the cliphist pipe
-  (`modes/clipboard.rs:75`) where the interpolated value is a `u64`.
-- **ssh terminal quoting** — pwsh arm single-quotes with `''` doubling; cmd `/K`
-  arm gated on `is_safe_host` charset `[A-Za-z0-9._\-:[\]]` with argv fallback;
-  wt/unix arms are pure argv. Regression tests cover `foo; notepad` and metachar
-  fallback.
-- **SVG external-resource exfiltration** — usvg `Options::default()` has
-  `resources_dir: None` and an empty fontdb; the default resolver reads only
-  image-format files and the result is rendered locally, never emitted.
-- **Calc integer overflow / div-by-zero panics** — evalexpr uses checked
-  arithmetic returning errors; `Exp` promotes to `powf` with a `is_finite()`
-  guard at `calc.rs:43`.
-- **Count-prefix / selection overflow** — `push_count_digit` saturates
-  (`state.rs:86`), `move_down_selection` saturates, frecency clamps to
-  `u16::MAX`.
-- **Zero-size SVG scale division** — guarded at `icons.rs:253-255` with a
-  regression test.
-- **drun cache poisoning** — cache lives in the user's own state dir; stale
-  mtime serves stale _benign_ entries; writing the cache requires the same user
-  who owns `.desktop` execution.
-- **Mutex deadlocks in the UI** — all `state.lock()` sites are on the single
-  main thread; the blink thread touches no shared state; `query_sig.set` under
-  the lock is batched with a regression test; history-recall drops the guard
-  before `query_sig.set`.
-- **CSS injection via config values** — values land in a fixed template parsed
-  by hjkl-css with a whitelisted property set; user's own file anyway.
-
-### Coverage
-
-- Entry points walked: CLI args, config TOML, XDG config/state files, dmenu
-  stdin, `.desktop` parsing + Exec + Icon, ssh config + `$TERMINAL`, subprocess
-  spawns, clipboard, calc eval, history/frecency persistence, icon loading,
-  floem UI event loop, blink thread, ex-mode commands, `--message` modal.
-  Classes walked: injection, memory/resource, crypto, AuthZ/AuthN, data
-  integrity/TOCTOU, error handling, concurrency.
-- NOT audited in depth: the ~916 lines of test code (`tests/e2e/*`, smoke,
-  keyboard, startup_gate) — dev harnesses, no production paths. Windows-only
-  code (`drun_icons_windows.rs`, `console_attach.rs`, drun `windows_impl`)
-  cannot be compiled or executed on this Linux host — the Start Menu ACL finding
-  is code-traced only.
-- NOTE: the audit agent reported `docs/performance-review.md` missing; it exists
-  at the repo ROOT as `performance-review.md`.
-
-## review review 2026-08-06 (evening sweep)
-
-Whole-codebase correctness pass (clean tree), evening re-run, verified by the
-orchestrator at the cited lines (including the installed xdg-3.0.0 crate
-source).
-
-### Cleared (suspected, traced, disproved — verified by the orchestrator unless marked)
-
-- **`xdg::place_state_file` truncating the drun cache on probe** — verified
-  against xdg-3.0.0 source: `write_file` (base_directories.rs:739-745) only
-  `create_dir_all`s the parent, never opens the file.
-- **Matcher non-ASCII position mapping** — `matcher.rs:135-154` NFCs each
-  grapheme into one `text_buf` slot; `grapheme_positions_to_codepoints`
-  (158-167) walks the same grapheme stream expanding matched indices to full
-  codepoint ranges; tests pin the shapes (258-269).
-- **Mutex/batch deadlock discipline** — rerank (`view.rs:1048-1054`) and
-  `switch_mode` (1329-1337) create the guard inside `Effect::batch`; history
-  recall drops the guard before `query_sig.set` (1632, 1659); the
-  `state.rs:112-149` regression test deadlocks if the batch is ever removed.
-- **`-P` persistence gates** — all four accept paths (keyboard `view.rs:1469`,
-  dmenu fallthrough 1498, AcceptCustom 1526, click 349) gate
-  `usage.record`/`history.push` on `!s.password`.
-- **calc live/history index math** — `view.rs:753-789`: `live_offset` is
-  consistent between `self.entries` construction and both match paths; `m.index`
-  always stays `< entries.len()`; truncation only touches `matches`.
-- **`g_pending` lifecycle** — `view.rs:1359-1376`: only set in Normal
-  (1370-1373); any other key clears it (1374-1376) before `StartEx`; a mode
-  switch via `:mode` can't carry a pending `g`.
-- **Accept with no matches (non-dmenu)** — `view.rs:1508-1516` executes nothing
-  and leaves the picker open (rofi parity); dmenu gets its own fallthrough
-  (1491-1507) returning the typed query.
-- **frecency cross-variant key collision** — `frecency.rs:136-160`: documented
-  non-injective across variants (146-149) but each mode emits a single variant
-  and tables are keyed per mode.
-- **drun first-wins dedupe** — `insert_first` (`drun.rs:113-115`) dedupes during
-  iteration before the label sort (100); user-local wins.
-- **`pick_locale` fallback chain** — `drun.rs:129-161`: `C`/`POSIX`/empty fall
-  through; modifier + territory-only steps emitted per spec; tests pin shapes.
-- **ssh user/system dedupe** — `ssh.rs:52-55`: user config parsed first
-  (`config_paths`), stable sort + `dedup_by` keeps the user copy.
-- **`--filter` cursor placement** — `app.rs:107-110`: `query_cursor` set to char
-  count, matching the char-index caret invariant.
-- **dmenu CRLF** — `BufRead::lines()` strips `\r\n` per std docs.
-  (sub-agent-traced, std behavior)
-- **row_key Arc-pointer staleness (calc)** — the live previous `imbl::Vector`
-  keeps old entry Arcs alive across the `rev` bump on the single UI thread, so
-  allocator reuse of a dropped pointer can't occur while it is referenced.
-  (sub-agent-traced)
-- **Windows drun dedupe-before-sort** (`drun.rs:621-623`) — parallels the unix
-  path. (sub-agent-traced; Windows-only, not executed)
-
-### Coverage
-
-- Read in full: `apps/pikr/src/` (app, cli, config, console_attach, main; all of
-  modes/, picker/, ui/), `xtask/src`, `tests/` (keyboard, smoke, startup_gate,
-  e2e incl. harness).
-- Windows-only, read but NOT compiled/executed (Linux host):
-  `drun_icons_windows.rs`, `console_attach.rs`, and the `#[cfg(windows)]` arms
-  of drun/ssh/clipboard/run. The agent flagged `hicon_to_png`'s unchecked
-  `stride = width*4` u32 multiply (`drun_icons_windows.rs:185`) as untested in
-  that gap; icon sizes are tiny in practice — not reported as a finding.
-- Build/test gate not run (report-only pass); verification is line-by-line
-  tracing. The one dependency-behavior claim (`xdg::place_state_file`) was
-  verified against the installed crate source.
-
-## audit review 2026-08-06 (evening sweep)
-
-Whole-codebase security audit (clean tree, evening re-run). Verdict: no
-critical/high/medium/low findings; overall risk low. The drun cache 0644 finding
-(the only divergence from the state-file 0600 policy) was FIXED 2026-08-12: both
-`write_cache` arms now route through `picker::write_private_state`, with
-regression test `cache_written_0600_like_state_files`. The remaining hardening
-item was verified by the orchestrator at the cited lines (the perms one
-empirically on this host).
-
-### Cleared (suspected, traced, disproved — verified by the orchestrator unless marked)
-
-- **`sh -c` in the clipboard pipe** (`clipboard.rs:60-74`) — the only
-  interpolated value is `{id}`, parsed as `u64` from `cliphist list`; digits
-  only, no metacharacters can reach the string.
-- **`.desktop` Exec / run-mode / ssh payload injection** — every execution path
-  is `Command::new(program).args(args)` with stdio nulled
-  (`modes/mod.rs:183-192`); no shell on any accept path.
-- **ssh pwsh/cmd arms** — pwsh single-quotes with `''` doubling; cmd `/K` gated
-  on the `is_safe_host` charset (excludes `=`, so `-oProxyCommand=…` cannot
-  form); bare option flags error out with no host. Tests pin the metachar cases.
-- **`$TERMINAL` env** — shlex-split into argv; a hostile value fails
-  `is_tool_installed` and falls through to candidates. Probe-then-spawn TOCTOU
-  is same-user.
-- **calc eval depth** — `MAX_EXPR_LEN` 4096 (`calc.rs:22`) rejects before
-  evalexpr; prior audit empirically crashed the 8 MB stack only at ~100k chars.
-- **Ex-mode command injection** — `:command` matches a fixed whitelist
-  (`view.rs:1302-1315`); `q`/`q!` quit, mode names switch modes, anything else
-  is a no-op.
-- **`-P` persistence gates** — all four accept paths gate
-  `usage.record`/`history.push` on `!s.password`; no log line emits query or
-  password text (only lengths/counts).
-- **SVG external-resource exfiltration** — usvg default resolver reads only
-  image-format files, rendered locally, never emitted. (sub-agent-traced vs
-  installed usvg-0.48.1 source)
-- **`.desktop` walker symlink loops** — `freedesktop-desktop-entry-0.8.1`
-  canonicalizes and keeps a `visited` set, with a regression test.
-  (sub-agent-traced)
-- **State-file permissions** — verified on this host: all three state files 0644
-  but `~/.local/state` is 0700; history/usage are re-chmod'd to 0600 on next
-  save.
-- **`matches`/`entries` index divergence** — rebuilt together under the single
-  `AppState` mutex on the single UI thread; no interleaving window.
-- **Icon absolute-path handling / matcher grapheme `expect` / `pick_locale`
-  lookup strings** — non-executed, non-panicking paths.
-
-### Coverage
-
-- Entry points walked: CLI args, config TOML, XDG config/state files, dmenu
-  stdin, `.desktop` parsing (Exec/field-codes/Icon/locale), ssh config +
-  `$TERMINAL`, subprocess spawns, calc eval, icon loading (SVG + PNG/JPEG),
-  floem event loop + key events, ex-mode commands, `--message` modal,
-  `--password`, Windows `.lnk` parse + icon extraction. Classes walked:
-  injection, memory/resource, crypto, AuthZ/AuthN, data integrity, error
-  handling, concurrency.
-- NOT audited: the `tests/` tree (~916 lines of dev harnesses, no production
-  paths). Windows-only code (`drun_icons_windows.rs`, `console_attach.rs`,
-  `#[cfg(windows)]` arms) read but NOT compiled/executed on this Linux host —
-  the `hicon_to_png` stride analysis is code-traced only.
-- Summary: 0 findings (0/0/0/0). Overall risk low — every execution path is
-  argv-based, the cross-domain inputs (clipboard, dmenu stdin) are handled
-  safely, and the tracked items remain the only knowns. Fix first (1) — drun
-  cache through `write_private_state` — DONE 2026-08-12; (2) overflow-checked
-  buffer size in `hicon_to_png` — DONE 2026-09-15. Remaining: (3) tracked dmenu
-  stdin cap / cache re-validation if the threat model tightens.
