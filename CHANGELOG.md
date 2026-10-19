@@ -65,6 +65,11 @@ and this project adheres to
 
 ### Fixed
 
+- Theme colours in CSS's short or alpha hex forms (`#fff`, `#89b4fa80`) give the
+  right hover, Visual-range, count and status-bar colours, which pikr blends
+  from them. `#fff` used to be read as `#000fff`, and an alpha byte shifted
+  every channel. A colour pikr cannot read is now logged instead of silently
+  blending as black.
 - `run` mode launches the file it listed, by its full path. It used to pass the
   bare name back to the system to look up again, which on Windows tries only
   `.exe`: a `.cmd` or `.bat` on `PATH`, listed without its extension, failed to

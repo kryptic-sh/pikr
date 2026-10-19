@@ -60,8 +60,6 @@
   - `ui::view::View::scroll_to_selection` re-scrolls only when `selected`
     changes, so after a wheel scroll a rerank that keeps `selected == 0` can
     leave the best match above the view.
-  - `ui::theme_css::parse_hex` assumes `#RRGGBB`; `#fff` or `#RRGGBBAA` in the
-    config derive wrong colours, and config does not validate them.
   - Plausible, IME: `TextCommit` uses the modifiers of the last key press, so on
     Wayland (where the IME consumes the composing keys) a commit after a Ctrl
     chord may be read as a chord and dropped; `set_text_input` stays on outside

@@ -49,9 +49,31 @@ fn font_family(family: &str) -> String {
     format!("\"{name}\", sans-serif")
 }
 
+/// A theme colour's RGB, for blending. Takes CSS's hex forms (CSS Color 4,
+/// "hex notation"): `#rgb`, `#rgba`, `#rrggbb` and `#rrggbbaa`, the alpha
+/// ignored. Anything else is logged and blends as black.
 fn parse_hex(s: &str) -> u32 {
-    let s = s.trim_start_matches('#');
-    u32::from_str_radix(s, 16).unwrap_or(0)
+    let rgb = s.strip_prefix('#').and_then(|digits| {
+        let value = u32::from_str_radix(digits, 16).ok()?;
+        match digits.len() {
+            // Each digit doubled: `#abc` is `#aabbcc`.
+            3 | 4 => {
+                let value = value >> (4 * (digits.len() - 3));
+                let (r, g, b) = ((value >> 8) & 0xf, (value >> 4) & 0xf, value & 0xf);
+                Some(((r * 0x11) << 16) | ((g * 0x11) << 8) | (b * 0x11))
+            }
+            6 => Some(value),
+            8 => Some(value >> 8),
+            _ => None,
+        }
+    });
+    rgb.unwrap_or_else(|| {
+        tracing::warn!(
+            colour = s,
+            "theme colour is not CSS hex; blending it as black"
+        );
+        0
+    })
 }
 
 fn hex(rgb: u32) -> String {
@@ -98,6 +120,18 @@ mod tests {
         let css = stylesheet_source(&theme);
         assert!(css.contains(&theme.bg), "bg {} missing", theme.bg);
         assert!(css.contains(&theme.font), "font {} missing", theme.font);
+    }
+
+    #[test]
+    fn parse_hex_takes_every_css_hex_form() {
+        assert_eq!(parse_hex("#89b4fa"), 0x89b4fa);
+        assert_eq!(parse_hex("#89b4fa80"), 0x89b4fa);
+        assert_eq!(parse_hex("#fa3"), 0xffaa33);
+        assert_eq!(parse_hex("#fa38"), 0xffaa33);
+        assert_eq!(parse_hex("#fff"), 0xffffff);
+        for bad in ["89b4fa", "#89b4f", "#zzz", ""] {
+            assert_eq!(parse_hex(bad), 0, "{bad:?}");
+        }
     }
 
     #[test]
