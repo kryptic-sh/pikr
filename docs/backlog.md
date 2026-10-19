@@ -57,13 +57,8 @@
   (one read-only agent; the two confirmed defects it found, the panel border
   missing from `ui::view::window_height` and the "square corners" wording of the
   opaque-fallback warnings, are fixed). Not re-verified by the orchestrator:
-  - Plausible, IME: `set_text_input` stays on outside Insert mode, so a CJK IME
-    in Normal mode composes keys pikr then ignores. Turning it off there
-    (`set_text_input(None)`) was not done: crcbl's docs say keys then reach the
-    window as keys, but not whether plain characters still arrive as
-    `TextCommit`, which Normal-mode `j`/`k` rely on; check per backend first.
-    Win32 may also draw its own composition window over pikr's inline pre-edit
-    (crcbl leaves `WM_IME_COMPOSITION` to the default handler).
+  - Plausible, IME: Win32 may also draw its own composition window over pikr's
+    inline pre-edit (crcbl leaves `WM_IME_COMPOSITION` to the default handler).
   - Not reviewed by it: the list's click attribution under the double build in
     `frame`, backends returning no waker (`--loading` rows wait for the next
     event), an acquire that keeps returning out-of-date, and `modes/`.

@@ -20,6 +20,7 @@ use glam::Vec2;
 
 use crate::modes::{self, dmenu::LoadedEntries};
 use crate::picker::session::{Outcome, Session};
+use crate::picker::state::VimMode;
 use crate::ui::gpu::Gpu;
 use crate::ui::keyboard::{key_from_commit, key_from_press, modifiers_from_crcbl};
 use crate::ui::view::{Icons, Preedit, View};
@@ -172,6 +173,8 @@ struct Window<'a> {
     cursor: Option<CursorIcon>,
     /// The caret rectangle last handed to the input method.
     input_area: Option<PhysicalRect>,
+    /// What the input method was last told is taking typing.
+    text_input: Option<TextPurpose>,
     focused: bool,
     blink_at: Instant,
     /// Modifiers held at the last key press, for the text commit after it.
@@ -223,6 +226,7 @@ impl<'a> Window<'a> {
             wheel: 0.0,
             cursor: Some(CursorIcon::Default),
             input_area: None,
+            text_input: None,
             focused: false,
             blink_at: Instant::now() + BLINK,
             mods: Default::default(),
@@ -239,14 +243,7 @@ impl<'a> Window<'a> {
         mut content: Content,
         mut early: Vec<ShellEvent>,
     ) -> Result<(Vec<modes::Payload>, i32)> {
-        // The query is a text field: the input method composes into it, and
-        // a password query is kept from learning and suggestions.
-        let purpose = match &content {
-            Content::Picker { session, .. } if session.app.password => Some(TextPurpose::Password),
-            Content::Picker { .. } => Some(TextPurpose::Normal),
-            Content::Message(_) => None,
-        };
-        self.shell.set_text_input(self.window, purpose)?;
+        self.sync_text_input(&content)?;
         let arrived = match &mut content {
             Content::Picker { pending, .. } => pending.take().map(|rx| self.forward(rx)),
             Content::Message(_) => None,
@@ -279,6 +276,8 @@ impl<'a> Window<'a> {
                 }
             }
 
+            self.sync_text_input(&content)?;
+
             if self.focused && Instant::now() >= self.blink_at {
                 self.view.blink_on = !self.view.blink_on;
                 self.blink_at = Instant::now() + BLINK;
@@ -302,6 +301,20 @@ impl<'a> Window<'a> {
                 .then(|| self.blink_at.saturating_duration_since(Instant::now()));
             self.shell.wait_events(timeout);
         }
+    }
+
+    /// Tells the input method whether the query is taking typing, whenever
+    /// that changes. Turning it off drops any composition in progress.
+    fn sync_text_input(&mut self, content: &Content) -> Result<()> {
+        let purpose = text_purpose(content);
+        if purpose != self.text_input {
+            self.text_input = purpose;
+            self.shell.set_text_input(self.window, purpose)?;
+            if purpose.is_none() {
+                self.view.preedit = Preedit::default();
+            }
+        }
+        Ok(())
     }
 
     /// Relays `--loading` rows from the reader thread, waking the loop when
@@ -593,6 +606,24 @@ fn load_fonts(family: &str) -> Fonts {
     Fonts { theme, fallbacks }
 }
 
+/// What the input method should compose for: the query while it takes text
+/// (Insert mode, or the `:` prompt), kept from learning under `-P`. In Normal
+/// and Visual mode keys are commands, which an input method in its native
+/// mode would otherwise turn into a composition; their characters still
+/// arrive as commits without it.
+fn text_purpose(content: &Content) -> Option<TextPurpose> {
+    let Content::Picker { session, .. } = content else {
+        return None;
+    };
+    let picker = &session.app.picker;
+    let typing = picker.vim_mode == VimMode::Insert || picker.ex_buf.is_some();
+    match (typing, session.app.password) {
+        (false, _) => None,
+        (true, true) => Some(TextPurpose::Password),
+        (true, false) => Some(TextPurpose::Normal),
+    }
+}
+
 /// How far a wheel event scrolls the list, in logical pixels (positive
 /// moves down). A touchpad reports device pixels.
 fn wheel_scroll(delta: ScrollDelta, scale: f32) -> f32 {
@@ -617,6 +648,40 @@ fn device_rect(min: Vec2, max: Vec2, scale: f32) -> PhysicalRect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_input_method_composes_only_while_the_query_takes_text() {
+        use crate::cli::Mode as CliMode;
+        use crate::picker::app_state::tests::app_state;
+        use crate::picker::input::{Key, Modifiers, NamedKey};
+
+        let picker = |password| Content::Picker {
+            session: Box::new(Session::new(
+                app_state(CliMode::Dmenu, &["alpha"], password),
+                None,
+            )),
+            pending: None,
+        };
+        let press = |content: &mut Content, key: Key| {
+            if let Content::Picker { session, .. } = content {
+                session.handle_key(&key, Modifiers::default());
+            }
+        };
+
+        let mut content = picker(false);
+        assert_eq!(text_purpose(&content), Some(TextPurpose::Normal));
+        press(&mut content, Key::Named(NamedKey::Escape));
+        assert_eq!(text_purpose(&content), None, "Normal mode");
+        press(&mut content, Key::Character(":".into()));
+        assert_eq!(
+            text_purpose(&content),
+            Some(TextPurpose::Normal),
+            ": prompt"
+        );
+
+        assert_eq!(text_purpose(&picker(true)), Some(TextPurpose::Password));
+        assert_eq!(text_purpose(&Content::Message("hi".into())), None);
+    }
 
     #[test]
     fn touchpad_scroll_is_converted_to_logical_pixels() {
