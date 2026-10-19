@@ -27,12 +27,17 @@
   DXGI adapter whose outputs include the window's monitor (`MonitorFromWindow`);
   Wayland, the compositor's main device from linux-dmabuf feedback matched
   against Vulkan's DRM device properties; macOS,
-  `CGDirectDisplayCopyCurrentMetalDevice`. crcbl decided (2026-10-19) to build
-  it into its D3D12 start-up slice: adapters described lazily in preference
-  order, the display's adapter first through an `Instance` query for a surface's
-  adapter, then integrated before discrete, `CRCBL_ADAPTER` still overriding.
-  pikr then opens on what that returns; lyr follows the same rule. Not handled:
-  a window moved to another GPU's display after start (pikr is short-lived).
+  `CGDirectDisplayCopyCurrentMetalDevice`. crcbl's plan (2026-10-19,
+  owner-refined), part of its D3D12 start-up slice: the device request takes a
+  `PowerPreference` (`HighPerformance` or `LowPower`), and an explicit adapter
+  pick through the API or `CRCBL_ADAPTER` always wins. Otherwise a display
+  driven by a discrete adapter uses that adapter whatever the preference; on a
+  hybrid laptop's iGPU-driven panel the preference decides; with the display's
+  adapter unknown, the preference picks. crcbl-app's `Presenter` defaults to
+  `LowPower`, the engine to `HighPerformance`. pikr runs its own loop, so
+  `ui::gpu::Gpu::open` must ask for `LowPower` explicitly when it lands. Not
+  handled: a window moved to another GPU's display after start (pikr is
+  short-lived).
 - **Waiting on crcbl.** Each is a gap in pikr until it lands; crcbl's session
   has every one queued and reports green revs as they land.
   - Regional-indicator flags (🇺🇸) draw as two letters with Segoe UI Emoji, which
