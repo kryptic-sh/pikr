@@ -34,9 +34,13 @@
     has no flag ligatures; Noto Color Emoji draws them. Not a crcbl bug.
   - crcbl-ui now lays out right-to-left text (UAX #9), breaks lines by UAX #14
     and moves the caret by UAX #29 clusters, and SVG `<text>` is shaped with
-    harfrust. Not checked from pikr: right-to-left labels or queries with a real
-    Arabic or Hebrew font, and icon-theme SVG text. crcbl's own gaps: arrow keys
-    move in logical order, and SVG text clusters are approximate.
+    harfrust. Checked from pikr on Windows (2026-10-20, Segoe UI fallback):
+    Hebrew and Arabic dmenu rows draw in visual order, Arabic shaped and joined,
+    and `mixed: hello עולם 123` draws as `mixed: hello 123 עולם`, UAX #9's
+    answer. Rows stay left-aligned whatever their direction (pikr's row layout,
+    as rofi does). Not checked: typing right-to-left text into the query (caret
+    movement), and icon-theme SVG text. crcbl's own gaps: arrow keys move in
+    logical order, and SVG text clusters are approximate.
   - IME: pikr's pre-edit key guard is gone, since crcbl no longer reports keys
     the input method consumes. No real input method has been driven through pikr
     yet (the Microsoft IME check is the user's).
