@@ -57,9 +57,6 @@
   (one read-only agent; the two confirmed defects it found, the panel border
   missing from `ui::view::window_height` and the "square corners" wording of the
   opaque-fallback warnings, are fixed). Not re-verified by the orchestrator:
-  - `ui::run` `handle`: `ScrollDelta::Pixels` (device pixels per crcbl-core's
-    `input.rs`) is added to `wheel` (logical) without dividing by `scale`, so
-    touchpad scrolling runs twice as far at scale 2.
   - `ui::view::View::scroll_to_selection` re-scrolls only when `selected`
     changes, so after a wheel scroll a rerank that keeps `selected == 0` can
     leave the best match above the view.

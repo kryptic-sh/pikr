@@ -413,11 +413,7 @@ impl<'a> Window<'a> {
                 }
             }
             ShellEvent::Wheel { delta, .. } => {
-                let y = match delta {
-                    ScrollDelta::Lines { y, .. } => -y * WHEEL_LINE_PIXELS,
-                    ScrollDelta::Pixels { y, .. } => -(y as f32),
-                };
-                self.wheel += y;
+                self.wheel += wheel_scroll(delta, self.scale);
                 Ok(Step::Continue(true))
             }
             _ => Ok(Step::Continue(false)),
@@ -585,6 +581,15 @@ fn load_fonts(family: &str) -> Fonts {
     Fonts { theme, fallbacks }
 }
 
+/// How far a wheel event scrolls the list, in logical pixels (positive
+/// moves down). A touchpad reports device pixels.
+fn wheel_scroll(delta: ScrollDelta, scale: f32) -> f32 {
+    match delta {
+        ScrollDelta::Lines { y, .. } => -y * WHEEL_LINE_PIXELS,
+        ScrollDelta::Pixels { y, .. } => -(y as f32) / scale,
+    }
+}
+
 /// A rectangle from logical pixels to the window's device pixels, grown to
 /// whole pixels so it still covers what it framed.
 fn device_rect(min: Vec2, max: Vec2, scale: f32) -> PhysicalRect {
@@ -600,6 +605,16 @@ fn device_rect(min: Vec2, max: Vec2, scale: f32) -> PhysicalRect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn touchpad_scroll_is_converted_to_logical_pixels() {
+        let touchpad = ScrollDelta::Pixels { x: 0.0, y: -30.0 };
+        assert_eq!(wheel_scroll(touchpad, 2.0), 15.0);
+        assert_eq!(wheel_scroll(touchpad, 1.0), 30.0);
+        // Detents are already in logical units and ignore the scale.
+        let wheel = ScrollDelta::Lines { x: 0.0, y: -1.0 };
+        assert_eq!(wheel_scroll(wheel, 2.0), WHEEL_LINE_PIXELS);
+    }
 
     #[test]
     fn device_rect_scales_and_covers_partial_pixels() {
