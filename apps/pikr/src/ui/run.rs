@@ -340,6 +340,11 @@ impl<'a> Window<'a> {
             }
             ShellEvent::Focus { focused, .. } => {
                 self.focused = focused;
+                // A composition does not survive losing the keyboard; a
+                // stale one would keep every key blocked.
+                if !focused {
+                    self.view.preedit = Preedit::default();
+                }
                 if focused && !self.focus_logged {
                     self.focus_logged = true;
                     tracing::debug!(
@@ -378,6 +383,13 @@ impl<'a> Window<'a> {
                 Ok(key.map_or(Step::Continue(false), |key| self.key(&key, content)))
             }
             ShellEvent::TextPreedit { text, cursor, .. } => {
+                // A composition is no chord: forget the modifiers of the
+                // last key press, or its commit would be read as one and
+                // dropped. Where the input method consumes the composing
+                // keys (Wayland), no key press would refresh them.
+                if !text.is_empty() {
+                    self.mods = Default::default();
+                }
                 self.view.preedit = Preedit { text, cursor };
                 Ok(Step::Continue(true))
             }
