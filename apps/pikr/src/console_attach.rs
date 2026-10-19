@@ -29,3 +29,13 @@ pub fn attach_parent_console() {
 #[cfg(not(windows))]
 #[inline]
 pub fn attach_parent_console() {}
+
+/// Whether pikr has a console: launched from a shell, which
+/// [`attach_parent_console`] attached to, rather than from a hotkey, the
+/// Start menu or Explorer.
+#[cfg(windows)]
+pub fn has_console() -> bool {
+    use windows::Win32::System::Console::GetConsoleWindow;
+    // SAFETY: GetConsoleWindow takes nothing and only reads process state.
+    !unsafe { GetConsoleWindow() }.0.is_null()
+}

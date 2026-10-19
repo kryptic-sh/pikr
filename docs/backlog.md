@@ -99,10 +99,18 @@
 - **Open findings from the 2026-10-19 review of `modes/`** (one read-only agent;
   its ssh findings and the drun locale-modifier and deprecated field-code ones
   are fixed). Not yet fixed or re-verified by the orchestrator:
-  - Plausible, Windows: `modes::spawn_detached` gives console children a null
-    stdin, so `pwsh -NoExit -Command ssh …` and `cmd /K ssh …` launched from the
-    GUI build may get EOF and close at once (wt.exe and Unix terminals make
-    their own pty). Not run.
+  - Windows, partly fixed 2026-10-19: `modes::spawn_detached` gave console
+    children NUL stdio, and `pwsh -NoExit` and `cmd /K` (the ssh terminals)
+    exited within 4 s, measured with a GUI-subsystem probe on Windows 11 (with
+    inherited stdio, or `CREATE_NEW_CONSOLE`, they stayed open). A console-less
+    pikr (hotkey, Start menu) now passes no stdio and the shell opens its own
+    console. Still broken: pikr launched from a terminal has that console
+    attached (`console_attach`), still hands children NUL, so those shells still
+    close; inheriting there would put the session in the launching terminal, and
+    `CREATE_NEW_CONSOLE` with inherited handles would read the old one.
+    Launching through `ShellExecuteExW` (as `drun_windows::launch` does) would
+    give the child its own console in both cases. Interactive input in the fixed
+    case was not typed into; only that the shell stays open was checked.
   - Cleared 2026-10-19: the review's guess that
     `drun::icons_windows::hbitmap_to_png` should treat `IShellItemImageFactory`
     bitmaps as premultiplied. The 139 icons in this Windows 11 host's cache,

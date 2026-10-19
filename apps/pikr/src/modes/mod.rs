@@ -206,14 +206,34 @@ fn set_clipboard(text: &str) -> Result<()> {
 /// Spawn `program` with `args` so the child survives pikr exiting and never
 /// inherits pikr's stdio.
 fn spawn_detached(program: &str, args: &[String]) -> Result<()> {
-    Command::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+    let mut command = Command::new(program);
+    command.args(args);
+    if !inherits_nothing() {
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+    }
+    command
         .spawn()
         .with_context(|| format!("spawn {program}"))?;
     Ok(())
+}
+
+/// Whether a child would inherit no stdio from pikr anyway: Windows, with
+/// pikr started from a hotkey or the Start menu, so without a console. A
+/// console program given no handles then opens its own console with working
+/// ones, while NUL handles leave an interactive one reading end-of-file:
+/// `pwsh -NoExit` and `cmd /K`, the ssh terminals, closed within seconds
+/// (checked on Windows 11 from a console-less GUI process).
+#[cfg(windows)]
+fn inherits_nothing() -> bool {
+    !crate::console_attach::has_console()
+}
+
+#[cfg(not(windows))]
+fn inherits_nothing() -> bool {
+    false
 }
 
 /// Spawn `program` with `args` and wait for it to exit, returning an error
