@@ -141,10 +141,6 @@ Re-verified against the tree on 2026-10-18.
 - drun cache hit skips re-validation (`drun::load_cache` returns the cached
   entries once dirs, locales and the mtime key match) — a same-user attacker
   with a predictable cache key gets a second execution path.
-- run-mode label ↔ executed-binary mismatch — `run::scan_path` dedupes by name
-  across PATH dirs and each entry is `Entry::exec(name, name)`, so spawn
-  re-resolves the bare name via PATH at accept and can launch a different binary
-  than the one listed.
 - A drun cache written before `parse_exec` refused relative `Exec=` programs can
   still list one until the cache is invalidated (any `.desktop` change, or a
   dirs or locale change); the cache has no format version to force it.

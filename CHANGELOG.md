@@ -58,6 +58,11 @@ and this project adheres to
 
 ### Fixed
 
+- `run` mode launches the file it listed, by its full path. It used to pass the
+  bare name back to the system to look up again, which on Windows tries only
+  `.exe`: a `.cmd` or `.bat` on `PATH`, listed without its extension, failed to
+  start or started a different `.exe` of the same name. Run-mode frecency starts
+  over once, since it is recorded per launched path.
 - `drun` skips a `.desktop` entry whose `Exec=` program is a relative path such
   as `./foo`. The specification allows only a full path or a bare name looked up
   in `PATH`, and pikr used to run it relative to its own working directory.

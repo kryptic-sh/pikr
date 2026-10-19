@@ -8,12 +8,14 @@
 //!
 //! The label stored in each `Entry` is the **stem** on Windows (e.g.
 //! `firefox` rather than `firefox.exe`) so the user can type without the
-//! extension. `Command::new` on Windows performs its own `PATHEXT` lookup
-//! when the argument has no extension, so dropping the extension is safe.
+//! extension. Each entry runs the file it was found as, by full path: a bare
+//! name would be looked up again at launch, which can find a different file
+//! (on Windows `Command::new` only tries `.exe`, so `foo.cmd` listed as `foo`
+//! would not run at all).
 
 use super::{Entry, Mode};
 use anyhow::Result;
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::fs::Metadata;
 use std::path::Path;
 
@@ -22,12 +24,16 @@ pub struct Run;
 
 impl Mode for Run {
     fn collect(&mut self) -> Result<Vec<Entry>> {
-        let names = scan_path();
-        Ok(names
-            .into_iter()
-            .map(|n| Entry::exec(n.clone(), n))
-            .collect())
+        Ok(entries(scan_path()))
     }
+}
+
+/// One entry per name, running the file it was found as.
+fn entries(names: BTreeMap<String, String>) -> Vec<Entry> {
+    names
+        .into_iter()
+        .map(|(label, program)| Entry::exec(label, program))
+        .collect()
 }
 
 // ── per-OS executable predicate ───────────────────────────────────────────────
@@ -70,11 +76,9 @@ fn is_executable(_path: &Path, _metadata: &Metadata) -> bool {
 
 // ── label helper ──────────────────────────────────────────────────────────────
 
-/// Return the string that will be shown in the picker and passed to
-/// `Command::new`. On Windows the extension is stripped so the user can type
-/// `firefox` instead of `firefox.exe`; `Command::new` handles PATHEXT lookup
-/// automatically when no extension is present. On Unix the full filename is
-/// used unchanged.
+/// Return the string shown in the picker. On Windows the extension is
+/// stripped so the user can type `firefox` instead of `firefox.exe`; on Unix
+/// the full filename is used unchanged.
 fn entry_label(path: &Path) -> Option<String> {
     if cfg!(windows) {
         path.file_stem()
@@ -89,8 +93,10 @@ fn entry_label(path: &Path) -> Option<String> {
 
 // ── PATH scanning ─────────────────────────────────────────────────────────────
 
-fn scan_path() -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
+/// Every executable on `$PATH`, label to full path. A name in several
+/// directories keeps the first, the one a shell would run.
+fn scan_path() -> BTreeMap<String, String> {
+    let mut names = BTreeMap::new();
     let Some(path) = std::env::var_os("PATH") else {
         return names;
     };
@@ -103,7 +109,9 @@ fn scan_path() -> BTreeSet<String> {
     names
 }
 
-fn scan_dir(dir: &Path, names: &mut BTreeSet<String>) {
+/// Adds `dir`'s executables to `names` unless an earlier directory already
+/// listed the name.
+fn scan_dir(dir: &Path, names: &mut BTreeMap<String, String>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
@@ -139,8 +147,9 @@ fn scan_dir(dir: &Path, names: &mut BTreeSet<String>) {
         if !is_executable(&entry_path, &meta) {
             continue;
         }
-        if let Some(label) = entry_label(&entry_path) {
-            names.insert(label);
+        // A path that isn't UTF-8 can't be a `Payload::Exec` program.
+        if let (Some(label), Some(program)) = (entry_label(&entry_path), entry_path.to_str()) {
+            names.entry(label).or_insert_with(|| program.to_string());
         }
     }
 }
@@ -172,10 +181,11 @@ mod tests {
         permissions.set_mode(0o644);
         std::fs::set_permissions(&non_executable, permissions).unwrap();
 
-        let mut names = BTreeSet::new();
+        let mut names = BTreeMap::new();
         scan_dir(dir.path(), &mut names);
 
-        assert_eq!(names, BTreeSet::from(["executable".to_string()]));
+        assert_eq!(names.keys().collect::<Vec<_>>(), ["executable"]);
+        assert_eq!(names["executable"], executable.to_str().unwrap());
     }
 
     #[test]
@@ -200,16 +210,55 @@ mod tests {
         symlink(&real_non_exec, &link_non_exec).unwrap();
         symlink(dir.path().join("does-not-exist"), &link_dangling).unwrap();
 
-        let mut names = BTreeSet::new();
+        let mut names = BTreeMap::new();
         scan_dir(dir.path(), &mut names);
 
         // `link-exec` must appear (DirEntry::file_type() reports the link as a
         // symlink, not a file — the old code dropped every $PATH symlink, so
         // sh/python/awk never showed up); the non-executable and dangling
         // links must not.
+        assert_eq!(names.keys().collect::<Vec<_>>(), ["link-exec", "real-exec"]);
+    }
+
+    /// Writes an executable named `name` (plus the platform's extension) in
+    /// `dir` and returns its path.
+    fn write_executable(dir: &Path, name: &str) -> std::path::PathBuf {
+        let path = dir.join(if cfg!(windows) {
+            format!("{name}.cmd")
+        } else {
+            name.to_string()
+        });
+        std::fs::write(&path, b"").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&path, permissions).unwrap();
+        }
+        path
+    }
+
+    #[test]
+    fn a_name_runs_the_file_found_first_by_full_path() {
+        let first = tempfile::tempdir().expect("tempdir");
+        let second = tempfile::tempdir().expect("tempdir");
+        let listed = write_executable(first.path(), "tool");
+        write_executable(second.path(), "tool");
+
+        let mut names = BTreeMap::new();
+        scan_dir(first.path(), &mut names);
+        scan_dir(second.path(), &mut names);
+
+        let entries = entries(names);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "tool");
         assert_eq!(
-            names,
-            BTreeSet::from(["real-exec".to_string(), "link-exec".to_string()])
+            entries[0].payload,
+            crate::modes::Payload::Exec {
+                program: listed.to_str().unwrap().to_string(),
+                args: Vec::new(),
+            }
         );
     }
 
