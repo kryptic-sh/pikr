@@ -16,8 +16,10 @@
   region also clips drawing, so it is the corners' outer bound. Checked on the
   Windows test desktop against crcbl main `588ce48b`: `GetWindowRgnBox` reports
   a complex region covering the 720x447 window, and a magnified screenshot shows
-  the rounded border whole with the desktop behind the corner. A click on the
-  corner was not tried.
+  the rounded border whole with the desktop behind the corner. Hit-testing
+  (`WindowFromPoint`, which applies window regions) puts the outermost corner
+  pixel on the window beneath and the top edge and centre on pikr; no real click
+  was sent.
 - `picker::icons::tests::svg_text_is_drawn` needs a system sans-serif face; the
   Ubuntu test job installs no fonts, so it relies on the runner image.
 - **GPU choice is crcbl-app's rule (crcbl 0.6.0).** `ui::gpu::Gpu::open` ranks
@@ -245,13 +247,14 @@ macOS and Windows.
 
 ### Open
 
-- **Windows startup is around the 500 ms usable-picker target.** Release build
-  on crcbl main `588ce48b` (0.6.0: lazy adapter description, display-adapter
-  choice), D3D12, RX 7900 XTX + iGPU + WARP, 2026-10-20: six background
-  `--dmenu` launches reached first paint at 898, 575, 276, 282, 402 and 458 ms
-  (`RUST_LOG=pikr=debug`), the first just after the build; on crcbl 0.5.0 three
-  launches gave 617, 443 and 493 ms. The runs are noisy. GPU setup is nearly all
-  of it; config, entries, ranking and fonts are done within ~50 ms.
+- **Windows startup is under the 500 ms target in the median, with outliers.**
+  Release build on crcbl 0.6.0 (lazy adapter description, display-adapter
+  choice), D3D12, RX 7900 XTX + iGPU + WARP, 2026-10-20: ten warm background
+  `--dmenu` launches reached first paint at 329, 480, 384, 515, 345, 367, 963,
+  2080, 356 and 339 ms, median ~376 ms (`RUST_LOG=pikr=debug`; other sessions
+  were compiling on the machine, which may explain the two outliers). On crcbl
+  0.5.0 three launches gave 617, 443 and 493 ms. GPU setup is nearly all of it;
+  config, entries, ranking and fonts are done within ~50 ms.
 - **crcbl-app: only its adapter choice is adopted (crcbl 0.6.0).** pikr uses
   `crcbl_app::adapter::{choose, pin}` in `ui::gpu::Gpu::open` and nothing else.
   The rest would replace `ui::gpu` and the window bring-up in `ui::run`:
