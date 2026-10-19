@@ -274,7 +274,8 @@ macOS and Windows.
   things pikr does on purpose:
   - `window::wait_for_configure` counts and discards the events it pumps; pikr's
     `wait_for_size` keeps them, which is how an early `FocusRefused` and the
-    first scale factor reach the loop (reported to crcbl).
+    first scale factor reach the loop. Fixed on crcbl main `4d67ff24` for 0.6.0:
+    it hands every pumped event to a sink.
   - `Presenter` skips an adapter whose surface offers no premultiplied alpha for
     a transparent window and fails when none does; pikr's rule is to warn and
     draw opaque instead (`ui::gpu::Gpu::open`).
