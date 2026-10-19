@@ -2,7 +2,7 @@
 
 use super::{Entry, Mode};
 use anyhow::Result;
-use std::io::{self, BufRead, IsTerminal};
+use std::io::{self, BufRead, IsTerminal, Read};
 use std::sync::{Arc, mpsc};
 
 #[derive(Default)]
@@ -22,14 +22,32 @@ fn require_piped_stdin() -> Result<()> {
     Ok(())
 }
 
-/// One entry per non-empty line.
+/// The most stdin dmenu reads. A producer that writes more is an error, not
+/// a picker that holds gigabytes in memory.
+pub const MAX_STDIN_BYTES: u64 = 256 * 1024 * 1024;
+
+/// One entry per non-empty line, from at most [`MAX_STDIN_BYTES`].
 pub(crate) fn read_entries(reader: impl BufRead) -> io::Result<Vec<Entry>> {
+    read_entries_capped(reader, MAX_STDIN_BYTES)
+}
+
+/// [`read_entries`] with the cap given: more than `max_bytes` of input is an
+/// error. Reading stops one byte past the cap, so a single endless line is
+/// bounded too.
+fn read_entries_capped(reader: impl BufRead, max_bytes: u64) -> io::Result<Vec<Entry>> {
+    let mut limited = reader.take(max_bytes + 1);
     let mut entries = Vec::new();
-    for line in reader.lines() {
+    for line in limited.by_ref().lines() {
         let line = line?;
         if !line.is_empty() {
             entries.push(Entry::stdout(line));
         }
+    }
+    if limited.limit() == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("more than {} MiB on stdin", max_bytes / (1024 * 1024)),
+        ));
     }
     Ok(entries)
 }
@@ -87,6 +105,33 @@ mod tests {
     #[test]
     fn empty_input_is_no_entries() {
         assert!(labels("").is_empty());
+    }
+
+    #[test]
+    fn input_over_the_cap_is_an_error() {
+        // At the cap exactly is fine; one byte past it is not, even when it
+        // is a single line with no newline.
+        assert_eq!(
+            read_entries_capped(
+                io::Cursor::new(
+                    "ab
+cd
+"
+                ),
+                6
+            )
+            .unwrap()
+            .len(),
+            2
+        );
+        for over in [
+            "ab
+cd
+e", "abcdefg",
+        ] {
+            let err = read_entries_capped(io::Cursor::new(over), 6).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::InvalidData, "{over:?}");
+        }
     }
 
     #[test]

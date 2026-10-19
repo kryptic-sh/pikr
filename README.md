@@ -120,6 +120,9 @@ choice=$(nmcli -g ssid dev wifi list | pikr --dmenu --kb-custom 'Right=Forget?')
 [ $? -eq 10 ] && nmcli connection delete "$choice"
 ```
 
+dmenu reads at most 256 MiB from stdin; a producer that writes more makes pikr
+print an error and exit 1, rather than hold it all in memory.
+
 ### Loading state (dmenu)
 
 By default pikr reads all of stdin before opening. For a slow producer,

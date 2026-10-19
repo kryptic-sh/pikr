@@ -233,8 +233,6 @@ Re-verified against the tree on 2026-10-18.
 - drun cache hit skips re-validation (`drun::load_cache` returns the cached
   entries once dirs, locales and the mtime key match) — a same-user attacker
   with a predictable cache key gets a second execution path.
-- dmenu stdin is unbounded (`dmenu::read_entries`) — a hostile caller piping
-  gigabytes bloats the process.
 
 ## Accepted trade-offs (not scheduled)
 

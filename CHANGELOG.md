@@ -10,6 +10,9 @@ and this project adheres to
 
 ### Changed
 
+- dmenu reads at most 256 MiB from stdin. More is an error
+  (`more than 256 MiB on stdin`, exit 1), with or without `--loading`, rather
+  than a picker holding whatever the producer writes in memory.
 - Typing in a list with non-ASCII labels, such as emoji mode, reranks about four
   times faster: each label's Unicode segmentation is done once when the list
   loads instead of on every keystroke.
