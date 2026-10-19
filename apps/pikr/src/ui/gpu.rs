@@ -125,7 +125,7 @@ impl Gpu {
             tracing::warn!(
                 adapter = adapter.name,
                 offered = ?caps.composite_alpha,
-                "the GPU surface cannot draw pikr transparent; drawing it opaque, with square corners"
+                "the GPU surface cannot draw pikr transparent; drawing it opaque, so the corners outside the rounded panel show black"
             );
         }
         let desc = SwapchainDesc {

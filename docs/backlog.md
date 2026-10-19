@@ -53,6 +53,28 @@
   (CI run 38947484014) exited 1 on every test that typed or pressed Return, and
   the Esc-only tests passed by coincidence. The same holds for any virtual or
   remapped keyboard.
+- **Open findings from the 2026-10-19 review of `ui/` and `picker::session`**
+  (one read-only agent; the two confirmed defects it found, the panel border
+  missing from `ui::view::window_height` and the "square corners" wording of the
+  opaque-fallback warnings, are fixed). Not re-verified by the orchestrator:
+  - `ui::run` `handle`: `ScrollDelta::Pixels` (device pixels per crcbl-core's
+    `input.rs`) is added to `wheel` (logical) without dividing by `scale`, so
+    touchpad scrolling runs twice as far at scale 2.
+  - `ui::view::View::scroll_to_selection` re-scrolls only when `selected`
+    changes, so after a wheel scroll a rerank that keeps `selected == 0` can
+    leave the best match above the view.
+  - `ui::theme_css::parse_hex` assumes `#RRGGBB`; `#fff` or `#RRGGBBAA` in the
+    config derive wrong colours, and config does not validate them.
+  - Plausible, IME: `TextCommit` uses the modifiers of the last key press, so on
+    Wayland (where the IME consumes the composing keys) a commit after a Ctrl
+    chord may be read as a chord and dropped; `set_text_input` stays on outside
+    Insert mode, so a CJK IME in Normal mode composes keys pikr then ignores;
+    Win32 may draw its own composition window over pikr's inline pre-edit; and
+    `Focus { focused: false }` does not clear `View::preedit`, so a missed
+    end-of-composition would keep every key blocked.
+  - Not reviewed by it: the list's click attribution under the double build in
+    `frame`, backends returning no waker (`--loading` rows wait for the next
+    event), an acquire that keeps returning out-of-date, and `modes/`.
 - **Not verified (coverage gaps).**
   - No whole-codebase correctness or security review since the crcbl port. The
     last ones (2026-08-06) read the floem UI, which is gone; `ui/` and

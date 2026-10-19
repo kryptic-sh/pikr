@@ -20,7 +20,8 @@ and this project adheres to
   Linux and FreeBSD (Mesa's lavapipe works without a GPU), Direct3D 12 on
   Windows and Metal on macOS. With no usable GPU pikr prints why and exits
   non-zero. Where the window system or GPU cannot draw pikr transparent, it logs
-  a warning and draws the window opaque with square corners.
+  a warning and draws the window opaque, the corners outside its rounded panel
+  showing black.
 - **Wayland: pikr opens on the layer-shell `overlay` layer instead of `top`**,
   for both the picker and `--message`. It now shows above a fullscreen app
   rather than opening hidden behind it. Compositor rules that match the `pikr`

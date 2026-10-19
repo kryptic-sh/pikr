@@ -27,6 +27,9 @@ pub const INPUT_ROW_HEIGHT: f64 = ROW_HEIGHT;
 /// Margin between the input row and the result list.
 pub const INPUT_MARGIN_BOTTOM: f64 = 8.0;
 pub const PANEL_PAD: f64 = 10.0;
+/// The panel's border width; the panel is border-box, so it eats into the
+/// height too.
+pub const PANEL_BORDER: f64 = 1.5;
 /// The ex bar: height + top margin + bottom margin.
 pub const EX_BAR_TOTAL: f64 = 22.0 + 8.0 + 2.0;
 /// The status bar's height, padding included.
@@ -40,6 +43,7 @@ pub const ICON_SIZE: u32 = 24;
 pub fn window_height(rows: usize) -> f64 {
     ROW_PITCH * rows as f64
         + PANEL_PAD * 2.0
+        + PANEL_BORDER * 2.0
         + INPUT_ROW_HEIGHT
         + INPUT_MARGIN_BOTTOM
         + EX_BAR_TOTAL

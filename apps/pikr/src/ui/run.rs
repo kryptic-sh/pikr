@@ -117,7 +117,7 @@ fn create_window(shell: &mut dyn Shell, spec: &WindowSpec) -> Result<(WindowId, 
     if !transparent {
         tracing::warn!(
             backend = ?shell.backend(),
-            "the window system cannot make pikr transparent; drawing it opaque, with square corners"
+            "the window system cannot make pikr transparent; drawing it opaque, so the corners outside the rounded panel show black"
         );
     }
     let window = shell
