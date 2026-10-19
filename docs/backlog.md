@@ -103,8 +103,6 @@
     stdin, so `pwsh -NoExit -Command ssh …` and `cmd /K ssh …` launched from the
     GUI build may get EOF and close at once (wt.exe and Unix terminals make
     their own pty). Not run.
-  - Windows `run`: within one directory the first listed of `foo.cmd` and
-    `foo.exe` wins, where a shell follows `PATHEXT` order.
   - Windows icons: `drun::icons_windows::hbitmap_to_png` treats
     `IShellItemImageFactory` bitmaps as straight alpha; they are generally
     premultiplied, darkening antialiased edges. Cosmetic, unverified.

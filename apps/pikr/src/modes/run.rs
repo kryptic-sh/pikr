@@ -60,13 +60,32 @@ fn is_executable(path: &Path, _metadata: &Metadata) -> bool {
 /// unsafe_code)` blocks in test builds).
 #[cfg(windows)]
 fn is_executable_with_pathext(path: &Path, pathext: &str) -> bool {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some(ext) => pathext
-            .split(';')
-            .map(|p| p.trim_start_matches('.'))
-            .any(|p| p.eq_ignore_ascii_case(ext)),
-        None => false,
-    }
+    pathext_rank(path, pathext).is_some()
+}
+
+/// Where `path`'s extension sits in `pathext`, or `None` when it is not
+/// there. Between two files of one name in one directory, the lower rank is
+/// the one a shell runs.
+#[cfg(windows)]
+fn pathext_rank(path: &Path, pathext: &str) -> Option<usize> {
+    let ext = path.extension()?.to_str()?;
+    pathext
+        .split(';')
+        .map(|p| p.trim_start_matches('.'))
+        .position(|p| p.eq_ignore_ascii_case(ext))
+}
+
+/// Which of two same-named executables in one directory a shell picks:
+/// `PATHEXT` order on Windows. Elsewhere a directory cannot hold two.
+#[cfg(windows)]
+fn shell_preference(path: &Path) -> usize {
+    let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| DEFAULT_PATHEXT.to_string());
+    pathext_rank(path, &pathext).unwrap_or(usize::MAX)
+}
+
+#[cfg(not(windows))]
+fn shell_preference(_path: &Path) -> usize {
+    0
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -110,11 +129,13 @@ fn scan_path() -> BTreeMap<String, String> {
 }
 
 /// Adds `dir`'s executables to `names` unless an earlier directory already
-/// listed the name.
+/// listed the name. Within `dir`, a name with several files (`foo.cmd` and
+/// `foo.exe`) takes the one a shell would run.
 fn scan_dir(dir: &Path, names: &mut BTreeMap<String, String>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
+    let mut found: BTreeMap<String, (usize, String)> = BTreeMap::new();
     for entry in read.flatten() {
         // file_type() comes from readdir's d_type on Unix — no stat syscall
         // for non-files; the metadata() stat below is paid only for regular
@@ -149,8 +170,15 @@ fn scan_dir(dir: &Path, names: &mut BTreeMap<String, String>) {
         }
         // A path that isn't UTF-8 can't be a `Payload::Exec` program.
         if let (Some(label), Some(program)) = (entry_label(&entry_path), entry_path.to_str()) {
-            names.entry(label).or_insert_with(|| program.to_string());
+            let rank = shell_preference(&entry_path);
+            let kept = found.entry(label).or_insert((rank, program.to_string()));
+            if rank < kept.0 {
+                *kept = (rank, program.to_string());
+            }
         }
+    }
+    for (label, (_, program)) in found {
+        names.entry(label).or_insert(program);
     }
 }
 
@@ -306,6 +334,24 @@ mod tests {
         assert!(
             !is_executable_with_pathext(Path::new("readme.txt"), pathext),
             ".txt must not match PATHEXT"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_name_in_one_directory_takes_the_pathext_order() {
+        // Whatever order the directory lists them in, `.exe` comes before
+        // `.cmd` in PATHEXT, as a shell would pick.
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("tool.cmd"), b"").unwrap();
+        std::fs::write(dir.path().join("tool.exe"), b"").unwrap();
+        let mut names = BTreeMap::new();
+        scan_dir(dir.path(), &mut names);
+        let program = Path::new(&names["tool"]);
+        assert_eq!(program.extension().and_then(|e| e.to_str()), Some("exe"));
+        assert_eq!(
+            pathext_rank(Path::new("tool.cmd"), DEFAULT_PATHEXT),
+            Some(3)
         );
     }
 

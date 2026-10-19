@@ -96,7 +96,9 @@ and this project adheres to
   bare name back to the system to look up again, which on Windows tries only
   `.exe`: a `.cmd` or `.bat` on `PATH`, listed without its extension, failed to
   start or started a different `.exe` of the same name. Run-mode frecency starts
-  over once, since it is recorded per launched path.
+  over once, since it is recorded per launched path. Where one directory holds
+  both `foo.exe` and `foo.cmd`, it runs the one `PATHEXT` puts first, as a shell
+  does.
 - `drun` skips a `.desktop` entry whose `Exec=` program is a relative path such
   as `./foo`. The specification allows only a full path or a bare name looked up
   in `PATH`, and pikr used to run it relative to its own working directory. The
