@@ -51,6 +51,11 @@
     real icon themes was not measured from pikr; crcbl's CI holds the breeze
     corpus against resvg (floors per crcbl's 0.2.1 release notes).
   - S9 IME on/off on Win32 and AppKit.
+  - `HeadlessShell` gives named keys no keysym at 0.5.0; from 0.6.0 it falls
+    back to `keysym::named_keysym`, so `ui::run::headless` can drop its raw
+    `ShellEvent::Key` injection for `key_press`. An "events due at pump N"
+    queue, which would let those tests script input across frames, is in crcbl's
+    backlog, unscheduled.
   - Win32 reports keys the input method consumes (`VK_PROCESSKEY`) as ordinary
     `ShellEvent::Key`s at 0.5.0; crcbl drops them from 0.6.0, as Wayland already
     does. Until then `ui::run` ignores key presses while a pre-edit is showing;
