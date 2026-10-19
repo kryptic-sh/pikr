@@ -39,6 +39,12 @@ and this project adheres to
   draw, such as text in characters no installed font has, shows the generic
   application icon instead.
 - The minimum supported Rust version is 1.98.
+- Linux packages declare the libraries pikr now loads at run time: the `.deb`
+  and `.rpm` depend on libwayland-client, libxkbcommon, the Vulkan loader and
+  fontconfig, and recommend a Mesa Vulkan driver and the X11 fallback's libxcb
+  and libxkbcommon-x11; the EGL, GL and wayland-cursor/egl dependencies floem
+  needed are gone. The AUR package gains the same dependencies, which it never
+  declared. Package descriptions no longer say "built on floem".
 - **`-P` / `--password` is a bare password prompt.** It shows only the masked
   input and the status bar: no list, no filtering, and stdin is not read. Enter
   prints exactly what was typed, surrounding spaces included, in any mode;

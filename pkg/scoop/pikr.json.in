@@ -1,6 +1,6 @@
 {
   "version": "{VERSION}",
-  "description": "Rofi-style application launcher for Wayland. Built with Floem.",
+  "description": "Vim-modal application launcher — rofi replacement.",
   "homepage": "https://github.com/kryptic-sh/pikr",
   "license": "MIT",
   "depends": "nerd-fonts/Hack-NF",

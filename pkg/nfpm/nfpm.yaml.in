@@ -13,7 +13,7 @@ section: x11
 priority: optional
 maintainer: mxaddict <mxaddict@kryptic.sh>
 description: |
-  Vim-modal application launcher — rofi replacement built on floem.
+  Vim-modal application launcher — rofi replacement.
   Modal editing (Insert / Normal / Visual), fuzzy matching with
   frecency scoring, per-mode query history, and Wayland layer-shell
   support.
@@ -38,28 +38,36 @@ contents:
     file_info:
       mode: 0644
 
-# Format-specific runtime dependencies. floem/wgpu wants:
-# - libxkbcommon for keyboard handling
-# - wayland client/cursor/egl for Wayland surfaces (default path)
-# - libGL / libEGL for the wgpu adapter
-# - libvulkan for the wgpu Vulkan backend
-# - fontconfig for font discovery
-# X11 fallback deps (libX11, libXcursor) are pulled transitively via Mesa.
+# Format-specific runtime dependencies. crcbl loads every one of these with
+# dlopen, so the binary's ELF names none of them and this list is the only
+# place they are declared:
+# - libwayland-client and libxkbcommon for the Wayland window and keymaps
+# - the Vulkan loader for rendering, and a Vulkan driver for it to load
+# - fontconfig for font lookup
+# - libxcb and libxkbcommon-x11 for the X11 fallback; RandR, XInput and XKB
+#   are optional extensions there (one monitor, no raw motion, no detectable
+#   auto-repeat without them)
 overrides:
   deb:
     depends:
       - libxkbcommon0
       - libwayland-client0
-      - libwayland-cursor0
-      - libwayland-egl1
-      - libegl1
-      - libgl1
       - libvulkan1
       - libfontconfig1
+    recommends:
+      - mesa-vulkan-drivers
+      - libxcb1
+      - libxkbcommon-x11-0
+      - libxcb-randr0
+      - libxcb-xinput0
+      - libxcb-xkb1
   rpm:
     depends:
       - libxkbcommon
-      - mesa-libEGL
-      - mesa-libGL
+      - libwayland-client
       - vulkan-loader
       - fontconfig
+    recommends:
+      - mesa-vulkan-drivers
+      - libxcb
+      - libxkbcommon-x11

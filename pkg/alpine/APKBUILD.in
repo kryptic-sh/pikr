@@ -7,10 +7,12 @@
 pkgname=pikr
 pkgver={VERSION}
 pkgrel=0
-pkgdesc="Vim-modal application launcher — rofi replacement built on floem"
+pkgdesc="Vim-modal application launcher — rofi replacement"
 url="https://pikr.kryptic.sh/"
 arch="x86_64"
 license="MIT"
+# Loaded with dlopen at run time, so abuild's tracing cannot see them.
+depends="libxkbcommon wayland-libs-client vulkan-loader fontconfig"
 # !check  — no test suite shipped in the binary tarball.
 # !strip  — binary is already stripped by the upstream release build,
 #           and abuild's strip step rejects cross-built artifacts.

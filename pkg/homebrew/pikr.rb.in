@@ -3,7 +3,7 @@
 # next tag — change `pkg/homebrew/pikr.rb.in` in the upstream repo and
 # let `.github/workflows/ci.yml` rebuild on the next release.
 class Pikr < Formula
-  desc "Vim-modal application launcher — rofi replacement built on floem"
+  desc "Vim-modal application launcher — rofi replacement"
   homepage "https://pikr.kryptic.sh/"
   version "{VERSION}"
   license "MIT"
