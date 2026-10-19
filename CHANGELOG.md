@@ -57,6 +57,9 @@ and this project adheres to
 
 ### Added
 
+- Releases ship an Alpine `.apk` again, with an `x86_64-unknown-linux-musl`
+  tarball beside it. The binary is linked dynamically against musl, built on
+  Alpine itself, since a static one cannot load the Vulkan driver.
 - Input method support in the query: text an IME is composing is drawn
   underlined at the caret, and the IME is told where the caret is so its
   candidate list opens beside it rather than at a corner of the screen. The

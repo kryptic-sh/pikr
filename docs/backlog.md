@@ -178,26 +178,17 @@
   of each distribution; no package was installed on a clean system to prove the
   list complete or the names right. CI builds the `.deb` and `.rpm` but does not
   install them.
-- The Alpine `.apk` job in `.github/workflows/ci.yml` (`alpine`, named "Build
-  .apk for Alpine (x86_64)") is gated `if: false`, so every tag run skips it and
-  no release carries an Alpine package — confirmed on the v0.8.13 run, where the
-  job reported "skipped" while the other publish jobs ran. Its own comment gives
-  the cause: it downloads the `x86_64-unknown-linux-musl` tarball from the
-  release, and that target is not in the binary build matrix (the matrix builds
-  linux-gnu, both macOS targets and windows-msvc). Restoring Alpine means adding
-  the musl target back to the matrix first, then flipping the gate; the job
-  itself is written and untested since the gate went in. Not investigated: why
-  musl was dropped — it is absent from the matrix as far back as `417a2e1`
-  (2026-05-16, the workflow port from hodl), so no commit in this repo removed
-  it. Left as-is 2026-09-15: a deliberate pre-existing gate, not a v0.8.13
-  regression.
-
-  Since the crcbl port a plain musl target would not do either: crcbl-vk opens
-  `libvulkan.so.1` with `dlopen` (`ash::Entry::load`), which a statically linked
-  musl binary (the target's default) cannot do, so it would build and then exit
-  "no usable GPU". An Alpine package needs a dynamically linked musl build
-  (`-C target-feature=-crt-static`, built on Alpine itself, e.g. in an `alpine`
-  container job), checked by running it against Mesa there.
+- **The Alpine `.apk` is restored but unverified (2026-10-19).** The
+  `build-musl` job in `.github/workflows/ci.yml` builds
+  `x86_64-unknown-linux-musl` in an `alpine:latest` container with
+  `-C target-feature=-crt-static` (a static musl binary cannot `dlopen`
+  libvulkan) and `GETTEXT_SYSTEM=1` (musl implements gettext), checks the result
+  with `ldd` and `--version`, and uploads the tarball the `alpine` job now
+  packages (its `if: false` gate is gone). `publish-github-release` needs it, so
+  a broken musl build blocks a release. Pushed with CI stalled org-wide, at the
+  user's call: it has never run. It runs on every main push, so check its first
+  run before cutting a tag. Not checked even then: the package installed on a
+  real Alpine system and drawing a window against Mesa.
 
 ## Hardening (correct today, fragile — not defects)
 
