@@ -73,6 +73,13 @@
     keyboard suite and the startup gate passed (run 39002212977, 237 ms
     launch-to-result against the 500 ms deadline). Hyprland, niri and KWin were
     never run, and no Linux run was looked at by eye.
+  - Key handling is tested headless on every OS (`ui::run::headless`: crcbl's
+    `HeadlessShell` and crcbl-hal's null backend driving the real window loop),
+    which puts no frame on a screen and no key through a real keymap. The sway
+    suite in `tests/e2e` keeps only what needs the binary: stdin and
+    `--loading`, the config file, state files, and keys arriving through
+    Wayland. crcbl's `HeadlessShell` gives named keys (Enter, Escape, arrows) no
+    keysym, so those tests inject raw `ShellEvent::Key`s with X11 keysyms.
   - FreeBSD is only type-checked: CI's Ubuntu clippy job lints the
     `x86_64-unknown-freebsd` target. Nothing links or runs it.
   - macOS: CI builds it and runs the unit tests and the `--version`/`--help`

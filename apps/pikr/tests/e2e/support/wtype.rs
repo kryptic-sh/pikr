@@ -14,14 +14,6 @@ pub enum Key {
     Return,
     /// Shift+Return (AcceptCustom in pikr dmenu).
     ShiftReturn,
-    /// Shift+Delete (a typical `--kb-custom` binding).
-    ShiftDelete,
-    F2,
-    /// Bare Delete — must not trigger a `Shift+Delete` binding.
-    Delete,
-    Right,
-    Left,
-    Down,
 }
 
 impl Key {
@@ -35,12 +27,6 @@ impl Key {
             Key::F12 => vec!["-k", "F12"],
             Key::Return => vec!["-k", "Return"],
             Key::ShiftReturn => vec!["-M", "shift", "-k", "Return", "-m", "shift"],
-            Key::ShiftDelete => vec!["-M", "shift", "-k", "Delete", "-m", "shift"],
-            Key::F2 => vec!["-k", "F2"],
-            Key::Delete => vec!["-k", "Delete"],
-            Key::Right => vec!["-k", "Right"],
-            Key::Left => vec!["-k", "Left"],
-            Key::Down => vec!["-k", "Down"],
         }
     }
 }

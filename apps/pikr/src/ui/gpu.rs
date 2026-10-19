@@ -74,7 +74,17 @@ impl Gpu {
     /// `destroy` must run before the window is destroyed. `ui::run` owns
     /// both and destroys the `Gpu` first on every exit path.
     pub fn open(target: &SurfaceTarget, extent: (u32, u32), want_alpha: bool) -> Result<Self> {
-        let instance = open_instance()?;
+        Self::open_on(open_instance()?, target, extent, want_alpha)
+    }
+
+    /// [`Gpu::open`] on `instance` rather than the platform's backend: the
+    /// headless tests pass crcbl-hal's null backend.
+    pub fn open_on(
+        instance: Box<dyn Instance>,
+        target: &SurfaceTarget,
+        extent: (u32, u32),
+        want_alpha: bool,
+    ) -> Result<Self> {
         // SAFETY: `target` names the live window `ui::run` created, which it
         // keeps alive until after `Gpu::destroy` has destroyed this surface;
         // `open` runs on the thread that pumps that window.

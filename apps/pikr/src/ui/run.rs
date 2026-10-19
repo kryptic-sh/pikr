@@ -662,6 +662,9 @@ fn device_rect(min: Vec2, max: Vec2, scale: f32) -> PhysicalRect {
 }
 
 #[cfg(test)]
+mod headless;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

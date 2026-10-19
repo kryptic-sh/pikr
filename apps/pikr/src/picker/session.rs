@@ -49,6 +49,10 @@ pub struct Session {
     ranked_query: Option<String>,
     usage_dirty: bool,
     history_dirty: bool,
+    /// Off in tests that run the frontend's loop, which calls [`Session::save`]
+    /// on exit: they must not write the user's state files.
+    #[cfg(test)]
+    persist: bool,
 }
 
 impl Session {
@@ -64,6 +68,8 @@ impl Session {
             ranked_query: None,
             usage_dirty: false,
             history_dirty: false,
+            #[cfg(test)]
+            persist: true,
         };
         session.rerank_if_query_changed();
         session
@@ -78,15 +84,27 @@ impl Session {
     }
 
     /// Writes frecency and history if this session changed them. Called by
-    /// the frontend before it acts on [`Outcome::Exit`]; never by tests, so
-    /// they don't touch the user's state files.
+    /// the frontend before it acts on [`Outcome::Exit`]; tests that run the
+    /// frontend turn it off with [`Session::without_persistence`], so they
+    /// don't touch the user's state files.
     pub fn save(&self) {
+        #[cfg(test)]
+        if !self.persist {
+            return;
+        }
         if self.usage_dirty {
             self.app.usage.save();
         }
         if self.history_dirty {
             self.app.history.save();
         }
+    }
+
+    /// This session with [`Session::save`] turned off.
+    #[cfg(test)]
+    pub(crate) fn without_persistence(mut self) -> Self {
+        self.persist = false;
+        self
     }
 
     fn rerank_if_query_changed(&mut self) {
