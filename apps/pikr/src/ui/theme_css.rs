@@ -6,8 +6,7 @@
 use crate::config::Theme;
 
 /// `default.css` with every `{placeholder}` replaced from `theme`. The
-/// derived colours blend two theme colours, as the floem view's `blend()`
-/// calls did.
+/// derived colours blend two theme colours.
 pub fn stylesheet_source(theme: &Theme) -> String {
     let accent = parse_hex(&theme.accent);
     let muted = parse_hex(&theme.muted);

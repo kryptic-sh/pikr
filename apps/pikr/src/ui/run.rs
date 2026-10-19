@@ -24,9 +24,9 @@ use crate::ui::gpu::Gpu;
 use crate::ui::keyboard::{key_from_commit, key_from_press, modifiers_from_crcbl};
 use crate::ui::view::{Icons, View};
 
-/// The caret's blink half-period, as the floem picker and crcbl's own text
-/// field blink.
-const BLINK: Duration = Duration::from_millis(530);
+/// The caret's blink half-period: crcbl's own, so pikr's query caret blinks
+/// with every crcbl text field.
+const BLINK: Duration = crcbl_ui::console::CARET_BLINK;
 /// How long the window system gets to size a new window before pikr gives up.
 const CONFIGURE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Pixels one wheel detent scrolls.

@@ -222,10 +222,11 @@ fn display_name(item: &IShellItem, kind: SIGDN) -> Option<String> {
 /// A COM apartment joined for the current thread for as long as the guard
 /// lives. Declare it before any COM interface so those drop first.
 ///
-/// Joins a single-threaded apartment: pikr calls in from the UI thread, where
-/// winit later initialises OLE, which requires STA. If the thread is already
-/// in a multithreaded apartment the join fails with `RPC_E_CHANGED_MODE`; the
-/// shell calls here still work there, so the guard just doesn't release it.
+/// Joins a single-threaded apartment, as `ShellExecuteExW`'s documentation
+/// asks for: some shell extensions it may load need STA. If the thread is
+/// already in a multithreaded apartment the join fails with
+/// `RPC_E_CHANGED_MODE`; the shell calls here still work there, so the guard
+/// just doesn't release it.
 struct ComApartment {
     joined: bool,
 }
