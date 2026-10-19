@@ -57,8 +57,11 @@
   (one read-only agent; the two confirmed defects it found, the panel border
   missing from `ui::view::window_height` and the "square corners" wording of the
   opaque-fallback warnings, are fixed). Not re-verified by the orchestrator:
-  - Plausible, IME: Win32 may also draw its own composition window over pikr's
-    inline pre-edit (crcbl leaves `WM_IME_COMPOSITION` to the default handler).
+  - Win32 IME: crcbl passes every `WM_IME_*` to `DefWindowProc` and never clears
+    `ISC_SHOWUICOMPOSITIONWINDOW`, so the system composition window may draw
+    over pikr's inline pre-edit (confirmed from crcbl's source by its session,
+    not seen on screen). Tracked in crcbl's backlog; seeing the reading twice
+    during the Microsoft IME check is this bug.
   - Not reviewed by it: the list's click attribution under the double build in
     `frame`, backends returning no waker (`--loading` rows wait for the next
     event), an acquire that keeps returning out-of-date, and `modes/`.
