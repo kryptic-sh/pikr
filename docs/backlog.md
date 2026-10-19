@@ -68,8 +68,16 @@
     refused case was checked (`FocusRefused` and no `Focus`, crcbl 0.4.0+).
   - No icon from a real icon theme was drawn; icon decoding is covered by unit
     tests only. HiDPI (scale ≠ 1) was not exercised.
-  - IME pre-edit and commit through text-input-v3, and accessibility reaching
-    AT-SPI (crcbl's AccessKit row), were never checked from pikr.
+  - IME: pikr draws `TextPreedit` at the query caret (`ui::view::Preedit`) and
+    sends the caret through `set_text_input_area` after every frame that moves
+    it (`ui::run`). Unit-tested only for the pixel conversion (`device_rect`);
+    no real input method was driven through it, on Win32 (Microsoft IME, which
+    crcbl's Win32 backend has also never met) or through text-input-v3 on
+    Wayland. Check: composition underlined at the caret, candidate list beside
+    it, Backspace inside a composition editing the composition and not the
+    query, and the commit landing whole.
+  - Accessibility reaching AT-SPI (crcbl's AccessKit row) was never checked from
+    pikr.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme

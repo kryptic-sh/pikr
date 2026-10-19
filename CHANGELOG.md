@@ -50,6 +50,9 @@ and this project adheres to
 
 ### Added
 
+- Input method support in the query: text an IME is composing is drawn
+  underlined at the caret, and the IME is told where the caret is so its
+  candidate list opens beside it rather than at a corner of the screen.
 - XPM icons (`/usr/share/pixmaps` and the like) are drawn; pikr used to show the
   generic icon for them.
 

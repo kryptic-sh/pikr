@@ -73,6 +73,11 @@
   background-color: {accent};
 }
 
+/* An input method's composition, not yet part of the query. */
+.preedit {
+  text-decoration: underline;
+}
+
 /* The result list and its scrollbar, side by side, taking the space left. */
 .results {
   flex-grow: 1;

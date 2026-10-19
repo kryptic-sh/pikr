@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow};
 use crcbl_shell::{
     ButtonState, CloseReply, CursorIcon, LogicalSize, PanelAnchor, PanelDesc, PanelKeyboard,
-    PanelLayer, PointerButton, ScrollDelta, Shell, ShellCaps, ShellEvent, TextPurpose, WindowDesc,
-    WindowId, WindowRole,
+    PanelLayer, PhysicalRect, PointerButton, ScrollDelta, Shell, ShellCaps, ShellEvent,
+    TextPurpose, WindowDesc, WindowId, WindowRole,
 };
 use crcbl_ui::draw_list::DrawList;
 use crcbl_ui::font::Font;
@@ -22,7 +22,7 @@ use crate::modes::{self, dmenu::LoadedEntries};
 use crate::picker::session::{Outcome, Session};
 use crate::ui::gpu::Gpu;
 use crate::ui::keyboard::{key_from_commit, key_from_press, modifiers_from_crcbl};
-use crate::ui::view::{Icons, View};
+use crate::ui::view::{Icons, Preedit, View};
 
 /// The caret's blink half-period: crcbl's own, so pikr's query caret blinks
 /// with every crcbl text field.
@@ -170,6 +170,8 @@ struct Window<'a> {
     /// Wheel movement not yet applied, in logical pixels.
     wheel: f32,
     cursor: Option<CursorIcon>,
+    /// The caret rectangle last handed to the input method.
+    input_area: Option<PhysicalRect>,
     focused: bool,
     blink_at: Instant,
     /// Modifiers held at the last key press, for the text commit after it.
@@ -220,6 +222,7 @@ impl<'a> Window<'a> {
             pointer_down: false,
             wheel: 0.0,
             cursor: Some(CursorIcon::Default),
+            input_area: None,
             focused: false,
             blink_at: Instant::now() + BLINK,
             mods: Default::default(),
@@ -368,6 +371,10 @@ impl<'a> Window<'a> {
                 let key = key_from_commit(&text, self.mods);
                 Ok(key.map_or(Step::Continue(false), |key| self.key(&key, content)))
             }
+            ShellEvent::TextPreedit { text, cursor, .. } => {
+                self.view.preedit = Preedit { text, cursor };
+                Ok(Step::Continue(true))
+            }
             ShellEvent::PointerMotion { abs: Some(at), .. } => {
                 self.pointer = Vec2::new(at.x as f32, at.y as f32) / self.scale;
                 Ok(Step::Continue(true))
@@ -460,6 +467,17 @@ impl<'a> Window<'a> {
         if cursor != self.cursor {
             self.cursor = cursor;
             self.shell.set_cursor(self.window, cursor)?;
+        }
+
+        // The input method opens its composition and candidate windows
+        // beside the caret, so it hears of every move.
+        let area = self
+            .view
+            .caret_rect(&self.ui)
+            .map(|(min, max)| device_rect(min, max, self.scale));
+        if area != self.input_area {
+            self.input_area = area;
+            self.shell.set_text_input_area(self.window, area)?;
         }
         Ok(clicked)
     }
@@ -559,4 +577,32 @@ fn load_fonts(family: &str) -> Fonts {
         "startup fonts loaded"
     );
     Fonts { theme, fallbacks }
+}
+
+/// A rectangle from logical pixels to the window's device pixels, grown to
+/// whole pixels so it still covers what it framed.
+fn device_rect(min: Vec2, max: Vec2, scale: f32) -> PhysicalRect {
+    let (min, max) = ((min * scale).floor(), (max * scale).ceil());
+    PhysicalRect::new(
+        min.x as i32,
+        min.y as i32,
+        (max.x - min.x).max(0.0) as u32,
+        (max.y - min.y).max(0.0) as u32,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn device_rect_scales_and_covers_partial_pixels() {
+        let rect = device_rect(Vec2::new(10.5, 4.0), Vec2::new(12.5, 18.0), 1.5);
+        // 15.75..18.75 wide and 6..27 tall, grown to whole pixels.
+        assert_eq!(rect, PhysicalRect::new(15, 6, 4, 21));
+        assert_eq!(
+            device_rect(Vec2::new(3.0, 5.0), Vec2::new(5.0, 19.0), 1.0),
+            PhysicalRect::new(3, 5, 2, 14)
+        );
+    }
 }

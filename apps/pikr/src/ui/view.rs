@@ -130,6 +130,18 @@ pub struct View {
     scrolled_to: Option<usize>,
     /// The caret's blink phase.
     pub blink_on: bool,
+    /// An input method's composition in progress, drawn at the caret.
+    pub preedit: Preedit,
+    /// The query caret, as last frame built it.
+    caret: Option<NodeKey>,
+}
+
+/// An input method's composition: its text, and where its own cursor sits in
+/// it as a byte offset on a `char` boundary (`None`: at the end).
+#[derive(Default)]
+pub struct Preedit {
+    pub text: String,
+    pub cursor: Option<usize>,
 }
 
 impl View {
@@ -138,6 +150,8 @@ impl View {
             list: None,
             scrolled_to: None,
             blink_on: true,
+            preedit: Preedit::default(),
+            caret: None,
         }
     }
 
@@ -163,12 +177,25 @@ impl View {
                 };
                 ui.span(".prompt", prompt.as_str(), &[]);
                 let shown = mask_password(app.password, &picker.query);
-                query(
+                // Split before masking: the cursor is a byte offset into the
+                // real text.
+                let preedit = &self.preedit.text;
+                let at = self
+                    .preedit
+                    .cursor
+                    .filter(|&i| preedit.is_char_boundary(i))
+                    .unwrap_or(preedit.len());
+                let composing = [
+                    mask_password(app.password, &preedit[..at]),
+                    mask_password(app.password, &preedit[at..]),
+                ];
+                self.caret = query(
                     ui,
                     &shown,
                     picker.query_cursor,
                     picker.vim_mode,
                     self.blink_on,
+                    &composing,
                 );
             });
 
@@ -209,7 +236,16 @@ impl View {
                     if let Some(buf) = &picker.ex_buf {
                         let line = format!(":{buf}");
                         let end = line.chars().count();
-                        query(ui, &line, end, VimMode::Insert, self.blink_on);
+                        // The input method composes at whichever caret is
+                        // taking keys, so it follows this one while open.
+                        self.caret = query(
+                            ui,
+                            &line,
+                            end,
+                            VimMode::Insert,
+                            self.blink_on,
+                            &Default::default(),
+                        );
                     }
                 });
             }
@@ -241,6 +277,11 @@ impl View {
             });
         });
         clicked
+    }
+
+    /// The caret's rectangle in logical pixels, as last frame laid it out.
+    pub fn caret_rect(&self, ui: &Ui) -> Option<(Vec2, Vec2)> {
+        ui.rect(self.caret?)
     }
 
     /// Scrolls the list so the selection, and [`SCROLLOFF`] rows around it,
@@ -275,16 +316,29 @@ impl View {
 /// The query text with its caret: a thin bar between characters in Insert,
 /// a block over the character under it in Normal and Visual. The caret hides
 /// on the blink-off phase without moving the text.
-fn query(ui: &mut Ui, text: &str, cursor: usize, mode: VimMode, blink_on: bool) {
+/// The query with its caret at `cursor`. In Insert mode an input method's
+/// `preedit`, split at its own cursor, is drawn around the caret. Returns the
+/// caret's node.
+fn query(
+    ui: &mut Ui,
+    text: &str,
+    cursor: usize,
+    mode: VimMode,
+    blink_on: bool,
+    preedit: &[String; 2],
+) -> Option<NodeKey> {
     let chars: Vec<char> = text.chars().collect();
     let cursor = cursor.min(chars.len());
     let before: String = chars[..cursor].iter().collect();
     let blink = if blink_on { ".blink-on" } else { "" };
+    let mut caret = None;
     ui.block(".query", &[], |ui| {
         ui.span(".query-text", before.as_str(), &[]);
         match mode {
             VimMode::Insert => {
-                ui.block(&format!(".caret{blink}"), &[], |_| {});
+                ui.span(".preedit", preedit[0].as_str(), &[]);
+                caret = Some(ui.block(&format!(".caret{blink}"), &[], |_| {}).key);
+                ui.span(".preedit", preedit[1].as_str(), &[]);
                 let after: String = chars[cursor..].iter().collect();
                 ui.span(".query-text", after.as_str(), &[]);
             }
@@ -294,12 +348,16 @@ fn query(ui: &mut Ui, text: &str, cursor: usize, mode: VimMode, blink_on: bool) 
                 let under = chars
                     .get(cursor)
                     .map_or("\u{A0}".to_string(), char::to_string);
-                ui.span(&format!(".caret-block{blink}"), under.as_str(), &[]);
+                caret = Some(
+                    ui.span(&format!(".caret-block{blink}"), under.as_str(), &[])
+                        .key,
+                );
                 let after: String = chars.get(cursor + 1..).unwrap_or_default().iter().collect();
                 ui.span(".query-text", after.as_str(), &[]);
             }
         }
     });
+    caret
 }
 
 /// Result row `mi`. Returns whether it was clicked.
