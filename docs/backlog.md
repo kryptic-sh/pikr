@@ -287,18 +287,21 @@
     composition edits the composition and not the query (no rerank), and the
     Enter that commits does not reach pikr, the commit arriving whole. Not
     checked: AppKit, and Backspace inside a composition on Win32.
-  - **Screen readers cannot see pikr on Linux, and cannot until crcbl ships
-    AT-SPI.** Checked 2026-10-20 on Hyprland: with pikr open, the AT-SPI desktop
-    listed only xdg-desktop-portal-gtk, waybar and swaync. pikr turns on neither
+  - **Screen readers cannot see pikr on Linux until it adopts crcbl's AT-SPI.**
+    Checked 2026-10-20 on Hyprland: with pikr open, the AT-SPI desktop listed
+    only xdg-desktop-portal-gtk, waybar and swaync. pikr turns on neither
     crate's `accesskit` feature and never calls `Shell::update_accessibility`,
     and on Linux that would not help yet: crcbl 0.7.0's `accesskit` feature
     brings only `accesskit_windows`, and the Wayland and X11 shells keep the
-    trait's default, which drops the tree. crcbl's backlog lists Wayland and X11
-    through `accesskit_unix` (with `zbus`) as still to do. On Windows the UI
-    Automation path exists in crcbl and pikr could adopt it now: enable
-    `accesskit` on crcbl-shell and crcbl-ui, and send `Ui::accessibility_update`
-    after each frame (and answer `accessibility_action`). Not started, because
-    it adds dependencies, which is the owner's call.
+    trait's default, which drops the tree. crcbl main (2026-10-21, "feat(shell):
+    serve accessibility over AT-SPI", not yet released) serves the tree over
+    AT-SPI on Wayland and X11 behind the same `accesskit` feature; the crcbl
+    session reports Orca reading and acting on pikr's tree. To adopt, once a
+    crcbl release carries it (the owner chose to wait for releases): enable
+    `accesskit` on crcbl-shell and crcbl-ui, send `Ui::accessibility_update`
+    after each frame and answer `accessibility_action`, then check the AT-SPI
+    desktop lists pikr. That adds dependencies (accesskit, and zbus on Linux),
+    the owner's call; not started.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
