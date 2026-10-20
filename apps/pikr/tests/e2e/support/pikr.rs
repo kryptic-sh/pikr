@@ -163,7 +163,11 @@ fn pikr_bin() -> PathBuf {
             .and_then(|p| p.parent()) // workspace root
             .expect("cannot resolve workspace root from CARGO_MANIFEST_DIR");
 
-        let release_bin = workspace.join("target/release/pikr");
+        // Where the build below puts it: it inherits `CARGO_TARGET_DIR`, and
+        // runs in the workspace, which a relative one is resolved against.
+        let target = std::env::var_os("CARGO_TARGET_DIR")
+            .map_or_else(|| workspace.join("target"), |dir| workspace.join(dir));
+        let release_bin = target.join("release/pikr");
 
         // Always build: an existing binary may predate the sources (a pull
         // since the last release build), and driving it reports its old
