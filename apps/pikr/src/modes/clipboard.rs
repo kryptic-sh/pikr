@@ -40,10 +40,18 @@ mod unix_impl {
     use super::{Entry, Result, preview_label};
 
     pub fn collect() -> Result<Vec<Entry>> {
+        // cliphist missing or failing → empty list, not an error; but say
+        // why, or the picker's "No entries." looks like an empty history.
         let output = match std::process::Command::new("cliphist").arg("list").output() {
             Ok(o) if o.status.success() => o.stdout,
-            // cliphist missing or non-zero exit → empty list, not an error.
-            _ => return Ok(vec![]),
+            Ok(o) => {
+                tracing::warn!(status = %o.status, "cliphist list failed; no clipboard history");
+                return Ok(vec![]);
+            }
+            Err(e) => {
+                tracing::warn!("cannot run cliphist, which clipboard mode reads: {e}");
+                return Ok(vec![]);
+            }
         };
 
         let text = String::from_utf8_lossy(&output);
