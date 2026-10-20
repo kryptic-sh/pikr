@@ -18,7 +18,8 @@ conflicts=("$_pkgname")
 depends=('libxkbcommon' 'wayland' 'vulkan-icd-loader' 'fontconfig')
 optdepends=('vulkan-driver: a Vulkan driver for the loader to use (e.g. vulkan-radeon, vulkan-intel, nvidia-utils)'
             'libxcb: the X11 fallback'
-            'libxkbcommon-x11: keymaps under the X11 fallback')
+            'libxkbcommon-x11: keymaps under the X11 fallback'
+            'xcb-util-cursor: themed pointer cursors under the X11 fallback')
 
 # aarch64 source / sha lines will be restored when #31 lands
 # `aarch64-unknown-linux-gnu` back in the binary build matrix.

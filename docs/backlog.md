@@ -139,6 +139,18 @@
     hover lights the row under the pointer with a hand cursor, the wheel scrolls
     the list with the hover following, and a left click accepted the row under
     the pointer after the scroll. niri and KWin were never run.
+  - The X11 fallback was run on the nested Hyprland's own Xwayland
+    (`WAYLAND_DISPLAY` unset, `DISPLAY` set to it; 2026-10-20): pikr logs "no
+    panel windows; opening a toplevel", warns that it draws opaque, and opens as
+    a floating 720x448 window. First paint came at 276 ms. Keys sent through the
+    compositor's own keyboard
+    (`hl.dsp.send_shortcut({ mods = "", key = "b", window = "class:pikr" })`
+    through `hyprctl eval`) typed `be`, highlighted `beta`, and Return printed
+    it. **wtype does not work for X11 clients**: its uploaded keymap does not
+    reach Xwayland, so `wtype be` left pikr in Normal mode with an empty query
+    (Escape-like) and the run exited 1. Use `send_shortcut` there. Not checked:
+    X11 under a real X server, and transparency with a compositing manager
+    (crcbl's X11 shell has no ARGB visual yet).
   - **The first launch after a few idle minutes misses the 500 ms target on
     Linux.** Five drun launches in a row in a nested Hyprland (2026-10-20)
     reached first paint at 1075, 176, 153, 163 and 240 ms; the first one spent
@@ -300,8 +312,14 @@
     wayland, libxkbcommon, vulkan-icd-loader and fontconfig, plus what
     fontconfig and the Mesa driver pull in themselves. The template, filled in
     for v0.8.13, builds with `makepkg` and puts `usr/bin/pikr`, the licence and
-    the README in place. Not checked: installing it on a clean system, and the
-    X11 fallback's `optdepends` (no X11 run).
+    the README in place. The X11 fallback (on Xwayland) also mapped
+    libxkbcommon-x11, already listed, and `libxcb-cursor`, which crcbl dlopens
+    as optional (themed cursors) and which was missing: it is now an
+    `optdepends` (xcb-util-cursor, which pulls in xcb-util, -image and
+    -renderutil) and a deb (`libxcb-cursor0`) and rpm (`xcb-util-cursor`)
+    recommends; those two names are from memory, not checked against the
+    distributions. The Alpine `APKBUILD.in` lists no X11 packages at all. Not
+    checked: installing the package on a clean system.
 - **The Alpine `.apk` is restored; its package step has not run yet.** The
   `build-musl` job in `.github/workflows/ci.yml` builds
   `x86_64-unknown-linux-musl` in an `alpine:latest` container with

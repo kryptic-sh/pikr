@@ -87,6 +87,9 @@ and this project adheres to
 
 ### Fixed
 
+- The Arch package lists `xcb-util-cursor` as optional, and the `.deb` and
+  `.rpm` recommend `libxcb-cursor0` and `xcb-util-cursor`: the X11 fallback uses
+  it for themed pointer cursors.
 - **pikr is sharp at fractional scales.** At 1.25, 1.5 or 1.75 the window's
   default height did not come to a whole number of device pixels, so the
   compositor resampled the whole window and it drew soft. Window sizes are now

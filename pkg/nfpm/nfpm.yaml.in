@@ -44,10 +44,10 @@ contents:
 # - libwayland-client and libxkbcommon for the Wayland window and keymaps
 # - the Vulkan loader for rendering, and a Vulkan driver for it to load
 # - fontconfig for font lookup
-# - libxcb and libxkbcommon-x11 for the X11 fallback; RandR, XInput, XKB and
-#   SHAPE are optional extensions there (one monitor, no raw motion, no
-#   detectable auto-repeat, and the panel's see-through corners taking clicks
-#   without them)
+# - libxcb and libxkbcommon-x11 for the X11 fallback; RandR, XInput, XKB,
+#   SHAPE and xcb-cursor are optional there (one monitor, no raw motion, no
+#   detectable auto-repeat, the panel's see-through corners taking clicks, and
+#   no themed pointer cursors without them)
 overrides:
   deb:
     depends:
@@ -63,6 +63,7 @@ overrides:
       - libxcb-xinput0
       - libxcb-xkb1
       - libxcb-shape0
+      - libxcb-cursor0
   rpm:
     depends:
       - libxkbcommon
@@ -73,3 +74,4 @@ overrides:
       - mesa-vulkan-drivers
       - libxcb
       - libxkbcommon-x11
+      - xcb-util-cursor
