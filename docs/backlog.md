@@ -51,10 +51,17 @@
     drew the caret at the text's right edge, not inside the second word
     (Windows, 2026-10-20). `ui::view::query` draws the caret by splitting the
     query into before/caret/after spans in a left-to-right row, so bidi cannot
-    reorder across them. crcbl will expose a `TextLayout` method giving a byte
-    index's line and x within one laid-out text, bidi-correct, in the release
-    after 0.7.0; then lay the whole query out once and draw the caret over it
-    instead of splitting spans.
+    reorder across them. crcbl main (after 0.7.0) has
+    `TextLayout::caret(byte) -> Caret { line, x, top, height }`, bidi-correct;
+    once a release carries it, lay the whole query out once and draw the caret
+    over it instead of splitting spans.
+  - **Confirm injected unsided Ctrl for crcbl.** crcbl main (after 0.7.0) counts
+    `VK_CONTROL`/`VK_MENU`/`VK_SHIFT` without a side toward the modifier state;
+    on 0.6.0 an injected generic `VK_CONTROL` lost Ctrl, so pikr's on-screen
+    paste test sent `VK_LCONTROL` (0xA2, scancode 0x1D). crcbl asked pikr to
+    confirm on Windows 11 that a generic `VK_CONTROL` + V pastes once a release
+    carries the fix (their change is unit-tested only). It needs synthesized
+    keys, so the user's go-ahead.
   - IME, checked on Windows 2026-10-20 with the Microsoft Japanese IME (keys
     synthesized while pikr held the foreground): the pre-edit draws inline and
     underlined at the caret, the candidate list opens right below the caret, the
