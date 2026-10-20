@@ -51,9 +51,10 @@
     drew the caret at the text's right edge, not inside the second word
     (Windows, 2026-10-20). `ui::view::query` draws the caret by splitting the
     query into before/caret/after spans in a left-to-right row, so bidi cannot
-    reorder across them. A fix needs the caret's position from crcbl-ui's text
-    layout (its own text field places its caret that way) rather than span
-    splitting.
+    reorder across them. crcbl will expose a `TextLayout` method giving a byte
+    index's line and x within one laid-out text, bidi-correct, in the release
+    after 0.7.0; then lay the whole query out once and draw the caret over it
+    instead of splitting spans.
   - IME, checked on Windows 2026-10-20 with the Microsoft Japanese IME (keys
     synthesized while pikr held the foreground): the pre-edit draws inline and
     underlined at the caret, the candidate list opens right below the caret, the
