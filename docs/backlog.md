@@ -179,7 +179,13 @@
     moves are relative, so `move -5000 -5000` first to reach 0,0) and grim. The
     un-drawn output is also a way to reproduce the frame-pacing freeze fixed on
     2026-10-20 (`ui::run`'s `may_present`); turning a headless output off with
-    DPMS does not reproduce it.
+    DPMS does not reproduce it. For checks that need no Hyprland, sway is also
+    installed on the Arch machine: the e2e suite starts its own headless sway in
+    a private `XDG_RUNTIME_DIR`, and
+    `cargo test --release --test keyboard -- --test-threads=1` (6 passed) and
+    `--test startup_gate` (345 ms against the 500 ms deadline) ran there on
+    2026-10-20. Keep build output off `/tmp` on that machine: it is a shared
+    tmpfs, and a second release build filled it.
   - Key handling is tested headless on every OS (`ui::run::headless`: crcbl's
     `HeadlessShell` and crcbl-hal's null backend driving the real window loop),
     which puts no frame on a screen and no key through a real keymap. The sway
@@ -223,13 +229,12 @@
     at 1.5): buffers at 1x, then at the output's integer scale (2, from
     `wl_output.scale`), then at 1.5 once `preferred_scale` arrives after
     `wl_surface.enter`, so the swapchain is rebuilt twice before the frame that
-    stays. pikr cannot know the scale before its first commit is on an output;
-    crcbl could hold the first present until `preferred_scale` (or
-    `preferred_buffer_scale`) comes, or skip the integer step when fractional
-    scale is bound. Not measured how much startup this costs. crcbl also sends
-    `set_buffer_scale(2)` alongside the viewport there, which Hyprland accepts;
-    whether a strict compositor objects (the 1080x672 buffer is divisible by 2,
-    an odd `--width` might not be) was not checked.
+    stays, and crcbl 0.7.0 sends `set_buffer_scale(2)` beside the viewport.
+    Fixed on crcbl main by `2a1e75ad` ("skip the integer scale under
+    fractional"): pikr built against it in a scratch clone drew two sizes
+    (720x448, then 1080x672) and sent no `set_buffer_scale` on Hyprland at 1.5.
+    Bump once a crcbl release carries it. The 1x first frame stays:
+    `preferred_scale` needs a mapped surface.
   - **The generic fallback icon draws blurry: crcbl reads `Type=Scalable` as a
     threshold directory.** `crcbl_image::theme::parse_index` (crcbl 0.7.0, still
     on crcbl main at `0bc5f7cb`) matches `"Scaled"`, but the freedesktop spec's
