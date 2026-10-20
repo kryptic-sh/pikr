@@ -148,22 +148,18 @@
     smoke tests; the window was never opened.
   - Windows (D3D12): the picker, match highlighting, a scrolled list with its
     scrollbar and the `--message` modal were rendered and looked at in
-    screenshots. Keyboard input, clicks, the wheel and drun icons were not
-    exercised: pikr launched from a background shell never got the foreground,
-    and synthesized keys would have gone to another window. A launch Windows
-    should grant the foreground (from a hotkey tool or a foreground terminal)
-    was never tried, so pikr receiving focus on Windows is unverified; only the
-    refused case was checked (`FocusRefused` and no `Focus`, crcbl 0.4.0+).
+    screenshots. Keyboard input was driven on 2026-10-20 with keys synthesized
+    only while pikr held the foreground: typing, Enter, Ctrl+V paste and the
+    Microsoft IME (above). In that run's log pikr's focus was first refused,
+    then arrived about three seconds later. Clicks, the wheel and drun icons
+    were not exercised, and a launch from a hotkey tool was never tried.
   - No icon from a real icon theme was drawn; icon decoding is covered by unit
     tests only. HiDPI (scale ≠ 1) was not exercised.
   - IME: pikr draws `TextPreedit` at the query caret (`ui::view::Preedit`) and
     sends the caret through `set_text_input_area` after every frame that moves
-    it (`ui::run`). Unit-tested only for the pixel conversion (`device_rect`);
-    no real input method was driven through it, on Win32 (Microsoft IME, which
-    crcbl's Win32 backend has also never met) or through text-input-v3 on
-    Wayland. Check: composition underlined at the caret, candidate list beside
-    it, Backspace inside a composition editing the composition and not the
-    query, and the commit landing whole.
+    it (`ui::run`). The Microsoft IME on Win32 was checked (see above). Not
+    checked: text-input-v3 on Wayland, AppKit, and Backspace inside a
+    composition editing the composition and not the query.
   - Accessibility reaching AT-SPI (crcbl's AccessKit row) was never checked from
     pikr.
 - **Project constraints for the GUI** (from the migration's design, still
