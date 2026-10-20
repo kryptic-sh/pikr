@@ -134,9 +134,24 @@
     and dmenu typing, highlighting and Return work, with Hebrew, CJK and colour
     emoji rows drawn. First paint (`RUST_LOG=pikr=debug`) came at 366 ms on the
     live desktop (fonts 229 ms), 943 ms on the first launch in a nested Hyprland
-    (fonts 554 ms, the binary just rebuilt) and 86 ms on the next one. That 943
-    ms is over the 500 ms target; whether a cold font cache explains it was not
-    checked. niri and KWin were never run.
+    (fonts 554 ms, the binary just rebuilt) and 86 ms on the next one. niri and
+    KWin were never run.
+  - **The first launch after a few idle minutes misses the 500 ms target on
+    Linux.** Five drun launches in a row in a nested Hyprland (2026-10-20)
+    reached first paint at 1075, 176, 153, 163 and 240 ms; the first one spent
+    657 ms in `ui::run::load_fonts`. That function reads every fallback face
+    whole (`Font::from_system`): 16 faces, about 70 MB, the two Noto CJK
+    collections 46 MB of it. fontconfig already trims the list to faces that add
+    coverage. But pikr's own files are not the whole cause: with the fallback
+    faces, the theme font, fontconfig's caches and the binary evicted from the
+    page cache (`posix_fadvise(DONTNEED)`, no root needed), three launches
+    reached first paint at 460, 275 and 274 ms (fonts 282, 224 and 178 ms). The
+    rest of the after-idle cost was not found; candidates are Mesa's driver and
+    LLVM libraries, GPU power-up, and load from other work on the machine. In a
+    probe, reading the faces in parallel (one thread each) took 85 to 184 ms
+    evicted against 170 to 205 ms in sequence: a possible saving, not adopted on
+    that evidence. Reading faces only when a glyph needs them would need a crcbl
+    API for lazily loaded fallbacks.
   - **Run GUI checks in a nested Hyprland, never on the user's live desktop**:
     pikr takes the keyboard on the overlay layer, so a test run there swallows
     whatever the user is typing. Start `Hyprland -c <lua config>` through
@@ -207,8 +222,18 @@
     it (`ui::run`). The Microsoft IME on Win32 was checked (see above). Not
     checked: text-input-v3 on Wayland, AppKit, and Backspace inside a
     composition editing the composition and not the query.
-  - Accessibility reaching AT-SPI (crcbl's AccessKit row) was never checked from
-    pikr.
+  - **Screen readers cannot see pikr on Linux, and cannot until crcbl ships
+    AT-SPI.** Checked 2026-10-20 on Hyprland: with pikr open, the AT-SPI desktop
+    listed only xdg-desktop-portal-gtk, waybar and swaync. pikr turns on neither
+    crate's `accesskit` feature and never calls `Shell::update_accessibility`,
+    and on Linux that would not help yet: crcbl 0.7.0's `accesskit` feature
+    brings only `accesskit_windows`, and the Wayland and X11 shells keep the
+    trait's default, which drops the tree. crcbl's backlog lists Wayland and X11
+    through `accesskit_unix` (with `zbus`) as still to do. On Windows the UI
+    Automation path exists in crcbl and pikr could adopt it now: enable
+    `accesskit` on crcbl-shell and crcbl-ui, and send `Ui::accessibility_update`
+    after each frame (and answer `accessibility_action`). Not started, because
+    it adds dependencies, which is the owner's call.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
