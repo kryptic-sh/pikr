@@ -80,7 +80,7 @@ impl Usage {
                 return;
             }
         };
-        if let Err(e) = crate::picker::write_private_state(&path, &text) {
+        if let Err(e) = crate::picker::write_private_state(&path, text.as_bytes()) {
             tracing::warn!(error = %e, path = %path.display(), "write usage");
         }
     }

@@ -32,43 +32,53 @@ pub(crate) fn state_file_path(name: &str) -> Option<PathBuf> {
     }
 }
 
-/// Write `text` to `path` with owner-only permissions (0600), creating or
-/// truncating. Used for persisted query history and frecency keys — both can
-/// contain typed queries / program arguments a launcher user may not want
+/// Replace `path` with `bytes`, readable by the owner only (0600) on unix.
+/// Used for persisted query history, frecency keys and the drun caches —
+/// typed queries and program arguments a launcher user may not want
 /// world-readable on a multi-user host. `std::fs::write` would create the
 /// file 0644 under a normal umask.
 ///
-/// Off unix there is no mode to set, so the fallback below is a plain write.
-/// On Windows [`state_file_path`] lands under `%LOCALAPPDATA%`, whose
-/// inherited ACL already grants only the user, SYSTEM and Administrators.
-#[cfg(unix)]
-pub(crate) fn write_private_state(path: &Path, text: &str) -> std::io::Result<()> {
+/// The bytes go to a fresh temporary sibling that is then renamed over
+/// `path`, so a reader, another pikr saving at the same moment, or the next
+/// launch after pikr was killed mid-save sees the old file or the new one,
+/// never part of one. The rename also replaces a file an older pikr left
+/// 0644. Not synced to disk: a power cut can still lose the save.
+///
+/// Off unix there is no mode to set. On Windows [`state_file_path`] lands
+/// under `%LOCALAPPDATA%`, whose inherited ACL already grants only the user,
+/// SYSTEM and Administrators, and the rename fails while another process has
+/// `path` open without delete sharing.
+pub(crate) fn write_private_state(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
 
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    f.write_all(text.as_bytes())?;
-    // Re-apply for a pre-existing file: `mode` only takes effect at creation,
-    // so a file left 0644 by an older pikr would otherwise keep its old
-    // permissions.
-    f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-pub(crate) fn write_private_state(path: &Path, text: &str) -> std::io::Result<()> {
-    // No owner-only mode concept off unix; see the doc comment.
-    std::fs::write(path, text)
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(format!(
+        ".{}.{}.tmp",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    let tmp = PathBuf::from(tmp);
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let written = options
+        .open(&tmp)
+        .and_then(|mut f| f.write_all(bytes))
+        .and_then(|()| std::fs::rename(&tmp, path));
+    if written.is_err() {
+        // The error being returned is the one worth reporting; a temporary
+        // file that is already gone, or never opened, needs no cleanup.
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
 }
 
 #[cfg(test)]
 mod state_path_tests {
-    use super::state_file_path;
+    use super::{state_file_path, write_private_state};
 
     /// Every shipped platform must persist state; a `None` here silently
     /// turns history and frecency into per-session memory.
@@ -77,6 +87,64 @@ mod state_path_tests {
         let path = state_file_path("usage.toml").expect("state dir must resolve");
         assert!(path.is_absolute(), "got {}", path.display());
         assert!(path.ends_with("pikr/usage.toml"), "got {}", path.display());
+    }
+
+    /// Concurrent writers of one file must never expose a partial file to a
+    /// reader.
+    #[test]
+    fn write_private_state_never_exposes_partial_file() {
+        const LEN: usize = 256 * 1024;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.toml");
+        write_private_state(&path, &vec![0u8; LEN]).unwrap();
+
+        std::thread::scope(|s| {
+            for w in 0..4u8 {
+                let path = &path;
+                s.spawn(move || {
+                    for _ in 0..25 {
+                        // Windows refuses the rename while a reader has the
+                        // file open; that save is lost, never half-made.
+                        let _ = write_private_state(path, &vec![w; LEN]);
+                    }
+                });
+            }
+            for _ in 0..4 {
+                let path = &path;
+                s.spawn(move || {
+                    for _ in 0..100 {
+                        // A read can lose to a rename in progress on Windows;
+                        // only a successful read is checked for completeness.
+                        if let Ok(bytes) = std::fs::read(path) {
+                            assert_eq!(bytes.len(), LEN, "reader saw a partial file");
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /// A write leaves only the target behind, and a failed one removes its
+    /// temporary file.
+    #[test]
+    fn write_private_state_leaves_no_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.toml");
+        write_private_state(&path, b"one").unwrap();
+        write_private_state(&path, b"two").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"two");
+
+        // A directory in the way makes the rename fail.
+        let blocked = dir.path().join("blocked");
+        std::fs::create_dir(&blocked).unwrap();
+        write_private_state(&blocked, b"x").unwrap_err();
+
+        let mut names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["blocked", "state.toml"]);
     }
 }
 
@@ -93,7 +161,7 @@ mod tests {
     fn new_file_written_0600() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.toml");
-        write_private_state(&path, "hello").unwrap();
+        write_private_state(&path, b"hello").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello");
         assert_eq!(mode_of(&path), 0o600);
     }
@@ -109,7 +177,7 @@ mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         assert_eq!(mode_of(&path), 0o644);
 
-        write_private_state(&path, "new").unwrap();
+        write_private_state(&path, b"new").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
         assert_eq!(mode_of(&path), 0o600);
     }
@@ -118,8 +186,8 @@ mod tests {
     fn rewrite_truncates() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.toml");
-        write_private_state(&path, &"a".repeat(100)).unwrap();
-        write_private_state(&path, "b").unwrap();
+        write_private_state(&path, "a".repeat(100).as_bytes()).unwrap();
+        write_private_state(&path, b"b").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "b");
         assert_eq!(mode_of(&path), 0o600);
     }

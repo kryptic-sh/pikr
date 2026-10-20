@@ -82,24 +82,11 @@ fn fallback_icon_path() -> Option<PathBuf> {
 /// Several entries can share one cache file (every miss shares
 /// `__fallback__.png`), and several pikr processes can fill the caches at
 /// once — including the drun app-list cache, whose background refresh can be
-/// cut off by pikr exiting. A plain `fs::write` truncates in place, so a
-/// concurrent writer, a reader that saw `exists()`, or the next launch after a
-/// kill could observe a half-written file. Renaming a complete file means
-/// readers only ever see the old file or the new one.
+/// cut off by pikr exiting. [`crate::picker::write_private_state`] renames
+/// a complete file into place, so readers only ever see the old file or the
+/// new one.
 pub(super) fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(format!(
-        ".{}.{}.tmp",
-        std::process::id(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    let tmp = PathBuf::from(tmp);
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path).or_else(|e| {
-        let _ = std::fs::remove_file(&tmp);
+    crate::picker::write_private_state(path, bytes).or_else(|e| {
         // Losing the race to another writer that produced the same file is
         // fine; Windows refuses to replace a file another handle has open.
         if path.exists() { Ok(()) } else { Err(e) }
@@ -315,39 +302,6 @@ mod tests {
             icon_cache_path(key),
             "cache path must be deterministic for the same input"
         );
-    }
-
-    /// Concurrent writers of one cache file must never expose a partial file
-    /// to a reader.
-    #[test]
-    fn write_atomically_never_exposes_partial_file() {
-        const LEN: usize = 256 * 1024;
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("icon.png");
-        write_atomically(&path, &vec![0u8; LEN]).unwrap();
-
-        std::thread::scope(|s| {
-            for w in 0..4u8 {
-                let path = &path;
-                s.spawn(move || {
-                    for _ in 0..25 {
-                        write_atomically(path, &vec![w; LEN]).unwrap();
-                    }
-                });
-            }
-            for _ in 0..4 {
-                let path = &path;
-                s.spawn(move || {
-                    for _ in 0..100 {
-                        // A read can lose to a rename in progress on Windows;
-                        // only a successful read is checked for completeness.
-                        if let Ok(bytes) = std::fs::read(path) {
-                            assert_eq!(bytes.len(), LEN, "reader saw a partial file");
-                        }
-                    }
-                });
-            }
-        });
     }
 
     /// Different keys must produce different cache paths.

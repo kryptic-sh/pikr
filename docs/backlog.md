@@ -214,16 +214,20 @@
 
 Re-verified against the tree on 2026-10-18.
 
-- Symlinked-dir mtime cache blindness; coarse-granularity same-tick cache
-  staleness; non-atomic state writes; `--lines 0` / `--width 0`; non-UTF8 PATH
-  names (skipped by `run::scan_dir`). (review pass 2026-08-06; not re-checked
-  individually)
+- Coarse-granularity same-tick cache staleness; `--lines 0` / `--width 0`;
+  non-UTF8 PATH names (skipped by `run::scan_dir`). (review pass 2026-08-06; not
+  re-checked individually)
 - No accept path runs a shell on a string pikr builds from untrusted text:
   launches are `Command::new(program).args(args)`. The two script strings are
   clipboard's `cliphist decode {id} | wl-copy` (`clipboard::make_entry`, `id`
   parsed as `u64`) and ssh's pwsh and cmd arms (`ssh::build_terminal_args`: pwsh
   single-quotes the host, cmd takes only hosts in `is_safe_host`'s charset).
   Re-checked 2026-10-19; keep it that way.
+- State writes (`picker::write_private_state`: history, frecency, the drun
+  caches) rename a complete temporary file into place but do not `fsync`, so a
+  power cut can still lose a save. On Windows the rename fails while another
+  process holds the file open without delete sharing; that save is dropped with
+  a warning, never half-written.
 - drun cache hit skips re-validation (`drun::load_cache` returns the cached
   entries once dirs, locales and the mtime key match) — a same-user attacker
   with a predictable cache key gets a second execution path.

@@ -81,6 +81,10 @@ and this project adheres to
 
 ### Fixed
 
+- Query history, frecency and the `drun` caches are saved to a temporary file
+  that is then renamed into place. A pikr killed mid-save, or two pikr instances
+  saving at once, could leave a truncated `history.toml` or `usage.toml`, which
+  loaded as empty.
 - Windows: an ssh session opened in PowerShell or cmd from pikr closed within
   seconds, since pikr handed the shell an empty input stream. pikr now launches
   programs with no console and no standard handles, so a console program opens a

@@ -421,7 +421,7 @@ mod unix_impl {
                 std::fs::create_dir_all(parent)?;
             }
             let text = toml::to_string_pretty(&cached).map_err(std::io::Error::other)?;
-            crate::picker::write_private_state(path, &text)
+            crate::picker::write_private_state(path, text.as_bytes())
         };
         if let Err(e) = write() {
             tracing::warn!("drun cache write failed: {e}");
