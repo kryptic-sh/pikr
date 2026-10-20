@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow};
 use crcbl_shell::{
-    ButtonState, CloseReply, CursorIcon, LogicalSize, PanelAnchor, PanelDesc, PanelKeyboard,
-    PanelLayer, PhysicalRect, PointerButton, ScrollDelta, Shell, ShellCaps, ShellEvent,
-    TextPurpose, WindowDesc, WindowId, WindowRole,
+    ButtonState, ClipboardContent, ClipboardRequestId, CloseReply, CursorIcon, LogicalSize,
+    MimeType, PanelAnchor, PanelDesc, PanelKeyboard, PanelLayer, PhysicalRect, PointerButton,
+    ScrollDelta, Shell, ShellCaps, ShellEvent, TextPurpose, WindowDesc, WindowId, WindowRole,
 };
 use crcbl_ui::draw_list::DrawList;
 use crcbl_ui::font::Font;
@@ -181,6 +181,8 @@ struct Window<'a> {
     input_area: Option<PhysicalRect>,
     /// What the input method was last told is taking typing.
     text_input: Option<TextPurpose>,
+    /// The clipboard read a paste is waiting on.
+    paste_request: Option<ClipboardRequestId>,
     focused: bool,
     blink_at: Instant,
     /// Modifiers held at the last key press, for the text commit after it.
@@ -233,6 +235,7 @@ impl<'a> Window<'a> {
             cursor: Some(CursorIcon::Default),
             input_area: None,
             text_input: None,
+            paste_request: None,
             focused: false,
             blink_at: Instant::now() + BLINK,
             mods: Default::default(),
@@ -335,6 +338,27 @@ impl<'a> Window<'a> {
         Ok(())
     }
 
+    /// What the loop does after the session's `outcome`.
+    fn step(&mut self, outcome: Outcome) -> Step {
+        match outcome {
+            Outcome::Continue => Step::Continue(true),
+            Outcome::Exit { payloads, code } => Step::Exit(payloads, code),
+            Outcome::Paste => {
+                match self
+                    .shell
+                    .clipboard_request(self.window, MimeType::TextUtf8)
+                {
+                    Ok(request) => {
+                        tracing::debug!(?request, "clipboard read requested");
+                        self.paste_request = Some(request);
+                    }
+                    Err(e) => tracing::warn!("cannot read the clipboard: {e}"),
+                }
+                Step::Continue(false)
+            }
+        }
+    }
+
     /// Tells the input method whether the query is taking typing, whenever
     /// that changes. Turning it off drops any composition in progress.
     fn sync_text_input(&mut self, content: &Content) -> Result<()> {
@@ -424,6 +448,7 @@ impl<'a> Window<'a> {
             } => {
                 self.mods = modifiers_from_crcbl(modifiers);
                 let key = key_from_press(keysym, self.mods);
+                tracing::trace!(?keysym, ?modifiers, ?key, "key pressed");
                 Ok(key.map_or(Step::Continue(false), |key| self.key(&key, content)))
             }
             ShellEvent::TextCommit { text, .. } => {
@@ -467,9 +492,27 @@ impl<'a> Window<'a> {
                 self.pointer_down = down;
                 match (clicked, content) {
                     (Some(row), Content::Picker { session, .. }) => {
-                        Ok(Step::from_outcome(session.click_row(row)))
+                        let outcome = session.click_row(row);
+                        Ok(self.step(outcome))
                     }
                     _ => Ok(Step::Continue(true)),
+                }
+            }
+            ShellEvent::ClipboardData {
+                request,
+                content: clipboard,
+                ..
+            } if Some(request) == self.paste_request => {
+                self.paste_request = None;
+                match (clipboard, content) {
+                    (ClipboardContent::Bytes(bytes), Content::Picker { session, .. }) => {
+                        session.paste(&String::from_utf8_lossy(&bytes));
+                        Ok(Step::Continue(true))
+                    }
+                    (other, _) => {
+                        tracing::debug!(answer = ?other, "nothing to paste");
+                        Ok(Step::Continue(false))
+                    }
                 }
             }
             ShellEvent::Wheel { delta, .. } => {
@@ -487,7 +530,7 @@ impl<'a> Window<'a> {
                 // A keystroke shows the caret, so it never hides mid-type.
                 self.view.blink_on = true;
                 self.blink_at = Instant::now() + BLINK;
-                Step::from_outcome(outcome)
+                self.step(outcome)
             }
             Content::Message(_) => {
                 use crate::picker::input::{Key, NamedKey};
@@ -586,15 +629,6 @@ enum Step {
     Continue(bool),
     /// Close the window, run these payloads, and exit with this code.
     Exit(Vec<modes::Payload>, i32),
-}
-
-impl Step {
-    fn from_outcome(outcome: Outcome) -> Self {
-        match outcome {
-            Outcome::Continue => Self::Continue(true),
-            Outcome::Exit { payloads, code } => Self::Exit(payloads, code),
-        }
-    }
 }
 
 /// The system fonts the picker draws in, each found, read and parsed.

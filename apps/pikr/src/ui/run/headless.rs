@@ -21,6 +21,10 @@ enum Input {
     Text(&'static str),
     /// A key press with the modifiers held.
     Key(KeyCode, ShellModifiers),
+    /// The clipboard's answer to the run's first clipboard read: HeadlessShell
+    /// numbers reads from 1, and its own answer would arrive only after the
+    /// rest of the script.
+    Clipboard(&'static str),
 }
 
 const ESCAPE: KeyCode = KeyCode::Escape;
@@ -63,6 +67,12 @@ fn run(content: Content, input: &[Input]) -> (Vec<Payload>, i32) {
     for input in input {
         match *input {
             Input::Text(text) => shell.commit_text(window, text).unwrap(),
+            Input::Clipboard(text) => shell.inject(ShellEvent::ClipboardData {
+                window,
+                request: crcbl_shell::ClipboardRequestId(1),
+                mime: crcbl_shell::MimeType::TextUtf8.into(),
+                content: crcbl_shell::ClipboardContent::Bytes(text.as_bytes().to_vec()),
+            }),
             Input::Key(code, modifiers) => {
                 shell.set_modifiers(modifiers);
                 shell.key_press(window, code).unwrap();
@@ -187,6 +197,20 @@ fn return_accepts_the_matched_row() {
 fn typed_text_reaches_the_query() {
     let got = run(picker(fruit(), ""), &[Input::Text("che"), key(RETURN)]);
     assert_eq!(got, (stdout("cherry"), 0));
+}
+
+#[test]
+fn ctrl_v_and_shift_insert_paste_the_clipboard() {
+    for paste in [
+        Input::Key(KeyCode::KeyV, ShellModifiers::CTRL),
+        shifted(KeyCode::Insert),
+    ] {
+        let got = run(
+            picker(fruit(), ""),
+            &[paste, Input::Clipboard("cher"), key(RETURN)],
+        );
+        assert_eq!(got, (stdout("cherry"), 0));
+    }
 }
 
 #[test]

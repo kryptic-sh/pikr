@@ -35,6 +35,8 @@ pub enum Action {
     InsertChar(char),
     /// Insert several characters at once: an IME or compose commit.
     InsertText(String),
+    /// Paste the clipboard's text at the caret (Ctrl-V, Shift-Insert).
+    Paste,
     Backspace,
     // Query-bar caret editing (Insert mode).
     CursorLeft,
@@ -94,6 +96,7 @@ pub fn key_to_action(
             }
             Key::Named(NamedKey::Backspace) => Some(Action::Backspace),
             Key::Named(NamedKey::Delete) => Some(Action::DeleteForward),
+            Key::Named(NamedKey::Insert) if shift => Some(Action::Paste),
             // Space arrives as Key::Character(" ") per keyboard-types spec.
             // Handled by the Key::Character arm below (InsertChar(' ')).
             // Caret navigation inside the query text.
@@ -123,6 +126,7 @@ pub fn key_to_action(
                         'd' => Some(Action::DeleteForward),
                         'p' => Some(Action::HistoryPrev),
                         'n' => Some(Action::HistoryNext),
+                        'v' => Some(Action::Paste),
                         _ => None,
                     };
                 }

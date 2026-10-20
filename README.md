@@ -161,6 +161,9 @@ Normal mode:
 | `<Esc>`           | cancel                   |
 | `i`               | enter insert mode        |
 
+Insert mode: `<C-v>` or `<S-Insert>` pastes the clipboard's text at the caret,
+line breaks becoming spaces.
+
 ## Config
 
 `$XDG_CONFIG_HOME/pikr/config.toml` (`%APPDATA%\pikr\config.toml` on Windows).

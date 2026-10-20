@@ -26,6 +26,8 @@ pub enum Outcome {
     /// Save state with [`Session::save`], run `payloads` in order, then exit
     /// the process with `code`.
     Exit { payloads: Vec<Payload>, code: i32 },
+    /// Read the clipboard's text and hand it to [`Session::paste`].
+    Paste,
 }
 
 impl Outcome {
@@ -105,6 +107,25 @@ impl Session {
     pub(crate) fn without_persistence(mut self) -> Self {
         self.persist = false;
         self
+    }
+
+    /// Inserts pasted `text` at the caret. The query is one line, so line
+    /// breaks and tabs become spaces and other control characters are
+    /// dropped.
+    pub fn paste(&mut self, text: &str) {
+        let text: String = text
+            .replace("\r\n", " ")
+            .chars()
+            .filter_map(|c| match c {
+                '\n' | '\r' | '\t' => Some(' '),
+                c if c.is_control() => None,
+                c => Some(c),
+            })
+            .collect();
+        if !text.is_empty() {
+            self.apply(Action::InsertText(text));
+            self.rerank_if_query_changed();
+        }
     }
 
     fn rerank_if_query_changed(&mut self) {
@@ -369,6 +390,7 @@ impl Session {
                 picker.query.insert_str(byte_idx, &text);
                 picker.query_cursor += text.chars().count();
             }
+            Action::Paste => return Outcome::Paste,
             Action::Backspace => {
                 self.history_cursor = None;
                 let cur = picker.query_cursor;
@@ -522,6 +544,21 @@ mod tests {
         assert_eq!(s.app.picker.query_cursor, 3);
         assert_eq!(s.app.matches.len(), 1);
         assert_eq!(s.app.entries[s.app.matches[0].index].label, "beta");
+    }
+
+    #[test]
+    fn ctrl_v_asks_for_the_clipboard_and_paste_inserts_one_line() {
+        let mut s = session(CliMode::Dmenu, &["alpha"]);
+        type_text(&mut s, "ab");
+        s.handle_key(&named(NamedKey::ArrowLeft), none());
+        let ctrl = Modifiers {
+            ctrl: true,
+            ..none()
+        };
+        assert_eq!(s.handle_key(&ch("v"), ctrl), Outcome::Paste);
+        s.paste("x\r\ny\tz\u{7}");
+        assert_eq!(s.app.picker.query, "ax y zb");
+        assert_eq!(s.app.picker.query_cursor, 6);
     }
 
     #[test]

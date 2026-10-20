@@ -66,6 +66,8 @@ and this project adheres to
 
 ### Added
 
+- Paste into the query with Ctrl+V or Shift+Insert in Insert mode. Line breaks
+  and tabs become spaces, since the query is one line.
 - Releases ship an Alpine `.apk` again, with an `x86_64-unknown-linux-musl`
   tarball beside it. The binary is linked dynamically against musl, built on
   Alpine itself, since a static one cannot load the Vulkan driver.

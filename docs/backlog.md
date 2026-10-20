@@ -44,9 +44,16 @@
     the six of its SVGs that still hold `<text>` (applets-template, kbruch,
     khangman, kile, kwave, xorg) all render through `crcbl_image::svg::decode`
     with `svg-text` at 96 px, every label in place, on Windows with its system
-    fonts. Not checked: typing right-to-left text into the query (caret
-    movement), and SVG text in scripts beyond Latin. crcbl's own gaps: arrow
-    keys move in logical order, and SVG text clusters are approximate.
+    fonts. Not checked: SVG text in scripts beyond Latin. crcbl's own gaps:
+    arrow keys move in logical order, and SVG text clusters are approximate.
+  - **Right-to-left text in the query puts the caret in the wrong place.**
+    Pasting `שלום עולם` and pressing Left three times (logical index 6 of 9)
+    drew the caret at the text's right edge, not inside the second word
+    (Windows, 2026-10-20). `ui::view::query` draws the caret by splitting the
+    query into before/caret/after spans in a left-to-right row, so bidi cannot
+    reorder across them. A fix needs the caret's position from crcbl-ui's text
+    layout (its own text field places its caret that way) rather than span
+    splitting.
   - IME, checked on Windows 2026-10-20 with the Microsoft Japanese IME (keys
     synthesized while pikr held the foreground): the pre-edit draws inline and
     underlined at the caret, the candidate list opens right below the caret, the
