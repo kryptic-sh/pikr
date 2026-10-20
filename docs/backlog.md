@@ -134,8 +134,11 @@
     and dmenu typing, highlighting and Return work, with Hebrew, CJK and colour
     emoji rows drawn. First paint (`RUST_LOG=pikr=debug`) came at 366 ms on the
     live desktop (fonts 229 ms), 943 ms on the first launch in a nested Hyprland
-    (fonts 554 ms, the binary just rebuilt) and 86 ms on the next one. niri and
-    KWin were never run.
+    (fonts 554 ms, the binary just rebuilt) and 86 ms on the next one. Pointer
+    input was driven with `wlrctl` (virtual-pointer) in the nested Hyprland:
+    hover lights the row under the pointer with a hand cursor, the wheel scrolls
+    the list with the hover following, and a left click accepted the row under
+    the pointer after the scroll. niri and KWin were never run.
   - **The first launch after a few idle minutes misses the 500 ms target on
     Linux.** Five drun launches in a row in a nested Hyprland (2026-10-20)
     reached first paint at 1075, 176, 153, 163 and 240 ms; the first one spent
@@ -160,8 +163,9 @@
     that hidden window, so its output gets no frame callbacks: grim hangs and
     the app never gets a frame. Inside it, add `hyprctl output create headless`
     and disable `WAYLAND-1`, then point `WAYLAND_DISPLAY` and
-    `HYPRLAND_INSTANCE_SIGNATURE` at it for pikr, wtype and grim. The un-drawn
-    output is also a way to reproduce the frame-pacing freeze fixed on
+    `HYPRLAND_INSTANCE_SIGNATURE` at it for pikr, wtype, wlrctl (AUR; pointer
+    moves are relative, so `move -5000 -5000` first to reach 0,0) and grim. The
+    un-drawn output is also a way to reproduce the frame-pacing freeze fixed on
     2026-10-20 (`ui::run`'s `may_present`); turning a headless output off with
     DPMS does not reproduce it.
   - Key handling is tested headless on every OS (`ui::run::headless`: crcbl's
