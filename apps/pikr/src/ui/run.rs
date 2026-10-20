@@ -131,7 +131,7 @@ fn create_window(shell: &mut dyn Shell, spec: &WindowSpec) -> Result<(WindowId, 
         .create_window(&WindowDesc {
             title: "pikr",
             app_id: "pikr",
-            size: LogicalSize::new(spec.width, spec.height),
+            size: LogicalSize::new(snapped(spec.width), snapped(spec.height)),
             resizable: false,
             role,
             transparent,
@@ -139,6 +139,17 @@ fn create_window(shell: &mut dyn Shell, spec: &WindowSpec) -> Result<(WindowId, 
         })
         .context("creating the window")?;
     Ok((window, transparent))
+}
+
+/// Window sizes are rounded up to a multiple of this many logical pixels, so
+/// that they are a whole number of device pixels at the quarter scales (1.25,
+/// 1.5, 1.75) as at whole ones. Otherwise the compositor resamples the window
+/// to fit, and all of it draws soft: an odd height at 1.5 ends in half a
+/// device pixel.
+const SIZE_STEP: f64 = 4.0;
+
+fn snapped(logical: f64) -> f64 {
+    (logical / SIZE_STEP).ceil() * SIZE_STEP
 }
 
 /// Pumps until the window system gives the new window a size. Returns the
@@ -775,6 +786,19 @@ mod tests {
         // Detents are already in logical units and ignore the scale.
         let wheel = ScrollDelta::Lines { x: 0.0, y: -1.0 };
         assert_eq!(wheel_scroll(wheel, 2.0), WHEEL_LINE_PIXELS);
+    }
+
+    #[test]
+    fn window_sizes_are_whole_device_pixels_at_quarter_scales() {
+        let picker = crate::ui::view::window_height(crate::ui::view::VISIBLE_ROWS);
+        for logical in [picker, MESSAGE_HEIGHT, 701.0, 1.0] {
+            let size = snapped(logical);
+            assert!(size >= logical && size - logical < SIZE_STEP, "{logical}");
+            for scale in [1.0, 1.25, 1.5, 1.75, 2.0] {
+                let device = size * scale;
+                assert_eq!(device, device.round(), "{logical} at {scale}");
+            }
+        }
     }
 
     #[test]

@@ -197,9 +197,23 @@
     were not exercised, and a launch from a hotkey tool was never tried.
   - Real theme icons and HiDPI were checked on Hyprland at scale 2 (nested,
     2026-10-20): drun rows drew hicolor PNGs (Discord at 256 px, Firefox at 48
-    px) sharp, with sharp text, and the layer mapped at 720x447 logical,
-    centred. Not checked: fractional scales, and a scale change while pikr is
-    open.
+    px) sharp, with sharp text, and the layer mapped centred at its logical
+    size. At 1.5 crcbl uses `wp_fractional_scale_v1` (`preferred_scale(180)`)
+    with a viewport and draws at 1.5 itself; since `ui::run::snapped` the buffer
+    is a whole 1080x672 and text is sharp (before that it was 1080x671 for 670.5
+    device pixels, and soft). A scale change from 1.5 to 1 while pikr was open
+    was picked up in place. Fractional scales other than 1.5 were not looked at.
+  - **Startup at a scale other than 1 draws at three sizes** (`WAYLAND_DEBUG=1`
+    at 1.5): buffers at 1x, then at the output's integer scale (2, from
+    `wl_output.scale`), then at 1.5 once `preferred_scale` arrives after
+    `wl_surface.enter`, so the swapchain is rebuilt twice before the frame that
+    stays. pikr cannot know the scale before its first commit is on an output;
+    crcbl could hold the first present until `preferred_scale` (or
+    `preferred_buffer_scale`) comes, or skip the integer step when fractional
+    scale is bound. Not measured how much startup this costs. crcbl also sends
+    `set_buffer_scale(2)` alongside the viewport there, which Hyprland accepts;
+    whether a strict compositor objects (the 1080x672 buffer is divisible by 2,
+    an odd `--width` might not be) was not checked.
   - **The generic fallback icon draws blurry: crcbl reads `Type=Scalable` as a
     threshold directory.** `crcbl_image::theme::parse_index` (crcbl 0.7.0, still
     on crcbl main at `0bc5f7cb`) matches `"Scaled"`, but the freedesktop spec's

@@ -81,6 +81,11 @@ and this project adheres to
 
 ### Fixed
 
+- **pikr is sharp at fractional scales.** At 1.25, 1.5 or 1.75 the window's
+  default height did not come to a whole number of device pixels, so the
+  compositor resampled the whole window and it drew soft. Window sizes are now
+  rounded up to a multiple of 4 logical pixels, so the window, or a `--width`
+  that is not a multiple of 4, can be up to 3 px larger.
 - Spaces next to a highlighted match no longer vanish: searching "fire" drew
   "client for" as "clientfor" and "LibreOffice Impress" as "LibreOfficeImpress".
 - A long description no longer cuts the entry's name short ("Teams f" for "Teams
