@@ -158,22 +158,25 @@
     failed" warning fire on an empty history. That needs cliphist installed (the
     owner's call). To keep the user's history out of it, point cliphist at a
     scratch `XDG_CACHE_HOME`.
-  - **The first launch after a few idle minutes misses the 500 ms target on
-    Linux.** Five drun launches in a row in a nested Hyprland (2026-10-20)
-    reached first paint at 1075, 176, 153, 163 and 240 ms; the first one spent
-    657 ms in `ui::run::load_fonts`. That function reads every fallback face
-    whole (`Font::from_system`): 16 faces, about 70 MB, the two Noto CJK
-    collections 46 MB of it. fontconfig already trims the list to faces that add
-    coverage. But pikr's own files are not the whole cause: with the fallback
-    faces, the theme font, fontconfig's caches and the binary evicted from the
-    page cache (`posix_fadvise(DONTNEED)`, no root needed), three launches
-    reached first paint at 460, 275 and 274 ms (fonts 282, 224 and 178 ms). The
-    rest of the after-idle cost was not found; candidates are Mesa's driver and
-    LLVM libraries, GPU power-up, and load from other work on the machine. In a
-    probe, reading the faces in parallel (one thread each) took 85 to 184 ms
-    evicted against 170 to 205 ms in sequence: a possible saving, not adopted on
-    that evidence. Reading faces only when a glyph needs them would need a crcbl
-    API for lazily loaded fallbacks.
+  - **Linux startup over 500 ms seen only on a loaded machine.** Five drun
+    launches in a row in a nested Hyprland (2026-10-20) reached first paint at
+    1075, 176, 153, 163 and 240 ms; the first spent 657 ms in
+    `ui::run::load_fonts`, which reads every fallback face whole
+    (`Font::from_system`: 16 faces, about 70 MB, the two Noto CJK collections 46
+    MB of it; fontconfig already trims the list to faces that add coverage).
+    Ruled out on headless sway (2026-10-21) with `posix_fadvise(DONTNEED)`, no
+    root needed: evicting pikr's fonts, fontconfig caches and binary gave 712,
+    330 and 242 ms; also evicting every shared library pikr maps (Mesa's Intel
+    and lavapipe Vulkan drivers, LLVM, the loader) and Mesa's shader cache gave
+    538, 336 and 323 ms, the same. Idle alone: launches after 90 s idle reached
+    460 and 433 ms against 355 and 245 ms back to back. A third pair, taken at
+    load average 16.6 on 12 cores (other sessions compiling), took 4397 and 1358
+    ms, with GPU setup, fonts and paint all slow together. So the misses track
+    CPU load, not idle time or the page cache; the earlier 1075 ms run was taken
+    with other builds going. Idle adds about 100 ms. Reading the faces in
+    parallel (one thread each) took 85 to 184 ms evicted against 170 to 205 ms
+    in sequence in a probe: not adopted on that evidence. Reading faces only
+    when a glyph needs them would need a crcbl API for lazily loaded fallbacks.
   - **Run GUI checks in a nested Hyprland, never on the user's live desktop**:
     pikr takes the keyboard on the overlay layer, so a test run there swallows
     whatever the user is typing. Start `Hyprland -c <lua config>` through
