@@ -134,14 +134,14 @@
     retry (`ui::run`, which now waits `PRESENT_RETRY` before redrawing rather
     than spinning) are not exercised by them. Scripting input across frames
     would need a hook in the loop.
-  - With CI stalled org-wide (no kryptic-sh run started since 2026-10-19
-    morning), the Linux suite was run locally in WSL (Ubuntu 26.04, uutils
-    coreutils) with `WAYLAND_DISPLAY`, `DISPLAY` and `WAYLAND_SOCKET` unset and
-    an empty `XDG_RUNTIME_DIR`, so no test could reach WSLg: every test passed
-    at `0cb21fa` (288 unit, 10 smoke). The sway suite and the startup gate were
-    skipped there (no sway or wtype). Run WSL tests that way: with WSLg's
-    `wayland-0` reachable, a test that launches pikr opens a real window on the
-    Windows desktop.
+  - While CI was stalled org-wide (2026-10-19 to 2026-10-20; it ran again from
+    run 39368692698, green), the Linux suite was run locally in WSL (Ubuntu
+    26.04, uutils coreutils) with `WAYLAND_DISPLAY`, `DISPLAY` and
+    `WAYLAND_SOCKET` unset and an empty `XDG_RUNTIME_DIR`, so no test could
+    reach WSLg: every test passed at `0cb21fa` (288 unit, 10 smoke). The sway
+    suite and the startup gate were skipped there (no sway or wtype). Run WSL
+    tests that way: with WSLg's `wayland-0` reachable, a test that launches pikr
+    opens a real window on the Windows desktop.
   - FreeBSD is only type-checked: CI's Ubuntu clippy job lints the
     `x86_64-unknown-freebsd` target. Nothing links or runs it.
   - macOS: CI builds it and runs the unit tests and the `--version`/`--help`
@@ -199,17 +199,16 @@
   of each distribution; no package was installed on a clean system to prove the
   list complete or the names right. CI builds the `.deb` and `.rpm` but does not
   install them.
-- **The Alpine `.apk` is restored but unverified (2026-10-19).** The
+- **The Alpine `.apk` is restored; its package step has not run yet.** The
   `build-musl` job in `.github/workflows/ci.yml` builds
   `x86_64-unknown-linux-musl` in an `alpine:latest` container with
   `-C target-feature=-crt-static` (a static musl binary cannot `dlopen`
-  libvulkan) and `GETTEXT_SYSTEM=1` (musl implements gettext), checks the result
-  with `ldd` and `--version`, and uploads the tarball the `alpine` job now
-  packages (its `if: false` gate is gone). `publish-github-release` needs it, so
-  a broken musl build blocks a release. Pushed with CI stalled org-wide, at the
-  user's call: it has never run. It runs on every main push, so check its first
-  run before cutting a tag. Not checked even then: the package installed on a
-  real Alpine system and drawing a window against Mesa.
+  libvulkan) and `GETTEXT_SYSTEM=1` (musl implements gettext), and checks the
+  result with `ldd` and `--version`; it passed on main in run 39368692698
+  (2026-10-20). `publish-github-release` needs it. The `alpine` job that
+  packages the tarball (its `if: false` gate is gone) runs only on a tag, so the
+  first release cut is its first run: check it then. Not checked: the package
+  installed on a real Alpine system drawing a window against Mesa.
 
 ## Hardening (correct today, fragile — not defects)
 
