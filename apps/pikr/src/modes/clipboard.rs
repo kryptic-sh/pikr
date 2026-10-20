@@ -40,12 +40,19 @@ mod unix_impl {
     use super::{Entry, Result, preview_label};
 
     pub fn collect() -> Result<Vec<Entry>> {
-        // cliphist missing or failing → empty list, not an error; but say
-        // why, or the picker's "No entries." looks like an empty history.
+        // cliphist missing or failing → empty list, not an error; a missing
+        // one is warned about, or "No entries." would look like an empty
+        // history.
         let output = match std::process::Command::new("cliphist").arg("list").output() {
             Ok(o) if o.status.success() => o.stdout,
+            // Not a warning: a history nothing was ever stored in exits 1
+            // ("please store something first").
             Ok(o) => {
-                tracing::warn!(status = %o.status, "cliphist list failed; no clipboard history");
+                tracing::debug!(
+                    status = %o.status,
+                    stderr = %String::from_utf8_lossy(&o.stderr).trim(),
+                    "cliphist list failed; no clipboard history"
+                );
                 return Ok(vec![]);
             }
             Err(e) => {

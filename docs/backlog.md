@@ -151,13 +151,14 @@
     (Escape-like) and the run exited 1. Use `send_shortcut` there. Not checked:
     X11 under a real X server, and transparency with a compositing manager
     (crcbl's X11 shell has no ARGB visual yet).
-  - Clipboard mode on Linux was only run without cliphist installed (it now
-    warns, then shows "No entries."). Not checked: a real history listed and an
-    accept running `cliphist decode {id} | wl-copy`, and whether `cliphist list`
-    on an empty history exits non-zero, which would make the "cliphist list
-    failed" warning fire on an empty history. That needs cliphist installed (the
-    owner's call). To keep the user's history out of it, point cliphist at a
-    scratch `XDG_CACHE_HOME`.
+  - Clipboard mode on Linux was checked on headless sway (2026-10-21, cliphist
+    pointed at a scratch `XDG_CACHE_HOME`, which keeps the user's history out):
+    a seeded history lists newest first, and accepting a row ran
+    `cliphist decode {id} | wl-copy`, after which `wl-paste` read the row's
+    text. Without cliphist pikr warns and shows "No entries.". A history nothing
+    was ever stored in makes `cliphist list` exit 1 ("please store something
+    first"), so `clipboard::unix_impl::collect` logs a non-zero exit at debug
+    level only. Not checked: image entries.
   - **Linux startup over 500 ms seen only on a loaded machine.** Five drun
     launches in a row in a nested Hyprland (2026-10-20) reached first paint at
     1075, 176, 153, 163 and 240 ms; the first spent 657 ms in

@@ -87,8 +87,8 @@ and this project adheres to
 
 ### Fixed
 
-- Clipboard mode warns on stderr when `cliphist` is not installed or fails,
-  instead of showing "No entries." as if the history were empty.
+- Clipboard mode warns on stderr when `cliphist` is not installed, instead of
+  showing "No entries." as if the history were empty.
 - The Arch package lists `xcb-util-cursor` as optional, and the `.deb` and
   `.rpm` recommend `libxcb-cursor0` and `xcb-util-cursor`: the X11 fallback uses
   it for themed pointer cursors.
