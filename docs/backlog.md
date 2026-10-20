@@ -70,7 +70,7 @@
     composition window beside pikr's inline pre-edit, so the reading showed
     twice; crcbl 0.7.0 clears `ISC_SHOWUICOMPOSITIONWINDOW`, which pikr now
     uses, but the IME has not been driven on screen since the bump. Not checked:
-    Wayland's text-input-v3 and AppKit.
+    AppKit.
   - `ui::run::headless` drives named keys through `HeadlessShell::key_press`. An
     "events due at pump N" queue, which would let those tests script input
     across frames, is in crcbl's backlog, unscheduled.
@@ -238,9 +238,15 @@
     portal; a GNOME desktop that only sets it there gets the fallbacks.
   - IME: pikr draws `TextPreedit` at the query caret (`ui::view::Preedit`) and
     sends the caret through `set_text_input_area` after every frame that moves
-    it (`ui::run`). The Microsoft IME on Win32 was checked (see above). Not
-    checked: text-input-v3 on Wayland, AppKit, and Backspace inside a
-    composition editing the composition and not the query.
+    it (`ui::run`). The Microsoft IME on Win32 was checked (see above). On
+    Wayland, text-input-v3 was checked on Hyprland 0.56.2 (2026-10-20) with
+    fcitx5 and mozc, run against the nested compositor only (its own
+    `XDG_CONFIG_HOME`, `DISPLAY` unset, `--disable=dbus,dbusfrontend,xim,…` so
+    it stays off the live session): the pre-edit draws inline and underlined at
+    the caret, the candidate list opens under the caret, Backspace inside the
+    composition edits the composition and not the query (no rerank), and the
+    Enter that commits does not reach pikr, the commit arriving whole. Not
+    checked: AppKit, and Backspace inside a composition on Win32.
   - **Screen readers cannot see pikr on Linux, and cannot until crcbl ships
     AT-SPI.** Checked 2026-10-20 on Hyprland: with pikr open, the AT-SPI desktop
     listed only xdg-desktop-portal-gtk, waybar and swaync. pikr turns on neither
