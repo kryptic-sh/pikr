@@ -242,6 +242,16 @@
   of each distribution; no package was installed on a clean system to prove the
   list complete or the names right. CI builds the `.deb` and `.rpm` but does not
   install them.
+  - Arch, checked 2026-10-20: every name in `PKGBUILD-bin.in`'s `depends` and
+    `optdepends` exists in the repos (`vulkan-driver` as a virtual provide of
+    vulkan-intel, vulkan-radeon and nvidia-utils). A crcbl 0.7.0 release build
+    links only libc, libm and libgcc_s. Drawing drun on Hyprland, the libraries
+    it mapped (`/proc/<pid>/maps`, owners from `pacman -Qo`) beyond those were
+    wayland, libxkbcommon, vulkan-icd-loader and fontconfig, plus what
+    fontconfig and the Mesa driver pull in themselves. The template, filled in
+    for v0.8.13, builds with `makepkg` and puts `usr/bin/pikr`, the licence and
+    the README in place. Not checked: installing it on a clean system, and the
+    X11 fallback's `optdepends` (no X11 run).
 - **The Alpine `.apk` is restored; its package step has not run yet.** The
   `build-musl` job in `.github/workflows/ci.yml` builds
   `x86_64-unknown-linux-musl` in an `alpine:latest` container with
