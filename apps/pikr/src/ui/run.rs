@@ -184,6 +184,10 @@ struct Window<'a> {
     /// The clipboard read a paste is waiting on.
     paste_request: Option<ClipboardRequestId>,
     focused: bool,
+    /// The window system asked for the next frame, or none was presented
+    /// yet. A FIFO present before then can block the loop, keys and all,
+    /// for as long as the window is not shown (an output switched off).
+    may_present: bool,
     blink_at: Instant,
     /// Modifiers held at the last key press, for the text commit after it.
     mods: crate::picker::input::Modifiers,
@@ -237,6 +241,7 @@ impl<'a> Window<'a> {
             text_input: None,
             paste_request: None,
             focused: false,
+            may_present: true,
             blink_at: Instant::now() + BLINK,
             mods: Default::default(),
             startup_started,
@@ -296,14 +301,17 @@ impl<'a> Window<'a> {
                 dirty = true;
             }
 
-            if dirty {
+            if dirty && self.may_present {
                 let pointer = PointerInput {
                     down: self.pointer_down,
                     ..PointerInput::hovering(self.pointer)
                 };
                 self.frame(&content, pointer)?;
+                // Rides this present's commit; its answer lets the next one go.
+                self.shell.request_frame(self.window)?;
                 if self.gpu.present(&self.list, &self.atlas)? {
                     dirty = false;
+                    self.may_present = false;
                     self.log_first_paint();
                 } else {
                     // Out of date and reconfigured. Retrying at once would
@@ -411,6 +419,10 @@ impl<'a> Window<'a> {
                 self.gpu.resize(self.extent)?;
                 self.update_input_region()?;
                 Ok(Step::Continue(true))
+            }
+            ShellEvent::FrameReady { window } if window == self.window => {
+                self.may_present = true;
+                Ok(Step::Continue(false))
             }
             ShellEvent::CloseRequested { window } => {
                 self.shell.reply_close_request(window, CloseReply::Keep)?;

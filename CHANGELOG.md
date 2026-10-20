@@ -81,6 +81,11 @@ and this project adheres to
 
 ### Fixed
 
+- **pikr no longer freezes when its window is not being shown.** On Wayland a
+  redraw waited for the compositor to show the previous frame, so on an output
+  the compositor was not drawing, pikr stopped reading keys, Escape included,
+  while still holding the keyboard. pikr now redraws only when the window system
+  asks for a frame, and handles keys in the meantime.
 - **The Homebrew formula loads on Homebrew 7.** Homebrew now loads every formula
   in a tap for each OS and architecture when it taps it, and this one only had
   its URLs under `on_macos`, so `brew tap kryptic-sh/tap` failed with "invalid

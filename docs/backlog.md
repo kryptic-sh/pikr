@@ -128,8 +128,27 @@
     handling) have only had the review of the commits that wrote them.
   - Linux was verified only through CI's sway session on lavapipe: the e2e
     keyboard suite and the startup gate passed (run 39002212977, 237 ms
-    launch-to-result against the 500 ms deadline). Hyprland, niri and KWin were
-    never run, and no Linux run was looked at by eye.
+    launch-to-result against the 500 ms deadline). Hyprland 0.56.2 (Arch,
+    2026-10-20, Intel RPL-U iGPU on Vulkan, scale 1) was run and looked at in
+    screenshots: the overlay layer maps centred, the corners are see-through,
+    and dmenu typing, highlighting and Return work, with Hebrew, CJK and colour
+    emoji rows drawn. First paint (`RUST_LOG=pikr=debug`) came at 366 ms on the
+    live desktop (fonts 229 ms), 943 ms on the first launch in a nested Hyprland
+    (fonts 554 ms, the binary just rebuilt) and 86 ms on the next one. That 943
+    ms is over the 500 ms target; whether a cold font cache explains it was not
+    checked. niri and KWin were never run.
+  - **Run GUI checks in a nested Hyprland, never on the user's live desktop**:
+    pikr takes the keyboard on the overlay layer, so a test run there swallows
+    whatever the user is typing. Start `Hyprland -c <lua config>` through
+    `hyprctl eval "hl.exec_cmd(cmd, { workspace = 'special:x silent', no_initial_focus = true })"`
+    (0.56 configures and dispatches in Lua). The live compositor never draws
+    that hidden window, so its output gets no frame callbacks: grim hangs and
+    the app never gets a frame. Inside it, add `hyprctl output create headless`
+    and disable `WAYLAND-1`, then point `WAYLAND_DISPLAY` and
+    `HYPRLAND_INSTANCE_SIGNATURE` at it for pikr, wtype and grim. The un-drawn
+    output is also a way to reproduce the frame-pacing freeze fixed on
+    2026-10-20 (`ui::run`'s `may_present`); turning a headless output off with
+    DPMS does not reproduce it.
   - Key handling is tested headless on every OS (`ui::run::headless`: crcbl's
     `HeadlessShell` and crcbl-hal's null backend driving the real window loop),
     which puts no frame on a screen and no key through a real keymap. The sway
@@ -277,16 +296,15 @@ macOS and Windows.
 - **crcbl-app: only its adapter choice is adopted (since crcbl 0.6.0).** pikr
   uses `crcbl_app::adapter::{choose, pin}` in `ui::gpu::Gpu::open` and nothing
   else. The rest would replace `ui::gpu` and the window bring-up in `ui::run`:
-  crcbl 0.7.0's `Presenter` also paces presents on `Shell::request_frame`, so a
-  window on a switched-off output does not block in a FIFO acquire; pikr's own
-  `ui::gpu` never requests frames, and as a short-lived launcher it has not
-  needed to. `window::wait_for_configure` now hands pumped events to a sink
-  (fixed for 0.6.0 after pikr's report), and `Presenter` gained
-  `Transparency::Preferred`, an opaque fallback with a warning, which matches
-  pikr's rule. Both objections from 2026-10-19 are answered; what is left is
-  `text_input::TextPump`, which feeds crcbl-ui's `TextInput` while pikr edits
-  its own query. Moving `ui::gpu` onto `Presenter` is open and not reviewed
-  against pikr's code.
+  crcbl 0.7.0's `Presenter` also paces presents on `Shell::request_frame`; pikr
+  now does the same itself (`ui::run`'s `may_present`), after a window that the
+  compositor was not drawing froze its loop on Hyprland.
+  `window::wait_for_configure` now hands pumped events to a sink (fixed for
+  0.6.0 after pikr's report), and `Presenter` gained `Transparency::Preferred`,
+  an opaque fallback with a warning, which matches pikr's rule. Both objections
+  from 2026-10-19 are answered; what is left is `text_input::TextPump`, which
+  feeds crcbl-ui's `TextInput` while pikr edits its own query. Moving `ui::gpu`
+  onto `Presenter` is open and not reviewed against pikr's code.
 
 ### Coverage gaps (not verified)
 
