@@ -81,6 +81,11 @@ and this project adheres to
 
 ### Fixed
 
+- **The Homebrew formula loads on Homebrew 7.** Homebrew now loads every formula
+  in a tap for each OS and architecture when it taps it, and this one only had
+  its URLs under `on_macos`, so `brew tap kryptic-sh/tap` failed with "invalid
+  syntax in tap" and no kryptic-sh tool could be installed. The URLs moved out
+  of `on_macos` and `depends_on :macos` keeps the formula macOS-only.
 - Query history, frecency and the `drun` caches are saved to a temporary file
   that is then renamed into place. A pikr killed mid-save, or two pikr instances
   saving at once, could leave a truncated `history.toml` or `usage.toml`, which
