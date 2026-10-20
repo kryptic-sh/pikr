@@ -59,9 +59,10 @@
     synthesized while pikr held the foreground): the pre-edit draws inline and
     underlined at the caret, the candidate list opens right below the caret, the
     Enter that commits does not reach pikr, and the commit arrives whole (a
-    second Enter printed `日本語`). One crcbl bug, reported: Windows also draws
-    its own composition window beside pikr's inline pre-edit, so the reading
-    shows twice (crcbl leaves `ISC_SHOWUICOMPOSITIONWINDOW` set). Not checked:
+    second Enter printed `日本語`). On crcbl 0.6.0 Windows also drew its own
+    composition window beside pikr's inline pre-edit, so the reading showed
+    twice; crcbl 0.7.0 clears `ISC_SHOWUICOMPOSITIONWINDOW`, which pikr now
+    uses, but the IME has not been driven on screen since the bump. Not checked:
     Wayland's text-input-v3 and AppKit.
   - `ui::run::headless` drives named keys through `HeadlessShell::key_press`. An
     "events due at pump N" queue, which would let those tests script input
@@ -266,15 +267,19 @@ macOS and Windows.
   were compiling on the machine, which may explain the two outliers). On crcbl
   0.5.0 three launches gave 617, 443 and 493 ms. GPU setup is nearly all of it;
   config, entries, ranking and fonts are done within ~50 ms.
-- **crcbl-app: only its adapter choice is adopted (crcbl 0.6.0).** pikr uses
-  `crcbl_app::adapter::{choose, pin}` in `ui::gpu::Gpu::open` and nothing else.
-  The rest would replace `ui::gpu` and the window bring-up in `ui::run`:
-  `window::wait_for_configure` now hands pumped events to a sink (fixed for
-  0.6.0 after pikr's report), and `Presenter` gained `Transparency::Preferred`,
-  an opaque fallback with a warning, which matches pikr's rule. Both objections
-  from 2026-10-19 are answered; what is left is `text_input::TextPump`, which
-  feeds crcbl-ui's `TextInput` while pikr edits its own query. Moving `ui::gpu`
-  onto `Presenter` is open and not reviewed against pikr's code.
+- **crcbl-app: only its adapter choice is adopted (since crcbl 0.6.0).** pikr
+  uses `crcbl_app::adapter::{choose, pin}` in `ui::gpu::Gpu::open` and nothing
+  else. The rest would replace `ui::gpu` and the window bring-up in `ui::run`:
+  crcbl 0.7.0's `Presenter` also paces presents on `Shell::request_frame`, so a
+  window on a switched-off output does not block in a FIFO acquire; pikr's own
+  `ui::gpu` never requests frames, and as a short-lived launcher it has not
+  needed to. `window::wait_for_configure` now hands pumped events to a sink
+  (fixed for 0.6.0 after pikr's report), and `Presenter` gained
+  `Transparency::Preferred`, an opaque fallback with a warning, which matches
+  pikr's rule. Both objections from 2026-10-19 are answered; what is left is
+  `text_input::TextPump`, which feeds crcbl-ui's `TextInput` while pikr edits
+  its own query. Moving `ui::gpu` onto `Presenter` is open and not reviewed
+  against pikr's code.
 
 ### Coverage gaps (not verified)
 
