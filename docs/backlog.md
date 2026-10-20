@@ -47,9 +47,14 @@
     fonts. Not checked: typing right-to-left text into the query (caret
     movement), and SVG text in scripts beyond Latin. crcbl's own gaps: arrow
     keys move in logical order, and SVG text clusters are approximate.
-  - IME: pikr's pre-edit key guard is gone, since crcbl no longer reports keys
-    the input method consumes. No real input method has been driven through pikr
-    yet (the Microsoft IME check is the user's).
+  - IME, checked on Windows 2026-10-20 with the Microsoft Japanese IME (keys
+    synthesized while pikr held the foreground): the pre-edit draws inline and
+    underlined at the caret, the candidate list opens right below the caret, the
+    Enter that commits does not reach pikr, and the commit arrives whole (a
+    second Enter printed `日本語`). One crcbl bug, reported: Windows also draws
+    its own composition window beside pikr's inline pre-edit, so the reading
+    shows twice (crcbl leaves `ISC_SHOWUICOMPOSITIONWINDOW` set). Not checked:
+    Wayland's text-input-v3 and AppKit.
   - `ui::run::headless` drives named keys through `HeadlessShell::key_press`. An
     "events due at pump N" queue, which would let those tests script input
     across frames, is in crcbl's backlog, unscheduled.
@@ -72,11 +77,6 @@
   (one read-only agent; the two confirmed defects it found, the panel border
   missing from `ui::view::window_height` and the "square corners" wording of the
   opaque-fallback warnings, are fixed). Not re-verified by the orchestrator:
-  - Win32 IME: crcbl passes every `WM_IME_*` to `DefWindowProc` and never clears
-    `ISC_SHOWUICOMPOSITIONWINDOW`, so the system composition window may draw
-    over pikr's inline pre-edit (confirmed from crcbl's source by its session,
-    not seen on screen). Tracked in crcbl's backlog; seeing the reading twice
-    during the Microsoft IME check is this bug.
   - Cleared 2026-10-19: click attribution. `ui::view::result_row` reads
     `Ui::clicked` after its `.row` closes, so it reads the enclosing block,
     which is the per-row `.list-row` crcbl-ui's `Ui::list` opens around each row
