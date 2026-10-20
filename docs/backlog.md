@@ -138,7 +138,19 @@
     input was driven with `wlrctl` (virtual-pointer) in the nested Hyprland:
     hover lights the row under the pointer with a hand cursor, the wheel scrolls
     the list with the hover following, and a left click accepted the row under
-    the pointer after the scroll. niri and KWin were never run.
+    the pointer after the scroll.
+  - niri 26.04 (2026-10-21, nested inside a headless sway, since a niri window
+    hidden on the live Hyprland gets no frames): pikr maps on the overlay layer
+    with exclusive keyboard, the corners are see-through, bidi, CJK and emoji
+    rows draw, and typing, highlighting and Return work (first paint 232 ms).
+  - KWin 6 (2026-10-21, `kwin_wayland --virtual` under `dbus-run-session`, so it
+    stays off the user's session bus; nested in pixman sway it segfaulted): pikr
+    maps through layer-shell on the overlay layer with exclusive keyboard, KWin
+    configures it at its size, keyboard focus arrives, and first paint came at
+    212 ms (`WAYLAND_DEBUG=1`). KWin offers neither wlr-screencopy nor
+    virtual-keyboard, so it was not looked at and no key was typed there.
+    Driving it would need KWin's fake-input or EIS (libei), or a KWin nested in
+    a GPU-rendering compositor screenshotted from outside.
   - The X11 fallback was run on the nested Hyprland's own Xwayland
     (`WAYLAND_DISPLAY` unset, `DISPLAY` set to it; 2026-10-20): pikr logs "no
     panel windows; opening a toplevel", warns that it draws opaque, and opens as
