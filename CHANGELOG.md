@@ -81,6 +81,11 @@ and this project adheres to
 
 ### Fixed
 
+- Spaces next to a highlighted match no longer vanish: searching "fire" drew
+  "client for" as "clientfor" and "LibreOffice Impress" as "LibreOfficeImpress".
+- A long description no longer cuts the entry's name short ("Teams f" for "Teams
+  for Linux"): the description gives way first, and the name shrinks only once
+  the description is gone.
 - **pikr no longer freezes when its window is not being shown.** On Wayland a
   redraw waited for the compositor to show the previous frame, so on an output
   the compositor was not drawing, pikr stopped reading keys, Escape included,

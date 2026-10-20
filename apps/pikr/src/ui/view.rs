@@ -374,11 +374,13 @@ fn query(
 /// U+00A0, a space crcbl-ui never collapses.
 const NBSP: char = '\u{A0}';
 
-/// `c` as the query draws it. crcbl-ui drops plain spaces at the end of a
-/// span (it has no `white-space: pre`), so a query ending in spaces drew the
-/// caret left of where typing goes (seen on Windows with `--filter "a  b  "`).
-/// A no-break space is drawn the same width and keeps the character count, so
-/// the caret's char index still lines up.
+/// `c` as the query and the result rows draw it. crcbl-ui drops plain spaces
+/// at the end of a span (it has no `white-space: pre`), so a query ending in
+/// spaces drew the caret left of where typing goes (seen on Windows with
+/// `--filter "a  b  "`), and a space next to a highlighted run vanished
+/// ("client for" drew as "clientfor"). A no-break space is drawn the same
+/// width and keeps the character count, so the caret's char index still
+/// lines up.
 fn uncollapsed(c: char) -> char {
     if c == ' ' { NBSP } else { c }
 }
@@ -433,7 +435,8 @@ fn result_row(
 fn highlighted(ui: &mut Ui, selector: &str, text: &str, positions: &[u32]) {
     ui.block(selector, &[], |ui| {
         for (run, matched) in runs(text, positions) {
-            ui.span(if matched { ".hl" } else { ".tx" }, run, &[]);
+            let shown: String = run.chars().map(uncollapsed).collect();
+            ui.span(if matched { ".hl" } else { ".tx" }, shown.as_str(), &[]);
         }
     });
 }

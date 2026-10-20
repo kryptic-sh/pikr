@@ -180,8 +180,28 @@
     Microsoft IME (above). In that run's log pikr's focus was first refused,
     then arrived about three seconds later. Clicks, the wheel and drun icons
     were not exercised, and a launch from a hotkey tool was never tried.
-  - No icon from a real icon theme was drawn; icon decoding is covered by unit
-    tests only. HiDPI (scale ≠ 1) was not exercised.
+  - Real theme icons and HiDPI were checked on Hyprland at scale 2 (nested,
+    2026-10-20): drun rows drew hicolor PNGs (Discord at 256 px, Firefox at 48
+    px) sharp, with sharp text, and the layer mapped at 720x447 logical,
+    centred. Not checked: fractional scales, and a scale change while pikr is
+    open.
+  - **The generic fallback icon draws blurry: crcbl reads `Type=Scalable` as a
+    threshold directory.** `crcbl_image::theme::parse_index` (crcbl 0.7.0, still
+    on crcbl main at `0bc5f7cb`) matches `"Scaled"`, but the freedesktop spec's
+    value, which Adwaita uses, is `Scalable`. Every scalable directory then
+    becomes `Threshold(2)` around its `Size` (Adwaita says 128), so for 24 px
+    `application-x-executable` resolves to Adwaita's `16x16/mimetypes` PNG,
+    stretched to 24 px at scale 1 and 48 px at scale 2, instead of
+    `scalable/mimetypes/application-x-executable.svg`. Found with a throwaway
+    probe calling `IconThemes::lookup` the way `picker::icons::IconCache` does.
+    Any theme icon that only a scalable directory carries is hit the same way.
+    The fix belongs in crcbl (accept `Scalable`); then bump.
+  - pikr looks icons up in `hicolor`, then `FALLBACK_THEMES` (`picker::icons`),
+    never in the user's configured theme (Papirus-Dark on the Arch test
+    machine), so drun shows the app's own hicolor icon rather than the theme's.
+    Not decided whether to read the configured theme, and from where (GTK
+    `settings.ini`, `kdeglobals`, the XDG portal), on a desktop that has no
+    single answer.
   - IME: pikr draws `TextPreedit` at the query caret (`ui::view::Preedit`) and
     sends the caret through `set_text_input_area` after every frame that moves
     it (`ui::run`). The Microsoft IME on Win32 was checked (see above). Not

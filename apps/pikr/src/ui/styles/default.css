@@ -174,9 +174,12 @@ scrollbar > .scroll-handle:hover {
   overflow: hidden;
 }
 
+/* Shrink is weighted by width, so with equal factors a long description cut
+ * the label down too. This factor makes it give way first; the label shrinks
+ * only once the description is gone. */
 .desc {
   flex-direction: row;
-  flex-shrink: 1;
+  flex-shrink: 1000;
   min-width: 0;
   margin: 0 0 0 10px;
   white-space: nowrap;
