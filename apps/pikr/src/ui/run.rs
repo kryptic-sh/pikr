@@ -58,6 +58,8 @@ pub struct WindowSpec {
     pub height: f64,
     pub stylesheet: String,
     pub font_family: String,
+    /// Icon themes searched first, in order.
+    pub icon_themes: Vec<String>,
 }
 
 /// Opens the window, runs until the picker finishes, then — window gone —
@@ -241,7 +243,7 @@ impl<'a> Window<'a> {
             atlas: FontAtlas::built_in(),
             list: DrawList::new(),
             view: View::new(),
-            icons: Icons::new(),
+            icons: Icons::new(&spec.icon_themes),
             extent: (size.width, size.height),
             scale: 1.0,
             pointer: Vec2::ZERO,

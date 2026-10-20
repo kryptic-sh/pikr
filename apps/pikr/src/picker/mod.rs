@@ -3,6 +3,7 @@
 pub mod app_state;
 pub mod frecency;
 pub mod history;
+pub mod icon_theme;
 pub mod icons;
 pub mod input;
 pub mod keys;

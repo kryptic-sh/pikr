@@ -65,9 +65,18 @@ pub struct IconCache {
 }
 
 impl IconCache {
-    pub fn new() -> Self {
-        let themes = IconThemes::new(SearchPath::from_environment(), "hicolor", MISS_RELOOKUP)
-            .with_fallback_themes(FALLBACK_THEMES.iter().map(|t| (*t).to_owned()))
+    /// Lookups in `chosen` ([`icon_theme::chosen`](super::icon_theme::chosen)),
+    /// in order, then [`FALLBACK_THEMES`], then `hicolor`.
+    pub fn new(chosen: &[String]) -> Self {
+        let (theme, rest) = chosen
+            .split_first()
+            .map_or(("hicolor", &[][..]), |(first, rest)| (first.as_str(), rest));
+        let fallbacks = rest
+            .iter()
+            .cloned()
+            .chain(FALLBACK_THEMES.iter().map(|t| (*t).to_owned()));
+        let themes = IconThemes::new(SearchPath::from_environment(), theme, MISS_RELOOKUP)
+            .with_fallback_themes(fallbacks)
             .with_generic_names(GENERIC_FALLBACK_NAMES.iter().map(|n| (*n).to_owned()));
         Self {
             themes,
@@ -123,12 +132,6 @@ impl IconCache {
     }
 }
 
-impl Default for IconCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// `bytes` decoded by their format's signature, then scaled down to fit a
 /// `size` × `size` square. SVG has no signature; anything unrecognised is
 /// tried as SVG, which rejects what is not.
@@ -180,7 +183,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("icon.svg");
         std::fs::write(&path, RED_SQUARE).unwrap();
-        let mut cache = IconCache::new();
+        let mut cache = IconCache::new(&[]);
         let name = path.to_string_lossy();
         assert_eq!(cache.resolve(Some(&name), 24, 1), Some(path.clone()));
     }
@@ -206,7 +209,7 @@ mod tests {
 
     #[test]
     fn missing_file_is_none_and_not_cached() {
-        let mut cache = IconCache::new();
+        let mut cache = IconCache::new(&[]);
         let dir = tempfile::tempdir().unwrap();
         assert!(cache.image(&dir.path().join("nope.png"), 24).is_none());
         assert_eq!(cache.decoded_len(), 0);
@@ -217,7 +220,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("icon.svg");
         std::fs::write(&path, RED_SQUARE).unwrap();
-        let mut cache = IconCache::new();
+        let mut cache = IconCache::new(&[]);
         let first = cache.image(&path, 24).expect("decode");
         let again = cache.image(&path, 24).expect("cache hit");
         assert!(
@@ -266,7 +269,7 @@ static char *icon[] = {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("icon.svg");
         std::fs::write(&path, RED_SQUARE).unwrap();
-        let mut cache = IconCache::new();
+        let mut cache = IconCache::new(&[]);
         assert_eq!(cache.image(&path, 24).unwrap().width(), 24);
         assert_eq!(cache.image(&path, 48).unwrap().width(), 48);
     }
@@ -279,7 +282,7 @@ static char *icon[] = {
     #[test]
     #[ignore = "requires system icon theme; run with --ignored on a dev machine"]
     fn name_lookup_returns_some_for_common_icon() {
-        let mut cache = IconCache::new();
+        let mut cache = IconCache::new(&[]);
         // "utilities-terminal" is present in virtually every hicolor theme.
         assert!(cache.resolve(Some("utilities-terminal"), 24, 1).is_some());
     }

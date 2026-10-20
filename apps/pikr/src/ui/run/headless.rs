@@ -53,6 +53,7 @@ fn run(content: Content, input: &[Input]) -> (Vec<Payload>, i32) {
         height: window_height(VISIBLE_ROWS),
         stylesheet: crate::ui::theme_css::stylesheet_source(&Default::default()),
         font_family: "sans-serif".into(),
+        icon_themes: Vec::new(),
     };
     let (window, transparent) = create_window(&mut shell, &spec).unwrap();
     let (extent, early) = wait_for_size(&mut shell, window).unwrap();

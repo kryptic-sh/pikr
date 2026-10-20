@@ -73,9 +73,10 @@ pub struct Icons {
 }
 
 impl Icons {
-    pub fn new() -> Self {
+    /// Icons looked up in `themes` first; see [`IconCache::new`].
+    pub fn new(themes: &[String]) -> Self {
         Self {
-            cache: IconCache::new(),
+            cache: IconCache::new(themes),
             registered: HashMap::new(),
             used: HashSet::new(),
             scale: 1,

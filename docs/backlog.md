@@ -228,13 +228,14 @@
     `scalable/mimetypes/application-x-executable.svg`. Found with a throwaway
     probe calling `IconThemes::lookup` the way `picker::icons::IconCache` does.
     Any theme icon that only a scalable directory carries is hit the same way.
-    The fix belongs in crcbl (accept `Scalable`); then bump.
-  - pikr looks icons up in `hicolor`, then `FALLBACK_THEMES` (`picker::icons`),
-    never in the user's configured theme (Papirus-Dark on the Arch test
-    machine), so drun shows the app's own hicolor icon rather than the theme's.
-    Not decided whether to read the configured theme, and from where (GTK
-    `settings.ini`, `kdeglobals`, the XDG portal), on a desktop that has no
-    single answer.
+    Fixed on crcbl main (2026-10-20, after `0bc5f7cb`, with a regression test
+    for this Adwaita case); bump pikr once a crcbl release carries it and check
+    the dmenu rows' icon at scale 2.
+  - Icon theme order (`picker::icon_theme::chosen`), as the owner set it on
+    2026-10-20: pikr's `theme.icon_theme`, then KDE's `kdeglobals`, then GTK 3's
+    and GTK 4's `settings.ini`, then `FALLBACK_THEMES`, then hicolor. Not read:
+    GNOME's gsettings `icon-theme` (dconf, no file to read) and the XDG settings
+    portal; a GNOME desktop that only sets it there gets the fallbacks.
   - IME: pikr draws `TextPreedit` at the query caret (`ui::view::Preedit`) and
     sends the caret through `set_text_input_area` after every frame that moves
     it (`ui::run`). The Microsoft IME on Win32 was checked (see above). Not

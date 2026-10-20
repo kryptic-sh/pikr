@@ -66,6 +66,12 @@ and this project adheres to
 
 ### Added
 
+- drun icons follow your icon theme: `icon_theme` under `[theme]` in the config
+  if set, otherwise the theme KDE is set to (`kdeglobals`), otherwise GTK's
+  (`gtk-3.0` or `gtk-4.0` `settings.ini`). Before, pikr always looked in hicolor
+  first, so apps showed their own icon rather than the theme's. If an icon is
+  missing from the chosen theme, or the theme is not installed, the next one in
+  that order is used, then the old fallbacks.
 - Paste into the query with Ctrl+V or Shift+Insert in Insert mode. Line breaks
   and tabs become spaces, since the query is one line.
 - Releases ship an Alpine `.apk` again, with an `x86_64-unknown-linux-musl`

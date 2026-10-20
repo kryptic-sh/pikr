@@ -22,6 +22,9 @@ pub struct Theme {
     pub selected_bg: String,
     pub font: String,
     pub font_size: f32,
+    /// The icon theme drun icons come from first. Unset, KDE's and then
+    /// GTK's setting are used (`picker::icon_theme`).
+    pub icon_theme: Option<String>,
 }
 
 impl Default for Config {
@@ -61,6 +64,7 @@ impl Default for Theme {
             selected_bg: "#3E4153".into(),
             font: default_font(),
             font_size: 14.0,
+            icon_theme: None,
         }
     }
 }

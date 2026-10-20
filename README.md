@@ -179,6 +179,8 @@ fg = "#cdd6f4"
 accent = "#89b4fa"
 font = "monospace"
 font_size = 14.0
+# Optional. Unset, the icon theme KDE or else GTK is set to is used.
+icon_theme = "Papirus-Dark"
 ```
 
 ## Requirements
