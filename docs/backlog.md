@@ -91,10 +91,17 @@
     drew the caret at the text's right edge, not inside the second word
     (Windows, 2026-10-20). `ui::view::query` draws the caret by splitting the
     query into before/caret/after spans in a left-to-right row, so bidi cannot
-    reorder across them. crcbl main (after 0.7.0) has
-    `TextLayout::caret(byte) -> Caret { line, x, top, height }`, bidi-correct;
-    once a release carries it, lay the whole query out once and draw the caret
-    over it instead of splitting spans.
+    reorder across them. On Hyprland (2026-10-21) the same split also scrambled
+    the text itself: `שלום עולם` with the caret at 6 drew as `ולםשלום ע`. The
+    fix is written and checked against crcbl v0.8.0 (a throwaway clone, kept as
+    a patch until 0.8.0 is on crates.io): the query is one span, laid out with
+    the font and fallbacks crcbl-ui draws it in (`ui::view::QueryFont`), and the
+    caret is an absolutely positioned block at `TextLayout::caret(byte).x`. On
+    screen: the RTL text draws in order with the caret between ו and ע; LTR
+    carets and the Normal-mode block match the old build pixel for pixel; the
+    RTL block covers the character under it; an IME composition (fcitx5 + mozc)
+    still draws underlined at the caret, since a composition keeps the split
+    spans. Lands right after the 0.8.0 bump.
   - **Confirm injected unsided Ctrl for crcbl.** crcbl main (after 0.7.0) counts
     `VK_CONTROL`/`VK_MENU`/`VK_SHIFT` without a side toward the modifier state;
     on 0.6.0 an injected generic `VK_CONTROL` lost Ctrl, so pikr's on-screen
