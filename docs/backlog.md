@@ -188,7 +188,9 @@
     text. Without cliphist pikr warns and shows "No entries.". A history nothing
     was ever stored in makes `cliphist list` exit 1 ("please store something
     first"), so `clipboard::unix_impl::collect` logs a non-zero exit at debug
-    level only. Not checked: image entries.
+    level only. An image entry (2026-10-21) is listed under cliphist's own
+    preview label (`[[ binary data 123 B png 64x32 ]]`), and accepting it put an
+    `image/png` on the clipboard byte-identical to the stored PNG.
   - **Linux startup over 500 ms seen only on a loaded machine.** Five drun
     launches in a row in a nested Hyprland (2026-10-20) reached first paint at
     1075, 176, 153, 163 and 240 ms; the first spent 657 ms in
@@ -217,12 +219,16 @@
     the app never gets a frame. Inside it, add `hyprctl output create headless`
     and disable `WAYLAND-1`, then point `WAYLAND_DISPLAY` and
     `HYPRLAND_INSTANCE_SIGNATURE` at it for pikr, wtype, wlrctl (AUR; pointer
-    moves are relative, so `move -5000 -5000` first to reach 0,0) and grim. The
-    un-drawn output is also a way to reproduce the frame-pacing freeze fixed on
-    2026-10-20 (`ui::run`'s `may_present`); turning a headless output off with
-    DPMS does not reproduce it. For checks that need no Hyprland, sway is also
-    installed on the Arch machine: the e2e suite starts its own headless sway in
-    a private `XDG_RUNTIME_DIR`, and
+    moves are relative, so `move -5000 -5000` first to reach 0,0) and grim.
+    **Also set `XDG_STATE_HOME` (and `XDG_CACHE_HOME`) to a scratch directory
+    for every pikr a test launches**: each accept writes history and frecency
+    (`picker::state_file_path`), and tests on 2026-10-20 wrote theirs into the
+    user's real state until they were taken out by hand. The un-drawn output is
+    also a way to reproduce the frame-pacing freeze fixed on 2026-10-20
+    (`ui::run`'s `may_present`); turning a headless output off with DPMS does
+    not reproduce it. For checks that need no Hyprland, sway is also installed
+    on the Arch machine: the e2e suite starts its own headless sway in a private
+    `XDG_RUNTIME_DIR`, and
     `cargo test --release --test keyboard -- --test-threads=1` (6 passed) and
     `--test startup_gate` (345 ms against the 500 ms deadline) ran there on
     2026-10-20. Keep build output off `/tmp` on that machine: it is a shared
