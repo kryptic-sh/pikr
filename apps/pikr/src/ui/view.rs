@@ -192,6 +192,25 @@ impl View {
         let picker = &app.picker;
         self.scroll_to_selection(ui, picker.selected, &picker.query, app.matches.is_empty());
         let mut clicked = None;
+        // Split before masking: the cursor is a byte offset into the real
+        // text.
+        let preedit = &self.preedit.text;
+        let at = self
+            .preedit
+            .cursor
+            .filter(|&i| preedit.is_char_boundary(i))
+            .unwrap_or(preedit.len());
+        let composing = [
+            mask_password(app.password, &preedit[..at]),
+            mask_password(app.password, &preedit[at..]),
+        ];
+        // The composition is drawn at the caret taking the keys: the `:`
+        // prompt's while it is open, which its commit goes to.
+        let (query_preedit, ex_preedit) = if picker.ex_buf.is_some() {
+            (Default::default(), composing)
+        } else {
+            (composing, Default::default())
+        };
         ui.block(".panel", &[], |ui| {
             ui.block(".input-row", &[], |ui| {
                 let prompt = if app.prompt.is_empty() {
@@ -201,18 +220,6 @@ impl View {
                 };
                 ui.span(".prompt", prompt.as_str(), &[]);
                 let shown = mask_password(app.password, &picker.query);
-                // Split before masking: the cursor is a byte offset into the
-                // real text.
-                let preedit = &self.preedit.text;
-                let at = self
-                    .preedit
-                    .cursor
-                    .filter(|&i| preedit.is_char_boundary(i))
-                    .unwrap_or(preedit.len());
-                let composing = [
-                    mask_password(app.password, &preedit[..at]),
-                    mask_password(app.password, &preedit[at..]),
-                ];
                 self.caret = query(
                     ui,
                     &self.query_font,
@@ -220,7 +227,7 @@ impl View {
                     picker.query_cursor,
                     picker.vim_mode,
                     self.blink_on,
-                    &composing,
+                    &query_preedit,
                 );
             });
 
@@ -270,7 +277,7 @@ impl View {
                             end,
                             VimMode::Insert,
                             self.blink_on,
-                            &Default::default(),
+                            &ex_preedit,
                         );
                     }
                 });
