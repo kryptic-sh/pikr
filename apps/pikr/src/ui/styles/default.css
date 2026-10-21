@@ -55,15 +55,19 @@
   white-space: nowrap;
 }
 
-/* Insert-mode caret: a thin bar between characters that takes no width,
- * so the text never moves as the caret does. */
+/* Insert-mode caret: a thin bar laid over the text between characters, so
+ * the text never moves as the caret does. */
 .caret {
   width: 2px;
   height: {font_size}px;
-  margin: 0 -2px 0 0;
 }
 
-/* Normal / Visual block caret: the character under the caret, inverted. */
+/* Normal / Visual block caret: the character under the caret, inverted. It
+ * is laid over the query's own text, so it draws nothing while off. */
+.caret-block {
+  color: transparent;
+}
+
 .caret-block.blink-on {
   background-color: {accent};
   color: {bg};

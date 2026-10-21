@@ -75,22 +75,10 @@
     215x109/110, so it is the fallback face's design, not crcbl. crcbl's own
     gaps: arrow keys move in logical order, and SVG text clusters are
     approximate.
-  - **Right-to-left text in the query puts the caret in the wrong place.**
-    Pasting `שלום עולם` and pressing Left three times (logical index 6 of 9)
-    drew the caret at the text's right edge, not inside the second word
-    (Windows, 2026-10-20). `ui::view::query` draws the caret by splitting the
-    query into before/caret/after spans in a left-to-right row, so bidi cannot
-    reorder across them. On Hyprland (2026-10-21) the same split also scrambled
-    the text itself: `שלום עולם` with the caret at 6 drew as `ולםשלום ע`. The
-    fix is written and checked against crcbl v0.8.0 (a throwaway clone, kept as
-    a patch until 0.8.0 is on crates.io): the query is one span, laid out with
-    the font and fallbacks crcbl-ui draws it in (`ui::view::QueryFont`), and the
-    caret is an absolutely positioned block at `TextLayout::caret(byte).x`. On
-    screen: the RTL text draws in order with the caret between ו and ע; LTR
-    carets and the Normal-mode block match the old build pixel for pixel; the
-    RTL block covers the character under it; an IME composition (fcitx5 + mozc)
-    still draws underlined at the caret, since a composition keeps the split
-    spans. Lands right after the 0.8.0 bump.
+  - While an input method composes, `ui::view::composing` still splits the query
+    around the caret to underline the pre-edit, so right-to-left text being
+    composed into is reordered per piece, as the whole query was before
+    `TextLayout::caret` (2026-10-21). Not seen with a real RTL input method.
   - **Confirm injected unsided Ctrl for crcbl.** crcbl 0.8.0 (which pikr is on
     since 2026-10-21) counts `VK_CONTROL`/`VK_MENU`/`VK_SHIFT` without a side
     toward the modifier state; on 0.6.0 an injected generic `VK_CONTROL` lost

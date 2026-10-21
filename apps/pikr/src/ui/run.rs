@@ -23,7 +23,7 @@ use crate::picker::session::{Outcome, Session};
 use crate::picker::state::VimMode;
 use crate::ui::gpu::Gpu;
 use crate::ui::keyboard::{key_from_commit, key_from_press, modifiers_from_crcbl};
-use crate::ui::view::{Icons, PANEL_RADIUS, Preedit, View};
+use crate::ui::view::{Icons, PANEL_RADIUS, Preedit, QueryFont, View};
 
 /// The caret's blink half-period: crcbl's own, so pikr's query caret blinks
 /// with every crcbl text field.
@@ -58,6 +58,7 @@ pub struct WindowSpec {
     pub height: f64,
     pub stylesheet: String,
     pub font_family: String,
+    pub font_size: f32,
     /// Icon themes searched first, in order.
     pub icon_themes: Vec<String>,
 }
@@ -225,16 +226,25 @@ impl<'a> Window<'a> {
         // Registered under the theme's family, which the stylesheet names;
         // without any face, text is drawn in crcbl's built-in sans-serif.
         let family = &spec.font_family;
-        if let Err(e) = fonts
+        let face = fonts
             .theme
-            .and_then(|font| ui.register_font(family, font).map_err(|e| e.to_string()))
-        {
-            tracing::warn!(family, "theme font not used: {e}");
-        }
+            .and_then(|font| {
+                ui.register_font(family, font.clone())
+                    .map_err(|e| e.to_string())?;
+                Ok(font)
+            })
+            .unwrap_or_else(|e| {
+                tracing::warn!(family, "theme font not used: {e}");
+                Font::sans().clone()
+            });
         if fonts.fallbacks.is_empty() {
             tracing::warn!("no fallback fonts: chars the theme font lacks draw as boxes");
         }
         ui.set_fallback_fonts(fonts.fallbacks);
+        let query_font = QueryFont {
+            font: face.with_fallback(ui.fallback_fonts()),
+            size: spec.font_size,
+        };
         Ok(Self {
             shell,
             window,
@@ -242,7 +252,7 @@ impl<'a> Window<'a> {
             ui,
             atlas: FontAtlas::built_in(),
             list: DrawList::new(),
-            view: View::new(),
+            view: View::new(query_font),
             icons: Icons::new(&spec.icon_themes),
             extent: (size.width, size.height),
             scale: 1.0,

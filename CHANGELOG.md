@@ -89,6 +89,10 @@ and this project adheres to
 
 ### Fixed
 
+- Right-to-left and mixed-direction text in the query draws in the right order,
+  with the caret where typing goes. The query was drawn as separate pieces
+  around the caret, which reordered each piece on its own: `שלום עולם` with the
+  caret inside the second word drew as `ולםשלום ע`, the caret at the edge.
 - The generic application icon, shown for rows with no icon of their own, is
   sharp: icon themes' scalable directories (`Type=Scalable`) are now read as
   such, so a theme's SVG wins over a small PNG it would have stretched.

@@ -6,8 +6,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crcbl_image::Rgba8Image;
+use crcbl_ui::font::Font;
+use crcbl_ui::font::layout::TextLayout;
 use crcbl_ui::image::{AtlasImage, ImageAtlas};
-use crcbl_ui::tree::{NodeKey, Ui};
+use crcbl_ui::style::{Declaration, Sides};
+use crcbl_ui::tree::{LengthAuto, NodeKey, Position, Ui};
 use glam::Vec2;
 
 use crate::picker::icons::IconCache;
@@ -40,6 +43,8 @@ pub const STATUS_BAR_TOTAL: f64 = 28.0;
 const SCROLLOFF: f64 = 1.0;
 /// Rendered icon edge in logical pixels.
 pub const ICON_SIZE: u32 = 24;
+/// The Insert-mode caret's width (`.caret`).
+const CARET_WIDTH: f32 = 2.0;
 
 /// The window height for `rows` visible result rows.
 pub fn window_height(rows: usize) -> f64 {
@@ -142,6 +147,16 @@ pub struct View {
     pub preedit: Preedit,
     /// The query caret, as last frame built it.
     caret: Option<NodeKey>,
+    /// What the query is drawn in, to place the caret in the same layout.
+    query_font: QueryFont,
+}
+
+/// The face and size the stylesheet gives the query's text: the theme font,
+/// or crcbl's sans-serif without one, carrying the fallback faces, as
+/// crcbl-ui draws the span.
+pub struct QueryFont {
+    pub font: Font,
+    pub size: f32,
 }
 
 /// An input method's composition: its text, and where its own cursor sits in
@@ -153,13 +168,14 @@ pub struct Preedit {
 }
 
 impl View {
-    pub fn new() -> Self {
+    pub fn new(query_font: QueryFont) -> Self {
         Self {
             list: None,
             scrolled_to: None,
             blink_on: true,
             preedit: Preedit::default(),
             caret: None,
+            query_font,
         }
     }
 
@@ -199,6 +215,7 @@ impl View {
                 ];
                 self.caret = query(
                     ui,
+                    &self.query_font,
                     &shown,
                     picker.query_cursor,
                     picker.vim_mode,
@@ -248,6 +265,7 @@ impl View {
                         // taking keys, so it follows this one while open.
                         self.caret = query(
                             ui,
+                            &self.query_font,
                             &line,
                             end,
                             VimMode::Insert,
@@ -331,8 +349,14 @@ impl View {
 /// on the blink-off phase without moving the text. In Insert mode an input
 /// method's `preedit`, split at its own cursor, is drawn around the caret.
 /// Returns the caret's node.
+///
+/// The text is one span and the caret is laid over it where crcbl's layout
+/// of the same text puts it, so right-to-left and mixed text, which bidi
+/// reorders, get their caret in the right place. Only a composition splits
+/// the text, to underline the pre-edit.
 fn query(
     ui: &mut Ui,
+    font: &QueryFont,
     text: &str,
     cursor: usize,
     mode: VimMode,
@@ -340,34 +364,81 @@ fn query(
     preedit: &[String; 2],
 ) -> Option<NodeKey> {
     let chars: Vec<char> = text.chars().map(uncollapsed).collect();
-    let preedit = preedit
-        .each_ref()
-        .map(|part| part.chars().map(uncollapsed).collect::<String>());
     let cursor = cursor.min(chars.len());
-    let before: String = chars[..cursor].iter().collect();
     let blink = if blink_on { ".blink-on" } else { "" };
+    if mode == VimMode::Insert && preedit.iter().any(|part| !part.is_empty()) {
+        return composing(ui, &chars, cursor, &format!(".caret{blink}"), preedit);
+    }
+    let shown: String = chars.iter().collect();
+    let byte = shown
+        .char_indices()
+        .nth(cursor)
+        .map_or(shown.len(), |(byte, _)| byte);
+    let line_height = font.font.metrics().normal_line_height(font.size);
+    let x = TextLayout::new(&font.font, &shown, font.size, line_height, None)
+        .caret(byte)
+        .x;
     let mut caret = None;
     ui.block(".query", &[], |ui| {
-        ui.span(".query-text", before.as_str(), &[]);
+        ui.span(".query-text", shown.as_str(), &[]);
         match mode {
             VimMode::Insert => {
-                ui.span(".preedit", preedit[0].as_str(), &[]);
-                caret = Some(ui.block(&format!(".caret{blink}"), &[], |_| {}).key);
-                ui.span(".preedit", preedit[1].as_str(), &[]);
-                let after: String = chars[cursor..].iter().collect();
-                ui.span(".query-text", after.as_str(), &[]);
+                let at = laid_over(x);
+                caret = Some(ui.block(&format!(".caret{blink}"), &at, |_| {}).key);
             }
             VimMode::Normal | VimMode::Visual => {
                 // Past the end the block sits on a no-break space.
-                let under = chars.get(cursor).map_or(NBSP.to_string(), char::to_string);
-                caret = Some(
-                    ui.span(&format!(".caret-block{blink}"), under.as_str(), &[])
-                        .key,
-                );
-                let after: String = chars.get(cursor + 1..).unwrap_or_default().iter().collect();
-                ui.span(".query-text", after.as_str(), &[]);
+                let under = chars.get(cursor).copied().unwrap_or(NBSP).to_string();
+                let glyph = TextLayout::new(&font.font, &under, font.size, line_height, None);
+                // A right-to-left char's caret stands at its right edge.
+                let width = glyph.width();
+                let left = if glyph.caret(0).x > 0.0 { x - width } else { x };
+                let at = laid_over(left);
+                let block = ui.span(&format!(".caret-block{blink}"), under.as_str(), &at);
+                caret = Some(block.key);
             }
         }
+    });
+    caret
+}
+
+/// Inline style placing a caret `x` pixels from the query's left, over its
+/// text rather than beside it.
+fn laid_over(x: f32) -> [Declaration; 2] {
+    [
+        Declaration::Position(Position::Absolute),
+        Declaration::Inset(Sides::Left, LengthAuto::Px(x)),
+    ]
+}
+
+/// The query while an input method composes: the text split around the
+/// caret, the pre-edit underlined at it. Bidi cannot reorder across the
+/// split, so here a right-to-left query still puts the caret at the split.
+fn composing(
+    ui: &mut Ui,
+    chars: &[char],
+    cursor: usize,
+    caret_class: &str,
+    preedit: &[String; 2],
+) -> Option<NodeKey> {
+    let preedit = preedit
+        .each_ref()
+        .map(|part| part.chars().map(uncollapsed).collect::<String>());
+    let before: String = chars[..cursor].iter().collect();
+    let after: String = chars[cursor..].iter().collect();
+    let mut caret = None;
+    ui.block(".query", &[], |ui| {
+        ui.span(".query-text", before.as_str(), &[]);
+        ui.span(".preedit", preedit[0].as_str(), &[]);
+        // In the row here, not laid over it: taking back its own width keeps
+        // the text from moving as it does.
+        let width_taken_back = [Declaration::Margin(
+            Sides::Right,
+            LengthAuto::Px(-CARET_WIDTH),
+        )];
+        caret = Some(ui.block(caret_class, &width_taken_back, |_| {}).key);
+        ui.span(".preedit", preedit[1].as_str(), &[]);
+        ui.span(".query-text", after.as_str(), &[]);
     });
     caret
 }
