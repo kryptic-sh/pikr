@@ -19,6 +19,9 @@ and this project adheres to
 
 ### Fixed
 
+- Calc mode no longer crashes pikr on an expression its evaluator panics on,
+  such as `str::substring("é", 0, 1)`: that keystroke shows no result and the
+  picker stays open.
 - Clipboard mode no longer empties the clipboard when an item cannot be decoded
   (rotated out of cliphist's history, a locked database): pikr reported success
   while `wl-copy` set an empty clipboard. The item is decoded first, the

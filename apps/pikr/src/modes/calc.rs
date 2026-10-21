@@ -42,7 +42,13 @@ pub fn eval(expr: &str) -> Option<String> {
         // expression can abort the process.
         return None;
     }
-    let value = evalexpr::eval(trimmed).ok()?;
+    // evalexpr 11 panics on some input instead of failing it (a
+    // `str::substring` cut inside a character; an out-of-range shift in a
+    // debug build), and calc evaluates on every keystroke: a panic must cost
+    // only this result, not the launcher. pikr builds with `panic = unwind`.
+    let value = std::panic::catch_unwind(|| evalexpr::eval(trimmed))
+        .ok()?
+        .ok()?;
     match value {
         evalexpr::Value::Int(i) => Some(i.to_string()),
         evalexpr::Value::Float(f) => Some(format_float(f)),
@@ -76,6 +82,14 @@ pub fn precompute(history: &[String]) -> HashMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_expression_that_panics_evalexpr_gives_no_result() {
+        assert_eq!(eval("str::substring(\"é\", 0, 1)"), None);
+        assert_eq!(eval("1 << 70"), None);
+        // Still evaluates afterwards.
+        assert_eq!(eval("1 + 1").as_deref(), Some("2"));
+    }
 
     #[test]
     fn empty_returns_none() {
