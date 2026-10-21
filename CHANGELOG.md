@@ -18,6 +18,9 @@ and this project adheres to
 
 ### Fixed
 
+- `-P` no longer writes the typed keys to the log at `RUST_LOG=trace`, where the
+  password could be read back from stderr; the key events are logged without
+  their keys.
 - Switching mode with `:` while `--loading` rows are still arriving leaves them
   behind: before, the new mode's list stayed hidden behind the loading text and
   was then replaced by the stdin rows under the new mode's name, whose history

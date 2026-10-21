@@ -545,7 +545,12 @@ impl<'a> Window<'a> {
             } => {
                 self.mods = modifiers_from_crcbl(modifiers);
                 let key = key_from_press(keysym, self.mods);
-                tracing::trace!(?keysym, ?modifiers, ?key, "key pressed");
+                // Under `-P` the keys spell the password: never log them.
+                if matches!(content, Content::Picker { session, .. } if session.app.password) {
+                    tracing::trace!(?modifiers, "key pressed");
+                } else {
+                    tracing::trace!(?keysym, ?modifiers, ?key, "key pressed");
+                }
                 Ok(key.map_or(Step::Continue(false), |key| self.key(&key, content)))
             }
             ShellEvent::TextCommit { text, .. } => {
