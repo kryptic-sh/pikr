@@ -193,6 +193,14 @@ On Wayland, pikr opens as a centred overlay panel on compositors with the
 …), above fullscreen windows and holding the keyboard. Elsewhere — GNOME Mutter,
 X11 — it opens as an ordinary window.
 
+Its layer-shell namespace is `pikr`, so compositor rules can match it. For
+example, dimming everything behind it in a Hyprland Lua config (checked on
+0.56):
+
+```lua
+hl.layer_rule({ name = "pikr-dim", match = { namespace = "^pikr$" }, dim_around = true })
+```
+
 pikr draws on the integrated GPU when the display is not driven by a discrete
 one; `CRCBL_ADAPTER=integrated|discrete|cpu` picks one instead. On a hybrid
 laptop (an iGPU plus an NVIDIA dGPU), the Vulkan loader still loads every
