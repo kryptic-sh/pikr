@@ -403,18 +403,20 @@
     recommends; those two names are from memory, not checked against the
     distributions. The Alpine `APKBUILD.in` lists no X11 packages at all. Not
     checked: installing the package on a clean system.
-- **v0.9.0 shipped without its Alpine `.apk`.** The `alpine` job runs only on a
-  tag, and its first run (v0.9.0, run 39617713493) failed in `abuild -r`:
-  `apk add --no-cache` leaves no repository index on disk, so every `depends`
-  entry was "no such package". Reproduced locally with podman in `alpine:latest`
-  running the job's own steps against the published v0.9.0 musl tarball; with
-  `apk update` added the package built, installed with its dependencies, and
-  `pikr --version` ran. `ci.yml` now runs `apk update` (2026-10-21). The v0.9.0
-  release has no `.apk` asset, though its changelog says releases ship one; the
-  next tag is the first with the fix. Re-running the v0.9.0 job would use the
-  tag's old workflow and fail again. The `build-musl` job (static `-crt-static`
-  off so the binary can `dlopen` libvulkan, `GETTEXT_SYSTEM=1`) passes. Not
-  checked: the package drawing a window on a real Alpine system against Mesa.
+- **The Alpine `.apk` publishes from v0.9.1.** v0.9.0's `alpine` job, its first
+  run, failed in `abuild -r` because `apk add --no-cache` left no package index;
+  `ci.yml` now runs `apk update` first, and v0.9.1 (cut for this) shipped
+  `pikr-0.9.1-r0.apk`. The `build-musl` job builds with
+  `-C target-feature=-crt-static` (a static musl binary cannot `dlopen`
+  libvulkan) and `GETTEXT_SYSTEM=1`. A podman `alpine:latest` run of the job's
+  steps installed the package with its dependencies and ran `pikr --version`.
+  Not checked: the package drawing a window on a real Alpine system against
+  Mesa.
+- **macOS runners sometimes never start.** Twice on 2026-10-21 a macOS job (an
+  aarch64 build, then `smoke macos-latest` on the v0.9.1 tag) sat assigned for
+  17 to 26 minutes and was cancelled with no step run, which skips every publish
+  job behind it. `gh run rerun <id> --failed` reran it and the dependents green
+  both times; nothing in pikr was at fault.
 
 ## Hardening (correct today, fragile — not defects)
 
