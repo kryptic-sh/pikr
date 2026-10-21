@@ -68,6 +68,10 @@ and this project adheres to
 
 ### Added
 
+- **Screen readers can read pikr**: the prompt, the query, the result rows and
+  the status bar, kept current as you type, through AT-SPI on Linux and FreeBSD
+  and UI Automation on Windows. Nothing is built for it until an assistive
+  technology starts reading.
 - drun icons follow your icon theme: `icon_theme` under `[theme]` in the config
   if set, otherwise the theme KDE is set to (`kdeglobals`), otherwise GTK's
   (`gtk-3.0` or `gtk-4.0` `settings.ini`). Before, pikr always looked in hicolor

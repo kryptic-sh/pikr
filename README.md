@@ -193,6 +193,9 @@ On Wayland, pikr opens as a centred overlay panel on compositors with the
 …), above fullscreen windows and holding the keyboard. Elsewhere — GNOME Mutter,
 X11 — it opens as an ordinary window.
 
+Screen readers (Orca and other AT-SPI clients on Linux, UI Automation on
+Windows) can read the prompt, query, result rows and status bar.
+
 Its layer-shell namespace is `pikr`, so compositor rules can match it. For
 example, dimming everything behind it in a Hyprland Lua config (checked on
 0.56):

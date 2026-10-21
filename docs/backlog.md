@@ -315,17 +315,23 @@
     composition edits the composition and not the query (no rerank), and the
     Enter that commits does not reach pikr, the commit arriving whole. Not
     checked: AppKit, and Backspace inside a composition on Win32.
-  - **Screen readers cannot see pikr on Linux until it adopts crcbl's AT-SPI.**
-    Checked 2026-10-20 on Hyprland: with pikr open, the AT-SPI desktop listed
-    only xdg-desktop-portal-gtk, waybar and swaync. pikr turns on neither
-    crate's `accesskit` feature and never calls `Shell::update_accessibility`.
-    crcbl 0.8.0, which pikr is on, serves the tree over AT-SPI on Wayland and
-    X11 (and UI Automation on Win32) behind that feature; the crcbl session
-    reports Orca reading and acting on pikr's tree. To adopt: enable `accesskit`
-    on crcbl-shell and crcbl-ui, send `Ui::accessibility_update` after each
-    frame and answer `accessibility_action`, then check the AT-SPI desktop lists
-    pikr. That adds dependencies (accesskit, and zbus on Linux), the owner's
-    call; not started.
+  - **Screen readers: adopted 2026-10-21** (crcbl's `accesskit` feature on
+    crcbl-shell and crcbl-ui; `ui::run` sends `Ui::accessibility_update` after
+    each frame while `reading`, and passes `AccessibilityAction` to
+    `Ui::accessibility_action`). Checked on Hyprland with Python's `Atspi`: pikr
+    appears on the AT-SPI desktop only while `org.a11y.Status IsEnabled` is true
+    (a screen reader sets it; accesskit_unix waits for it, so nothing is
+    registered otherwise), and its tree held the prompt, the query, one list
+    item per row with its label and icon, the scrollbar and the status bar,
+    updated as the query was typed. First paint with the feature was 122 to 149
+    ms against 120 to 177 ms without (interleaved, load ~7). cargo-deny's three
+    zbus "unmaintained" advisories are ignored in `deny.toml`, as crcbl does.
+    Gaps, both needing crcbl API: a row whose label is highlighted reads as its
+    runs (`gamma` matching `ga` gives labels "ga" and "mma"), since each span is
+    its own label and pikr cannot name the row; and the selected row is not
+    marked (`set_selected` is only set for tabs, select options and outliner
+    rows). Asked of crcbl 2026-10-21. Not checked: Orca speaking it (Orca is not
+    installed), and UI Automation on Windows.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
