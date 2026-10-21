@@ -18,6 +18,10 @@ and this project adheres to
 
 ### Fixed
 
+- The frecency file (`usage.toml`) no longer grows without bound. Saving drops
+  entries whose use has decayed too far to change any ranking, and keeps at most
+  1000 per mode, the highest-scoring. A dmenu fed a changing list (a clipboard
+  history, say) left one entry per accepted line for good.
 - `--kb-custom` accepts a confirm prompt on a `+` key: `Alt++=Sure?` was
   rejected as an empty modifier. The prompt starts at the first `=` with a whole
   key before it, so `Ctrl+==Delete?` still binds `Ctrl+=`.

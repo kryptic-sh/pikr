@@ -30,6 +30,12 @@ const HALF_LIFE: Duration = Duration::from_secs(14 * 24 * 60 * 60);
 /// strong matches).
 const BONUS_SCALE: f64 = 80.0;
 
+/// The most entries one mode keeps on disk. Entries that no longer move the
+/// ranking are dropped first anyway (see [`Usage::prune`]); this bounds a
+/// burst of distinct accepts within that window, such as a clipboard history
+/// piped through dmenu.
+const USAGE_CAP: usize = 1000;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UsageEntry {
     pub count: u32,
@@ -81,7 +87,9 @@ impl Usage {
             tracing::warn!(error = %e, path = %parent.display(), "create state dir");
             return;
         }
-        let text = match toml::to_string(self) {
+        let mut pruned = self.clone();
+        pruned.prune(unix_seconds(SystemTime::now()));
+        let text = match toml::to_string(&pruned) {
             Ok(t) => t,
             Err(e) => {
                 tracing::warn!(error = %e, "serialize usage");
@@ -91,6 +99,32 @@ impl Usage {
         if let Err(e) = crate::picker::write_private_state(&path, text.as_bytes()) {
             tracing::warn!(error = %e, path = %path.display(), "write usage");
         }
+    }
+
+    /// Drops the entries whose bonus at `now_secs` rounds to nothing, which
+    /// can no longer change a ranking (a single accept fades out within a few
+    /// [`HALF_LIFE`]s), then, in a mode with more than [`USAGE_CAP`] left, the
+    /// lowest-scoring ones.
+    fn prune(&mut self, now_secs: i64) {
+        for entries in self.modes.values_mut() {
+            entries.retain(|_, entry| score_bonus(entry, now_secs) > 0);
+            if entries.len() > USAGE_CAP {
+                let mut ranked: Vec<(u16, i64, String)> = entries
+                    .iter()
+                    .map(|(key, entry)| {
+                        (score_bonus(entry, now_secs), entry.last_used, key.clone())
+                    })
+                    .collect();
+                ranked.sort_unstable_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+                let kept: std::collections::HashSet<String> = ranked
+                    .into_iter()
+                    .take(USAGE_CAP)
+                    .map(|(_, _, key)| key)
+                    .collect();
+                entries.retain(|key, _| kept.contains(key));
+            }
+        }
+        self.modes.retain(|_, entries| !entries.is_empty());
     }
 
     /// Record an accept. `cli_mode` is the current picker mode; `payload` is
@@ -358,6 +392,74 @@ mod tests {
             last_used: i64::MIN,
         };
         assert_eq!(score_bonus(&entry, now_secs()), 0);
+    }
+
+    #[test]
+    fn prune_drops_entries_that_no_longer_rank_and_keeps_the_rest() {
+        let now = now_secs();
+        let day = 24 * 60 * 60;
+        let mut usage = Usage::default();
+        let drun = usage.modes.entry("drun".into()).or_default();
+        drun.insert(
+            "fresh".into(),
+            UsageEntry {
+                count: 1,
+                last_used: now,
+            },
+        );
+        // One accept 100 days ago: 80 * 2^(-100/14) rounds to nothing.
+        drun.insert(
+            "faded".into(),
+            UsageEntry {
+                count: 1,
+                last_used: now - 100 * day,
+            },
+        );
+        // Many accepts as long ago still count.
+        drun.insert(
+            "staple".into(),
+            UsageEntry {
+                count: 400,
+                last_used: now - 100 * day,
+            },
+        );
+        usage.modes.entry("emoji".into()).or_default().insert(
+            "gone".into(),
+            UsageEntry {
+                count: 1,
+                last_used: now - 200 * day,
+            },
+        );
+        usage.prune(now);
+        let drun = &usage.modes["drun"];
+        assert!(drun.contains_key("fresh") && drun.contains_key("staple"));
+        assert!(!drun.contains_key("faded"));
+        assert!(
+            !usage.modes.contains_key("emoji"),
+            "an emptied mode is dropped"
+        );
+    }
+
+    #[test]
+    fn prune_caps_a_mode_keeping_the_highest_scores() {
+        let now = now_secs();
+        let mut usage = Usage::default();
+        let dmenu = usage.modes.entry("dmenu".into()).or_default();
+        for i in 0..USAGE_CAP + 5 {
+            // Older entries score lower.
+            dmenu.insert(
+                format!("k{i}"),
+                UsageEntry {
+                    count: 1,
+                    last_used: now - i as i64,
+                },
+            );
+        }
+        usage.prune(now);
+        let dmenu = &usage.modes["dmenu"];
+        assert_eq!(dmenu.len(), USAGE_CAP);
+        assert!(dmenu.contains_key("k0"));
+        assert!(!dmenu.contains_key(&format!("k{}", USAGE_CAP + 4)));
     }
 
     #[test]
