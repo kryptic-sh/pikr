@@ -137,6 +137,11 @@
     here; another Windows version or shell extension was not checked.
   - Not done, by design so far: `TryExec`, `OnlyShowIn`/`NotShowIn`; no `--`
     before the ssh host (the config is trusted); no `setsid` for Unix spawns.
+    Evidence for the first two (Arch + Hyprland, 2026-10-21, kwin and niri
+    installed): of the 54 visible applications, none had an `OnlyShowIn` that
+    excludes `Hyprland`, a `NotShowIn` naming it, or a `TryExec` program that is
+    missing, so honouring them would change nothing there. A GNOME or KDE
+    install with the other desktop's settings apps is where it would.
   - ssh has no `known_hosts` parsing and no `Include` support; `~/.ssh/config`
     files that split hosts across `Include`d files list only the main file's.
 - **Not verified (coverage gaps).**
