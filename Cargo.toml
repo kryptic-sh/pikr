@@ -32,8 +32,10 @@ crcbl-vk = "0.8.1"
 # crcbl-ui and crcbl-frame take glam vectors and do not re-export glam.
 glam = "0.34"
 clap = { version = "4", features = ["derive"] }
-dirs = "6"
+dirs = "7"
 emojis = "0.9"
+# Held at 11: evalexpr 12.0.0 relicensed under AGPL-3.0-only, which pikr's
+# MIT binaries cannot ship (cargo-deny rejects it).
 evalexpr = "11"
 freedesktop-desktop-entry = "0.8"
 nucleo = "0.5"
@@ -43,7 +45,7 @@ toml = "1.1"
 tempfile = "3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-unicode-normalization = "0.1.25"
+unicode-normalization = "0.1.26"
 unicode-segmentation = "1.13.3"
 xdg = "3"
 

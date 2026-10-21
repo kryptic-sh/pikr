@@ -364,6 +364,16 @@
     macOS paths. wayr's own `README.md` still lists pikr as a consumer; that
     needs fixing in the wayr repo (no session was available to do it).
 
+## Dependencies
+
+- **evalexpr is held at 11 (declined: 12 and later).** evalexpr 12.0.0
+  relicensed it under AGPL-3.0-only, which pikr's MIT binaries cannot ship;
+  cargo-deny's licence check rejects it. `cargo upgrade --incompatible` offers
+  13 and has to be undone each time (the reason is beside the requirement in the
+  workspace `Cargo.toml`). Moving off evalexpr to another permissively licensed
+  expression evaluator, or writing calc mode's own, is the alternative if 11
+  ever needs a fix it will not get.
+
 ## Release pipeline
 
 - Package runtime dependencies (`pkg/nfpm/nfpm.yaml.in`, `pkg/aur/`,
