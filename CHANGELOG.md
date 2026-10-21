@@ -89,6 +89,12 @@ and this project adheres to
 
 ### Fixed
 
+- The generic application icon, shown for rows with no icon of their own, is
+  sharp: icon themes' scalable directories (`Type=Scalable`) are now read as
+  such, so a theme's SVG wins over a small PNG it would have stretched.
+- At a fractional scale on Wayland, the window is drawn at two sizes while it
+  opens instead of three, and no integer buffer scale is set beside the
+  fractional one.
 - Clipboard mode warns on stderr when `cliphist` is not installed, instead of
   showing "No entries." as if the history were empty.
 - The Arch package lists `xcb-util-cursor` as optional, and the `.deb` and

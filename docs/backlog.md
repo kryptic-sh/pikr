@@ -8,17 +8,6 @@
   them together. If a fix pikr needs is only on crcbl main, pin every crate to
   the same CI-green rev and add the repo back to `deny.toml`'s `allow-git` until
   a release carries it.
-- **Next: crcbl 0.8.0** (a minor bump: breaking changes such as
-  `FrameOutcome::Held` and `SurfaceTarget`'s `main_device` fields). On
-  2026-10-21 crcbl's session reported main ready and asked the owner for the
-  release. Owner's choice: wait for the release, no git pin. Trial run that day,
-  pikr at `0f0edde` with every crcbl crate patched to crcbl main `f686b34a`: no
-  code change was needed, clippy was clean, and every test passed (304 unit, 6
-  sway e2e, 10 smoke, 1 more). It brings the `Scalable` icon fix, the
-  fractional-scale startup fix, AT-SPI on Linux behind `accesskit`,
-  `TextLayout::caret` and the Win32 unsided-modifier fix. After bumping: draw
-  the query caret with `TextLayout::caret` (the RTL caret entry below), and with
-  the owner's go-ahead on the dependencies, adopt `accesskit`.
 - **Windows transparency is D3D12 only.** crcbl draws a transparent Win32 window
   through a DirectComposition swapchain and refuses one on Vulkan, which pikr
   does not use on Windows. From crcbl 0.6.0 `ui::run`'s `update_input_region`
@@ -102,13 +91,13 @@
     RTL block covers the character under it; an IME composition (fcitx5 + mozc)
     still draws underlined at the caret, since a composition keeps the split
     spans. Lands right after the 0.8.0 bump.
-  - **Confirm injected unsided Ctrl for crcbl.** crcbl main (after 0.7.0) counts
-    `VK_CONTROL`/`VK_MENU`/`VK_SHIFT` without a side toward the modifier state;
-    on 0.6.0 an injected generic `VK_CONTROL` lost Ctrl, so pikr's on-screen
-    paste test sent `VK_LCONTROL` (0xA2, scancode 0x1D). crcbl asked pikr to
-    confirm on Windows 11 that a generic `VK_CONTROL` + V pastes once a release
-    carries the fix (their change is unit-tested only). It needs synthesized
-    keys, so the user's go-ahead.
+  - **Confirm injected unsided Ctrl for crcbl.** crcbl 0.8.0 (which pikr is on
+    since 2026-10-21) counts `VK_CONTROL`/`VK_MENU`/`VK_SHIFT` without a side
+    toward the modifier state; on 0.6.0 an injected generic `VK_CONTROL` lost
+    Ctrl, so pikr's on-screen paste test sent `VK_LCONTROL` (0xA2, scancode
+    0x1D). crcbl asked pikr to confirm on Windows 11 that a generic
+    `VK_CONTROL` + V pastes (their change is unit-tested only). Needs the
+    Windows test desktop and synthesized keys, so the user's go-ahead.
   - IME, checked on Windows 2026-10-20 with the Microsoft Japanese IME (keys
     synthesized while pikr held the foreground): the pre-edit draws inline and
     underlined at the caret, the candidate list opens right below the caret, the
@@ -322,30 +311,6 @@
     made it exit at once with code 1 and nothing on stdout, like a cancel. Not
     checked: a real eDP panel with the lid opened or closed while pikr is open
     (the test outputs were headless).
-  - **Startup at a scale other than 1 draws at three sizes** (`WAYLAND_DEBUG=1`
-    at 1.5): buffers at 1x, then at the output's integer scale (2, from
-    `wl_output.scale`), then at 1.5 once `preferred_scale` arrives after
-    `wl_surface.enter`, so the swapchain is rebuilt twice before the frame that
-    stays, and crcbl 0.7.0 sends `set_buffer_scale(2)` beside the viewport.
-    Fixed on crcbl main by `2a1e75ad` ("skip the integer scale under
-    fractional"): pikr built against it in a scratch clone drew two sizes
-    (720x448, then 1080x672) and sent no `set_buffer_scale` on Hyprland at 1.5.
-    Bump once a crcbl release carries it. The 1x first frame stays:
-    `preferred_scale` needs a mapped surface.
-  - **The generic fallback icon draws blurry: crcbl reads `Type=Scalable` as a
-    threshold directory.** `crcbl_image::theme::parse_index` (crcbl 0.7.0, still
-    on crcbl main at `0bc5f7cb`) matches `"Scaled"`, but the freedesktop spec's
-    value, which Adwaita uses, is `Scalable`. Every scalable directory then
-    becomes `Threshold(2)` around its `Size` (Adwaita says 128), so for 24 px
-    `application-x-executable` resolves to Adwaita's `16x16/mimetypes` PNG,
-    stretched to 24 px at scale 1 and 48 px at scale 2, instead of
-    `scalable/mimetypes/application-x-executable.svg`. Found with a throwaway
-    probe calling `IconThemes::lookup` the way `picker::icons::IconCache` does.
-    Any theme icon that only a scalable directory carries is hit the same way.
-    Fixed on crcbl main (2026-10-20, after `0bc5f7cb`, with a regression test
-    for this Adwaita case). Checked on screen 2026-10-21 with pikr built against
-    crcbl main at scale 2 and `icon_theme = "Adwaita"`: the generic icon is now
-    the sharp scalable SVG instead of the stretched 16 px PNG.
   - Icon theme order (`picker::icon_theme::chosen`), as the owner set it on
     2026-10-20: pikr's `theme.icon_theme`, then KDE's `kdeglobals`, then GTK 3's
     and GTK 4's `settings.ini`, then `FALLBACK_THEMES`, then hicolor. Not read:
@@ -365,18 +330,14 @@
   - **Screen readers cannot see pikr on Linux until it adopts crcbl's AT-SPI.**
     Checked 2026-10-20 on Hyprland: with pikr open, the AT-SPI desktop listed
     only xdg-desktop-portal-gtk, waybar and swaync. pikr turns on neither
-    crate's `accesskit` feature and never calls `Shell::update_accessibility`,
-    and on Linux that would not help yet: crcbl 0.7.0's `accesskit` feature
-    brings only `accesskit_windows`, and the Wayland and X11 shells keep the
-    trait's default, which drops the tree. crcbl main (2026-10-21, "feat(shell):
-    serve accessibility over AT-SPI", not yet released) serves the tree over
-    AT-SPI on Wayland and X11 behind the same `accesskit` feature; the crcbl
-    session reports Orca reading and acting on pikr's tree. To adopt, once a
-    crcbl release carries it (the owner chose to wait for releases): enable
-    `accesskit` on crcbl-shell and crcbl-ui, send `Ui::accessibility_update`
-    after each frame and answer `accessibility_action`, then check the AT-SPI
-    desktop lists pikr. That adds dependencies (accesskit, and zbus on Linux),
-    the owner's call; not started.
+    crate's `accesskit` feature and never calls `Shell::update_accessibility`.
+    crcbl 0.8.0, which pikr is on, serves the tree over AT-SPI on Wayland and
+    X11 (and UI Automation on Win32) behind that feature; the crcbl session
+    reports Orca reading and acting on pikr's tree. To adopt: enable `accesskit`
+    on crcbl-shell and crcbl-ui, send `Ui::accessibility_update` after each
+    frame and answer `accessibility_action`, then check the AT-SPI desktop lists
+    pikr. That adds dependencies (accesskit, and zbus on Linux), the owner's
+    call; not started.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
