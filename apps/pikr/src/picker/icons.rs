@@ -47,6 +47,12 @@ const ICON_LIMITS: Limits = Limits {
     max_bytes: 1024 * 1024 * 4,
 };
 
+/// The largest icon file read at all, before decoding bounds it by
+/// [`ICON_LIMITS`]: an `Icon=` naming a disc image must not be loaded whole.
+/// Far above any real icon (the largest on a desktop with Adwaita, Breeze
+/// and Papirus is under 3 MB, cursors and resource bundles aside).
+const MAX_ICON_FILE_BYTES: u64 = 16 * 1024 * 1024;
+
 /// One decoded file, at one size, as it was when read.
 struct Decoded {
     version: FileVersion,
@@ -108,7 +114,7 @@ impl IconCache {
         {
             return cached.image.clone();
         }
-        let image = std::fs::read(path)
+        let image = read_capped(path, MAX_ICON_FILE_BYTES)
             .map_err(|e| e.to_string())
             .and_then(|bytes| decode(&bytes, size).map_err(|e| e.to_string()))
             .inspect_err(|e| tracing::debug!(path = %path.display(), "icon not drawn: {e}"))
@@ -130,6 +136,20 @@ impl IconCache {
     fn decoded_len(&self) -> usize {
         self.decoded.len()
     }
+}
+
+/// `path`'s bytes, or an error for a file larger than `cap` bytes, read no
+/// further than one byte past it.
+fn read_capped(path: &Path, cap: u64) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(cap + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > cap {
+        return Err(std::io::Error::other(format!("larger than {cap} bytes")));
+    }
+    Ok(bytes)
 }
 
 /// `bytes` decoded by their format's signature, then scaled down to fit a
@@ -186,6 +206,15 @@ mod tests {
         let mut cache = IconCache::new(&[]);
         let name = path.to_string_lossy();
         assert_eq!(cache.resolve(Some(&name), 24, 1), Some(path.clone()));
+    }
+
+    #[test]
+    fn read_capped_refuses_a_file_over_the_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("icon.svg");
+        std::fs::write(&path, [0u8; 11]).unwrap();
+        assert_eq!(read_capped(&path, 11).unwrap().len(), 11);
+        assert!(read_capped(&path, 10).is_err());
     }
 
     #[test]
