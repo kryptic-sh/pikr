@@ -8,6 +8,14 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-21
+
+### Fixed
+
+- The release includes the Alpine `.apk` again. v0.9.0's failed to build: the
+  packaging job could not see Alpine's package index, so none of pikr's
+  dependencies resolved. 0.9.1 has no other changes.
+
 ## [0.9.0] - 2026-10-21
 
 ### Breaking
@@ -1279,7 +1287,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.0...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.1...main
+[0.9.1]: https://github.com/kryptic-sh/pikr/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/kryptic-sh/pikr/compare/v0.8.13...v0.9.0
 [0.8.13]: https://github.com/kryptic-sh/pikr/compare/v0.8.12...v0.8.13
 [0.8.12]: https://github.com/kryptic-sh/pikr/compare/v0.8.11...v0.8.12
