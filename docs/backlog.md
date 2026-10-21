@@ -8,6 +8,17 @@
   them together. If a fix pikr needs is only on crcbl main, pin every crate to
   the same CI-green rev and add the repo back to `deny.toml`'s `allow-git` until
   a release carries it.
+- **Next: crcbl 0.8.0** (a minor bump: breaking changes such as
+  `FrameOutcome::Held` and `SurfaceTarget`'s `main_device` fields). On
+  2026-10-21 crcbl's session reported main ready and asked the owner for the
+  release. Owner's choice: wait for the release, no git pin. Trial run that day,
+  pikr at `0f0edde` with every crcbl crate patched to crcbl main `f686b34a`: no
+  code change was needed, clippy was clean, and every test passed (304 unit, 6
+  sway e2e, 10 smoke, 1 more). It brings the `Scalable` icon fix, the
+  fractional-scale startup fix, AT-SPI on Linux behind `accesskit`,
+  `TextLayout::caret` and the Win32 unsided-modifier fix. After bumping: draw
+  the query caret with `TextLayout::caret` (the RTL caret entry below), and with
+  the owner's go-ahead on the dependencies, adopt `accesskit`.
 - **Windows transparency is D3D12 only.** crcbl draws a transparent Win32 window
   through a DirectComposition swapchain and refuses one on Vulkan, which pikr
   does not use on Windows. From crcbl 0.6.0 `ui::run`'s `update_input_region`
@@ -306,8 +317,9 @@
     probe calling `IconThemes::lookup` the way `picker::icons::IconCache` does.
     Any theme icon that only a scalable directory carries is hit the same way.
     Fixed on crcbl main (2026-10-20, after `0bc5f7cb`, with a regression test
-    for this Adwaita case); bump pikr once a crcbl release carries it and check
-    the dmenu rows' icon at scale 2.
+    for this Adwaita case). Checked on screen 2026-10-21 with pikr built against
+    crcbl main at scale 2 and `icon_theme = "Adwaita"`: the generic icon is now
+    the sharp scalable SVG instead of the stretched 16 px PNG.
   - Icon theme order (`picker::icon_theme::chosen`), as the owner set it on
     2026-10-20: pikr's `theme.icon_theme`, then KDE's `kdeglobals`, then GTK 3's
     and GTK 4's `settings.ini`, then `FALLBACK_THEMES`, then hicolor. Not read:
