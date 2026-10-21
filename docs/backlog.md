@@ -266,6 +266,14 @@
     is a whole 1080x672 and text is sharp (before that it was 1080x671 for 670.5
     device pixels, and soft). A scale change from 1.5 to 1 while pikr was open
     was picked up in place. Fractional scales other than 1.5 were not looked at.
+  - Two outputs at different scales (nested Hyprland, 2026-10-21, standing in
+    for the laptop panel beside an external monitor): pikr opens centred on the
+    focused output and draws at that output's scale (`preferred_scale(240)` and
+    1440x896 buffers on the scale-2 one, 720x448 on the scale-1 one), and
+    accepts on both. Removing the output pikr was open on (an unplugged monitor)
+    made it exit at once with code 1 and nothing on stdout, like a cancel. Not
+    checked: a real eDP panel with the lid opened or closed while pikr is open
+    (the test outputs were headless).
   - **Startup at a scale other than 1 draws at three sizes** (`WAYLAND_DEBUG=1`
     at 1.5): buffers at 1x, then at the output's integer scale (2, from
     `wl_output.scale`), then at 1.5 once `preferred_scale` arrives after
