@@ -176,9 +176,14 @@
     out-of-date present keeps `may_present`), the char/byte index handling in
     `ui::view`, `fitted_size`, shutdown order and exit codes. A reader's Click
     on a result row does nothing (rows are `Role::None`, which crcbl refuses to
-    click); not a regression. `modes/` was last reviewed 2026-10-19; the rest of
-    the tree (`picker` outside `session`, `config`, `app`, `cli`) has had no
-    full review since the crcbl port.
+    click); not a regression. The rest of the tree (`picker` outside `session`,
+    `config`, `app`, `cli`) was reviewed the same day, the same way: frecency
+    never pruned, Windows clipboard accepts written to disk, lost updates
+    between two open pikrs, an unparsable state file silently wiped, an overflow
+    on a corrupt `last_used`, `--kb-custom Alt++=…` refused, and icon files read
+    whole before any limit; all fixed. Found sound there: the matcher's char
+    positions, `-P` never recording, `Cli::validate`'s combinations, and the
+    icon-theme key-file reader. `modes/` was last reviewed 2026-10-19.
   - Linux was verified only through CI's sway session on lavapipe: the e2e
     keyboard suite and the startup gate passed (run 39002212977, 237 ms
     launch-to-result against the 500 ms deadline). Hyprland 0.56.2 (Arch,
