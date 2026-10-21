@@ -168,10 +168,17 @@
     mode now also lists its `.host` and `machine/.host` (real targets:
     `ssh .host` reaches the local machine through systemd's proxy).
 - **Not verified (coverage gaps).**
-  - No whole-codebase correctness or security review since the crcbl port. The
-    last ones (2026-08-06) read the floem UI, which is gone; `ui/` and
-    `picker::session` (the event loop, view, key dispatch, `-P` prompt and IME
-    handling) have only had the review of the commits that wrote them.
+  - `ui/` and `picker::session` were reviewed for correctness and security on
+    2026-10-22 (one read-only agent; every finding re-checked and fixed with a
+    test or an on-screen check): `:mode` during `--loading`, a Ctrl chord
+    swallowing a later IME commit, the `:` prompt's composition, and `-P` keys
+    in trace logs. Checked by it and found sound: frame pacing never stalls (an
+    out-of-date present keeps `may_present`), the char/byte index handling in
+    `ui::view`, `fitted_size`, shutdown order and exit codes. A reader's Click
+    on a result row does nothing (rows are `Role::None`, which crcbl refuses to
+    click); not a regression. `modes/` was last reviewed 2026-10-19; the rest of
+    the tree (`picker` outside `session`, `config`, `app`, `cli`) has had no
+    full review since the crcbl port.
   - Linux was verified only through CI's sway session on lavapipe: the e2e
     keyboard suite and the startup gate passed (run 39002212977, 237 ms
     launch-to-result against the 500 ms deadline). Hyprland 0.56.2 (Arch,
