@@ -13,7 +13,8 @@ and this project adheres to
 - ssh mode follows `Include` in `~/.ssh/config` and `/etc/ssh/ssh_config`, so
   hosts defined in included files are listed: paths may start with `~/`, be
   relative (to `~/.ssh` or `/etc/ssh`) or absolute, and use `*` and `?` in the
-  file name, as `Include config.d/*` does. On systemd systems this also lists
+  file name, as `Include config.d/*` does. Each file is read once, so files that
+  include each other cannot stall the picker. On systemd systems this also lists
   the `.host` entries systemd's ssh proxy config defines.
 
 ### Fixed

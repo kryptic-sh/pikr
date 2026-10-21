@@ -44,8 +44,16 @@ impl Mode for Ssh {
         let mut entries: Vec<Entry> = Vec::new();
 
         let home = home_dir();
+        let mut read = std::collections::HashSet::new();
         for (path, base) in config_paths() {
-            entries.extend(read_config(&path, &base, home.as_deref(), &terminal, 0));
+            entries.extend(read_config(
+                &path,
+                &base,
+                home.as_deref(),
+                &terminal,
+                0,
+                &mut read,
+            ));
         }
 
         entries.sort_by_key(|a| a.label.to_lowercase());
@@ -81,13 +89,23 @@ const MAX_INCLUDE_DEPTH: usize = 16;
 /// The entries of the config at `path` and of everything it includes, an
 /// included file's entries where its `Include` stands. A file that cannot be
 /// read gives none, as ssh skips an `Include` that matches nothing.
+///
+/// Each file is read once per walk (`read` holds the ones already read): a
+/// second read could only repeat entries that are deduplicated anyway, and
+/// files that include each other, or a glob matching its own file, would
+/// otherwise be read a number of times exponential in [`MAX_INCLUDE_DEPTH`].
 fn read_config(
     path: &Path,
     base: &Path,
     home: Option<&Path>,
     terminal: &Terminal,
     depth: usize,
+    read: &mut std::collections::HashSet<PathBuf>,
 ) -> Vec<Entry> {
+    let identity = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if !read.insert(identity) {
+        return Vec::new();
+    }
     let Ok(text) = std::fs::read_to_string(path) else {
         return Vec::new();
     };
@@ -98,8 +116,8 @@ fn read_config(
         }
         include_paths(value, base, home)
             .iter()
-            .flat_map(|file| read_config(file, base, home, terminal, depth + 1))
-            .collect()
+            .flat_map(|file| read_config(file, base, home, terminal, depth + 1, read))
+            .collect::<Vec<_>>()
     })
 }
 
@@ -910,7 +928,14 @@ Host = beta
         std::fs::write(dir.path().join("My Configs/hosts"), "Host spaced\n").unwrap();
         let config = dir.path().join("config");
         std::fs::write(&config, "Include \"My Configs/hosts\"\n").unwrap();
-        let entries = read_config(&config, dir.path(), None, &Terminal::simple("alacritty"), 0);
+        let entries = read_config(
+            &config,
+            dir.path(),
+            None,
+            &Terminal::simple("alacritty"),
+            0,
+            &mut Default::default(),
+        );
         assert_eq!(labels(&entries), ["spaced"]);
     }
 
@@ -945,7 +970,14 @@ Host = beta
         std::fs::write(conf_d.join(".hidden.conf"), "Host hidden\n").unwrap();
         let config = dir.path().join("config");
         std::fs::write(&config, "Host first\nInclude conf.d/*.conf\nHost last\n").unwrap();
-        let entries = read_config(&config, dir.path(), None, &Terminal::simple("alacritty"), 0);
+        let entries = read_config(
+            &config,
+            dir.path(),
+            None,
+            &Terminal::simple("alacritty"),
+            0,
+            &mut Default::default(),
+        );
         assert_eq!(labels(&entries), ["first", "alpha", "bravo", "last"]);
     }
 
@@ -964,6 +996,7 @@ Host = beta
             Some(home.path()),
             &Terminal::simple("alacritty"),
             0,
+            &mut Default::default(),
         );
         assert_eq!(labels(&entries), ["from-home", "from-absolute"]);
     }
@@ -978,17 +1011,58 @@ Host = beta
             "Host parent\n    Include extra\n    HostName parent.example\n",
         )
         .unwrap();
-        let entries = read_config(&config, dir.path(), None, &Terminal::simple("alacritty"), 0);
+        let entries = read_config(
+            &config,
+            dir.path(),
+            None,
+            &Terminal::simple("alacritty"),
+            0,
+            &mut Default::default(),
+        );
         assert_eq!(labels(&entries), ["parent", "child"]);
         assert_eq!(entries[0].description.as_deref(), Some("parent.example"));
     }
 
     #[test]
-    fn a_config_including_itself_stops_at_the_depth_limit() {
+    fn a_config_including_itself_is_read_once() {
         let dir = tempfile::tempdir().unwrap();
         let config = dir.path().join("config");
         std::fs::write(&config, "Host loop\nInclude config\n").unwrap();
-        let entries = read_config(&config, dir.path(), None, &Terminal::simple("alacritty"), 0);
-        assert_eq!(entries.len(), MAX_INCLUDE_DEPTH + 1);
+        let entries = read_config(
+            &config,
+            dir.path(),
+            None,
+            &Terminal::simple("alacritty"),
+            0,
+            &mut Default::default(),
+        );
+        assert_eq!(labels(&entries), ["loop"]);
+    }
+
+    #[test]
+    fn files_including_each_other_are_each_read_once() {
+        // Each file includes the whole directory, itself and the others:
+        // without reading each file once this is 3^16 reads.
+        let dir = tempfile::tempdir().unwrap();
+        let conf_d = dir.path().join("config.d");
+        std::fs::create_dir(&conf_d).unwrap();
+        for name in ["a", "b", "c"] {
+            std::fs::write(
+                conf_d.join(name),
+                format!("Host {name}\nInclude config.d/*\n"),
+            )
+            .unwrap();
+        }
+        let config = dir.path().join("config");
+        std::fs::write(&config, "Include config.d/*\n").unwrap();
+        let entries = read_config(
+            &config,
+            dir.path(),
+            None,
+            &Terminal::simple("alacritty"),
+            0,
+            &mut Default::default(),
+        );
+        assert_eq!(labels(&entries), ["a", "b", "c"]);
     }
 }
