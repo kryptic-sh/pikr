@@ -287,7 +287,15 @@
     with a viewport and draws at 1.5 itself; since `ui::run::snapped` the buffer
     is a whole 1080x672 and text is sharp (before that it was 1080x671 for 670.5
     device pixels, and soft). A scale change from 1.5 to 1 while pikr was open
-    was picked up in place. Fractional scales other than 1.5 were not looked at.
+    was picked up in place. Other scales (nested Hyprland, 1920x1080 output,
+    2026-10-21): 1.25 gave a whole 900x560 buffer. Hyprland snaps a 1.75 request
+    to 5/3 there, and also takes 4/3 and 1.6, where 720x448 is not whole
+    (buffers 960x597, 1152x717, 1200x747). At 1.6 a throwaway build with a size
+    step of 5 (a whole 1152x720) measured the same edge sharpness as the 717-row
+    buffer, so Hyprland does not visibly resample a size it rounds the same way.
+    The softness seen at 1.5 came from an exact half pixel (670.5), where
+    rounding can go either way. A multiple of 4 also avoids those halves for the
+    default sizes at the other scales checked.
   - Two outputs at different scales (nested Hyprland, 2026-10-21, standing in
     for the laptop panel beside an external monitor): pikr opens centred on the
     focused output and draws at that output's scale (`preferred_scale(240)` and
