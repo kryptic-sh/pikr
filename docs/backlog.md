@@ -77,8 +77,13 @@
     the six of its SVGs that still hold `<text>` (applets-template, kbruch,
     khangman, kile, kwave, xorg) all render through `crcbl_image::svg::decode`
     with `svg-text` at 96 px, every label in place, on Windows with its system
-    fonts. Not checked: SVG text in scripts beyond Latin. crcbl's own gaps:
-    arrow keys move in logical order, and SVG text clusters are approximate.
+    fonts. Beyond Latin, checked 2026-10-21 on Arch (Noto fonts) at scale 2: a
+    drun icon SVG with three `<text>` lines drew 日本, Hebrew עבר in
+    right-to-left order, and Arabic عربي shaped and joined (the break after ر is
+    correct Arabic). The Arabic line drew visibly smaller than the other two at
+    the same `font-size`, probably the fallback face's metrics; not
+    investigated. crcbl's own gaps: arrow keys move in logical order, and SVG
+    text clusters are approximate.
   - **Right-to-left text in the query puts the caret in the wrong place.**
     Pasting `שלום עולם` and pressing Left three times (logical index 6 of 9)
     drew the caret at the text's right edge, not inside the second word
