@@ -195,11 +195,13 @@ impl FromStr for KbCustom {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // The first `=` that isn't the key itself separates KEY from PROMPT:
-        // `==Delete?` binds `=`, and `Ctrl+==Delete?` binds `Ctrl+=`.
+        // KEY ends at the first `=` with a whole key spec before it, so `=`
+        // and `+` can each be the key: `==Delete?` binds `=`,
+        // `Ctrl+==Delete?` binds `Ctrl+=` (`Ctrl+` is no key), and
+        // `Alt++=Sure?` binds `Alt++`.
         let split = s
             .char_indices()
-            .find(|&(i, c)| c == '=' && i > 0 && !s[..i].ends_with('+'));
+            .find(|&(i, c)| c == '=' && s[..i].parse::<KeySpec>().is_ok());
         let (key, confirm) = match split {
             Some((i, _)) => (&s[..i], Some(&s[i + 1..])),
             None => (s, None),
@@ -421,6 +423,18 @@ mod tests {
         assert_eq!(ctrl.confirm.as_deref(), Some("Delete?"));
         let no_prompt: KbCustom = "Ctrl+=".parse().unwrap();
         assert_eq!(no_prompt.confirm, None);
+    }
+
+    #[test]
+    fn kb_custom_plus_as_the_key_with_a_prompt() {
+        let b: KbCustom = "Alt++=Sure?".parse().unwrap();
+        assert!(
+            b.key
+                .matches(&Key::Character("+".into()), mods(false, false, true, false))
+        );
+        assert_eq!(b.confirm.as_deref(), Some("Sure?"));
+        let ctrl: KbCustom = "Ctrl++".parse().unwrap();
+        assert_eq!(ctrl.confirm, None);
     }
 
     #[test]

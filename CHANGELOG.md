@@ -18,6 +18,9 @@ and this project adheres to
 
 ### Fixed
 
+- `--kb-custom` accepts a confirm prompt on a `+` key: `Alt++=Sure?` was
+  rejected as an empty modifier. The prompt starts at the first `=` with a whole
+  key before it, so `Ctrl+==Delete?` still binds `Ctrl+=`.
 - **Clipboard mode no longer saves what you pick to disk.** Accepting a row
   recorded it for frecency, which on Windows wrote the copied text itself (a
   password, say) into `%LOCALAPPDATA%\pikr\usage.toml`, kept indefinitely; on
