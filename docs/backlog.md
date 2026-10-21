@@ -34,9 +34,14 @@
   adapter driving the window's display when it is discrete, else `LowPower`
   (integrated before discrete). On the Windows test desktop
   `Instance::display_adapter` named the RX 7900 XTX, which drives the display,
-  and it was chosen. On Wayland, X11 and macOS crcbl's `display_adapter` answers
-  `None`, so the preference alone decides. Not handled: a window moved to
-  another GPU's display after start (pikr is short-lived).
+  and it was chosen. On Wayland, from crcbl 0.8, `display_adapter` comes from
+  the device the compositor composites on: on the Arch laptop (2026-10-21, crcbl
+  0.8.1) crcbl-vk logged "the compositor composites on DRM device 0xe280,
+  adapter Some(AdapterId(1))", the Intel iGPU, and pikr chose it because that
+  display GPU is integrated. Not verified: a Wayland desktop whose display is on
+  a discrete GPU (the rule picks it there), and X11 and macOS, where the
+  preference alone was all that was seen. Not handled: a window moved to another
+  GPU's display after start (pikr is short-lived).
   - **Hybrid laptop, checked 2026-10-21** (the Arch machine: Intel Raptor Lake
     UHD driving eDP and HDMI, NVIDIA GeForce MX550 with no outputs, NVIDIA's
     proprietary Vulkan driver; nested Hyprland). Default: Intel, first paint 264
