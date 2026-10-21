@@ -55,9 +55,13 @@
     against 203/128/105 ms). `VK_LOADER_DRIVERS_SELECT='*intel*'` (loader
     1.4.363) leaves no NVIDIA descriptor or mapping, and first paint came at 72
     ms; the README now documents it. Not verified: whether opening the device
-    wakes a runtime-suspended dGPU (this machine keeps the MX550's
-    `power/control` at `on`, so it never sleeps). The fix belongs in crcbl: pick
-    the render device before loading drivers (e.g. from the compositor's
+    wakes a runtime-suspended dGPU. It cannot be tested on this machine: the
+    MX550's `power/control` is `on`, NVIDIA's driver reports "Runtime D3 status:
+    Disabled by default" (`/proc/driver/nvidia/gpus/*/power`), and Hyprland,
+    hyprpaper and hyprpolkitagent hold `/dev/nvidia0` open all session, so here
+    the probing costs startup time and no power. It needs a laptop with runtime
+    D3 on and a desktop that leaves the dGPU closed. The fix belongs in crcbl:
+    pick the render device before loading drivers (e.g. from the compositor's
     linux-dmabuf main device, or the boot VGA DRM node) and load only its ICD
     unless `CRCBL_ADAPTER` asks otherwise. Reported to crcbl 2026-10-21.
 - **Unverified from pikr after crcbl 0.6.0.**
