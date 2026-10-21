@@ -11,7 +11,18 @@ targets = [
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+# Each entry is one advisory, with why it cannot be fixed here and what
+# retires it.
+ignore = [
+    # `zbus_names`, `zvariant` and `zvariant_derive` are unmaintained because
+    # zbus 6 absorbed them; informational, not vulnerabilities. They reach pikr
+    # only through crcbl-shell's `accesskit` feature (`accesskit_unix`, the
+    # AT-SPI adapter), whose newest release, 0.24, is still on zbus 5. Remove
+    # all three when crcbl takes an `accesskit_unix` on zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant folded into zbus 6; accesskit_unix 0.24 is on zbus 5" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names folded into zbus 6; accesskit_unix 0.24 is on zbus 5" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive folded into zbus 6; accesskit_unix 0.24 is on zbus 5" },
+]
 
 [licenses]
 version = 2

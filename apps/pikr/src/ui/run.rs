@@ -202,6 +202,9 @@ struct Window<'a> {
     /// yet. A FIFO present before then can block the loop, keys and all,
     /// for as long as the window is not shown (an output switched off).
     may_present: bool,
+    /// A screen reader or other assistive technology is reading the window,
+    /// so each frame's tree goes to it.
+    reading: bool,
     blink_at: Instant,
     /// Modifiers held at the last key press, for the text commit after it.
     mods: crate::picker::input::Modifiers,
@@ -265,6 +268,7 @@ impl<'a> Window<'a> {
             paste_request: None,
             focused: false,
             may_present: true,
+            reading: false,
             blink_at: Instant::now() + BLINK,
             mods: Default::default(),
             startup_started,
@@ -443,6 +447,17 @@ impl<'a> Window<'a> {
                 self.update_input_region()?;
                 Ok(Step::Continue(true))
             }
+            ShellEvent::AccessibilityActivated { window } if window == self.window => {
+                self.reading = true;
+                Ok(Step::Continue(true))
+            }
+            ShellEvent::AccessibilityDeactivated { window } if window == self.window => {
+                self.reading = false;
+                Ok(Step::Continue(false))
+            }
+            ShellEvent::AccessibilityAction { window, request } if window == self.window => {
+                Ok(Step::Continue(self.ui.accessibility_action(&request)))
+            }
             ShellEvent::FrameReady { window } if window == self.window => {
                 self.may_present = true;
                 Ok(Step::Continue(false))
@@ -618,6 +633,12 @@ impl<'a> Window<'a> {
         if area != self.input_area {
             self.input_area = area;
             self.shell.set_text_input_area(self.window, area)?;
+        }
+
+        // Every update is the whole tree, so it is built only while read.
+        if self.reading {
+            self.shell
+                .update_accessibility(self.window, self.ui.accessibility_update())?;
         }
         Ok(clicked)
     }

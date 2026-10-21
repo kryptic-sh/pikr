@@ -26,8 +26,8 @@ crcbl-app.workspace = true
 crcbl-frame.workspace = true
 crcbl-hal.workspace = true
 crcbl-image.workspace = true
-crcbl-shell.workspace = true
-crcbl-ui.workspace = true
+crcbl-shell = { workspace = true, features = ["accesskit"] }
+crcbl-ui = { workspace = true, features = ["accesskit"] }
 glam.workspace = true
 nucleo.workspace = true
 serde.workspace = true
