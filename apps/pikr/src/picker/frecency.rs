@@ -187,7 +187,8 @@ fn score_bonus(entry: &UsageEntry, now_secs: i64) -> u16 {
     if entry.count == 0 {
         return 0;
     }
-    let dt = (now_secs - entry.last_used).max(0) as f64;
+    // `last_used` comes from the state file: a corrupt one must not overflow.
+    let dt = now_secs.saturating_sub(entry.last_used).max(0) as f64;
     let half_life_secs = HALF_LIFE.as_secs() as f64;
     // 2^(-dt/HALF_LIFE) — equivalent to 0.5^(dt/HALF_LIFE), cheaper than powf.
     let decay = (-dt / half_life_secs).exp2();
@@ -348,6 +349,15 @@ mod tests {
             args: vec!["y".into(), "z".into()],
         };
         assert_ne!(payload_key(&single), payload_key(&split));
+    }
+
+    #[test]
+    fn a_corrupt_last_used_gives_no_bonus_instead_of_overflowing() {
+        let entry = UsageEntry {
+            count: 5,
+            last_used: i64::MIN,
+        };
+        assert_eq!(score_bonus(&entry, now_secs()), 0);
     }
 
     #[test]
