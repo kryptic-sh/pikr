@@ -455,6 +455,10 @@ Re-verified against the tree on 2026-10-18.
   parsed as `u64`) and ssh's pwsh and cmd arms (`ssh::build_terminal_args`: pwsh
   single-quotes the host, cmd takes only hosts in `is_safe_host`'s charset).
   Re-checked 2026-10-19; keep it that way.
+- History and frecency saves (`History::save_to`, `Usage::save_to`) re-read the
+  file and replay this session's changes onto it, so a second pikr's save in the
+  meantime is kept. There is no lock: a save landing between another's read and
+  its rename (milliseconds) can still be lost.
 - State writes (`picker::write_private_state`: history, frecency, the drun
   caches) rename a complete temporary file into place but do not `fsync`, so a
   power cut can still lose a save. On Windows the rename fails while another

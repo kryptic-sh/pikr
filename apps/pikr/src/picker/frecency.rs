@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -50,6 +51,11 @@ pub struct UsageEntry {
 pub struct Usage {
     #[serde(flatten)]
     modes: HashMap<String, HashMap<String, UsageEntry>>,
+    /// This session's accepts as (mode, key, when): what a save replays onto
+    /// the file as it is then, so another pikr's save in the meantime is
+    /// kept.
+    #[serde(skip)]
+    recorded: Vec<(String, String, i64)>,
 }
 
 impl Usage {
@@ -57,10 +63,12 @@ impl Usage {
     /// file / parse error / no state dir all collapse to an empty `Usage` —
     /// frecency is a soft optimisation, never a hard dependency.
     pub fn load() -> Self {
-        let Some(path) = crate::picker::state_file_path("usage.toml") else {
-            return Self::default();
-        };
-        let Ok(text) = std::fs::read_to_string(&path) else {
+        crate::picker::state_file_path("usage.toml")
+            .map_or_else(Self::default, |path| Self::load_from(&path))
+    }
+
+    fn load_from(path: &Path) -> Self {
+        let Ok(text) = std::fs::read_to_string(path) else {
             return Self::default();
         };
         Self::from_toml(&text)
@@ -77,26 +85,35 @@ impl Usage {
     /// Persist to `usage.toml` in the state dir. Best-effort; errors are
     /// logged via tracing but never surfaced — losing frecency state on a
     /// disk-full / permission-denied is preferable to crashing the launcher.
+    ///
+    /// What is written is this session's accepts replayed onto `usage.toml`
+    /// as it is now, so two pikrs open at once both keep theirs.
     pub fn save(&self) {
-        let Some(path) = crate::picker::state_file_path("usage.toml") else {
-            return;
-        };
+        if let Some(path) = crate::picker::state_file_path("usage.toml") {
+            self.save_to(&path);
+        }
+    }
+
+    fn save_to(&self, path: &Path) {
         if let Some(parent) = path.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
         {
             tracing::warn!(error = %e, path = %parent.display(), "create state dir");
             return;
         }
-        let mut pruned = self.clone();
-        pruned.prune(unix_seconds(SystemTime::now()));
-        let text = match toml::to_string(&pruned) {
+        let mut current = Self::load_from(path);
+        for (mode, key, when) in &self.recorded {
+            current.bump(mode.clone(), key.clone(), *when);
+        }
+        current.prune(unix_seconds(SystemTime::now()));
+        let text = match toml::to_string(&current) {
             Ok(t) => t,
             Err(e) => {
                 tracing::warn!(error = %e, "serialize usage");
                 return;
             }
         };
-        if let Err(e) = crate::picker::write_private_state(&path, text.as_bytes()) {
+        if let Err(e) = crate::picker::write_private_state(path, text.as_bytes()) {
             tracing::warn!(error = %e, path = %path.display(), "write usage");
         }
     }
@@ -141,14 +158,15 @@ impl Usage {
         }
         let now = unix_seconds(SystemTime::now());
         let key = payload_key(payload);
-        let entry = self
-            .modes
-            .entry(cli_mode.key())
-            .or_default()
-            .entry(key)
-            .or_default();
+        self.recorded.push((cli_mode.key(), key.clone(), now));
+        self.bump(cli_mode.key(), key, now);
+    }
+
+    /// One more use of `key` in `mode`, at `when`.
+    fn bump(&mut self, mode: String, key: String, when: i64) {
+        let entry = self.modes.entry(mode).or_default().entry(key).or_default();
         entry.count = entry.count.saturating_add(1);
-        entry.last_used = now;
+        entry.last_used = entry.last_used.max(when);
     }
 
     /// Compute the score bonus for a precomputed key under the mode `mode_key`
@@ -460,6 +478,25 @@ mod tests {
         assert_eq!(dmenu.len(), USAGE_CAP);
         assert!(dmenu.contains_key("k0"));
         assert!(!dmenu.contains_key(&format!("k{}", USAGE_CAP + 4)));
+    }
+
+    #[test]
+    fn saves_from_two_open_pikrs_both_keep_their_accepts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("usage.toml");
+        let mut first = Usage::load_from(&path);
+        let mut second = Usage::load_from(&path);
+        let firefox = Payload::Stdout("firefox".into());
+        let audacity = Payload::Stdout("audacity".into());
+        second.record(CliMode::Dmenu, &firefox);
+        second.record(CliMode::Dmenu, &audacity);
+        second.save_to(&path);
+        first.record(CliMode::Dmenu, &firefox);
+        first.save_to(&path);
+        let saved = Usage::load_from(&path);
+        let dmenu = &saved.modes["dmenu"];
+        assert_eq!(dmenu["firefox"].count, 2);
+        assert_eq!(dmenu["audacity"].count, 1);
     }
 
     #[test]

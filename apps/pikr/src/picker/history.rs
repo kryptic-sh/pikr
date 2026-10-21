@@ -11,6 +11,7 @@
 //! pollute drun.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -26,40 +27,55 @@ pub struct History {
     /// Per-mode entries, ordered most-recent first.
     #[serde(flatten)]
     modes: HashMap<String, Vec<String>>,
+    /// This session's pushes, in order: what a save replays onto the file
+    /// as it is then, so another pikr's save in the meantime is kept.
+    #[serde(skip)]
+    pushed: Vec<(CliMode, String)>,
 }
 
 impl History {
     /// Read from `history.toml` in the state dir. Missing file / parse
     /// error / no state dir all collapse to an empty `History`.
     pub fn load() -> Self {
-        let Some(path) = crate::picker::state_file_path("history.toml") else {
-            return Self::default();
-        };
-        let Ok(text) = std::fs::read_to_string(&path) else {
+        crate::picker::state_file_path("history.toml")
+            .map_or_else(Self::default, |path| Self::load_from(&path))
+    }
+
+    fn load_from(path: &Path) -> Self {
+        let Ok(text) = std::fs::read_to_string(path) else {
             return Self::default();
         };
         toml::from_str(&text).unwrap_or_default()
     }
 
-    /// Persist. Best-effort; warnings via `tracing` on failure.
+    /// Persist: this session's pushes replayed onto `history.toml` as it is
+    /// now, so two pikrs open at once both keep theirs. Best-effort;
+    /// warnings via `tracing` on failure.
     pub fn save(&self) {
-        let Some(path) = crate::picker::state_file_path("history.toml") else {
-            return;
-        };
+        if let Some(path) = crate::picker::state_file_path("history.toml") {
+            self.save_to(&path);
+        }
+    }
+
+    fn save_to(&self, path: &Path) {
         if let Some(parent) = path.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
         {
             tracing::warn!(error = %e, path = %parent.display(), "create state dir");
             return;
         }
-        let text = match toml::to_string(self) {
+        let mut current = Self::load_from(path);
+        for (mode, query) in &self.pushed {
+            current.push(*mode, query);
+        }
+        let text = match toml::to_string(&current) {
             Ok(t) => t,
             Err(e) => {
                 tracing::warn!(error = %e, "serialize history");
                 return;
             }
         };
-        if let Err(e) = crate::picker::write_private_state(&path, text.as_bytes()) {
+        if let Err(e) = crate::picker::write_private_state(path, text.as_bytes()) {
             tracing::warn!(error = %e, path = %path.display(), "write history");
         }
     }
@@ -72,6 +88,7 @@ impl History {
         if q.is_empty() {
             return;
         }
+        self.pushed.push((mode, q.to_string()));
         let list = self.modes.entry(mode.key()).or_default();
         list.retain(|h| h != q);
         list.insert(0, q.to_string());
@@ -105,6 +122,20 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saves_from_two_open_pikrs_both_keep_their_pushes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.toml");
+        let mut first = History::load_from(&path);
+        let mut second = History::load_from(&path);
+        second.push(CliMode::Drun, "firefox");
+        second.save_to(&path);
+        first.push(CliMode::Drun, "audacity");
+        first.save_to(&path);
+        let saved = History::load_from(&path);
+        assert_eq!(saved.list(CliMode::Drun), ["audacity", "firefox"]);
+    }
 
     #[test]
     fn push_then_get_returns_most_recent_first() {
