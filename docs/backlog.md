@@ -342,7 +342,15 @@
     runs (`gamma` matching `ga` gives labels "ga" and "mma"), since each span is
     its own label and pikr cannot name the row; and the selected row is not
     marked (`set_selected` is only set for tabs, select options and outliner
-    rows). Asked of crcbl 2026-10-21. Not checked: Orca speaking it (Orca is not
+    rows). Asked of crcbl 2026-10-21; crcbl main `d068f15c` (unreleased) added
+    `Ui::set_accessible_label` and `Ui::selectable_list`. Tried from pikr in a
+    patched clone on 2026-10-22: `selectable_list(…, Some(picker.selected), …)`
+    gives the current row AT-SPI's `selected` state, but a block named with
+    `set_accessible_label` came through with an empty name (reported to crcbl
+    with a repro; the name likely has to be the node's value for a Label).
+    pikr's side is two calls in `ui::view` (`highlighted` names its block; the
+    results list becomes `selectable_list`), kept as a patch until a crcbl
+    release carries a working label. Not checked: Orca speaking it (Orca is not
     installed), and UI Automation on Windows.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
