@@ -736,6 +736,10 @@ jobs:
           # GNU-flavored sha512sum that accepts the same `awk '{print $1}'`
           # split we use elsewhere in this file.
           apk add --no-cache alpine-sdk bash curl coreutils
+          # `abuild -r` installs the package's depends from the repository
+          # index, and --no-cache leaves none on disk: without this every
+          # dependency is "no such package" (the v0.9.0 run failed so).
+          apk update
 
       - uses: actions/checkout@v6
 

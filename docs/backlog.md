@@ -398,16 +398,18 @@
     recommends; those two names are from memory, not checked against the
     distributions. The Alpine `APKBUILD.in` lists no X11 packages at all. Not
     checked: installing the package on a clean system.
-- **The Alpine `.apk` is restored; its package step has not run yet.** The
-  `build-musl` job in `.github/workflows/ci.yml` builds
-  `x86_64-unknown-linux-musl` in an `alpine:latest` container with
-  `-C target-feature=-crt-static` (a static musl binary cannot `dlopen`
-  libvulkan) and `GETTEXT_SYSTEM=1` (musl implements gettext), and checks the
-  result with `ldd` and `--version`; it passed on main in run 39368692698
-  (2026-10-20). `publish-github-release` needs it. The `alpine` job that
-  packages the tarball (its `if: false` gate is gone) runs only on a tag, so the
-  first release cut is its first run: check it then. Not checked: the package
-  installed on a real Alpine system drawing a window against Mesa.
+- **v0.9.0 shipped without its Alpine `.apk`.** The `alpine` job runs only on a
+  tag, and its first run (v0.9.0, run 39617713493) failed in `abuild -r`:
+  `apk add --no-cache` leaves no repository index on disk, so every `depends`
+  entry was "no such package". Reproduced locally with podman in `alpine:latest`
+  running the job's own steps against the published v0.9.0 musl tarball; with
+  `apk update` added the package built, installed with its dependencies, and
+  `pikr --version` ran. `ci.yml` now runs `apk update` (2026-10-21). The v0.9.0
+  release has no `.apk` asset, though its changelog says releases ship one; the
+  next tag is the first with the fix. Re-running the v0.9.0 job would use the
+  tag's old workflow and fail again. The `build-musl` job (static `-crt-static`
+  off so the binary can `dlopen` libvulkan, `GETTEXT_SYSTEM=1`) passes. Not
+  checked: the package drawing a window on a real Alpine system against Mesa.
 
 ## Hardening (correct today, fragile — not defects)
 
