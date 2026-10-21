@@ -183,7 +183,12 @@
     on a corrupt `last_used`, `--kb-custom Alt++=…` refused, and icon files read
     whole before any limit; all fixed. Found sound there: the matcher's char
     positions, `-P` never recording, `Cli::validate`'s combinations, and the
-    icon-theme key-file reader. `modes/` was last reviewed 2026-10-19.
+    icon-theme key-file reader. `modes/` was reviewed again the same day: a user
+    `.desktop` copy that hides an app was ignored, ssh config comments and
+    quotes were misread, `Include` fan-out was exponential, a failed
+    `cliphist decode` emptied the clipboard, and an evalexpr panic killed calc
+    mode; all fixed. Not checked: that foot and kitty accept ssh mode's
+    `-e ssh <host>` (their man pages were not installed).
   - Linux was verified only through CI's sway session on lavapipe: the e2e
     keyboard suite and the startup gate passed (run 39002212977, 237 ms
     launch-to-result against the 500 ms deadline). Hyprland 0.56.2 (Arch,
