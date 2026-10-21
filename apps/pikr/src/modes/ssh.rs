@@ -1,5 +1,5 @@
 //! ssh mode — SSH host picker from `~/.ssh/config` (and `/etc/ssh/ssh_config`
-//! on Unix).
+//! on Unix), following their `Include`s.
 
 use super::{Entry, Mode};
 use anyhow::Result;
@@ -43,10 +43,9 @@ impl Mode for Ssh {
         let terminal = resolve_terminal();
         let mut entries: Vec<Entry> = Vec::new();
 
-        for path in config_paths() {
-            if let Ok(text) = std::fs::read_to_string(&path) {
-                entries.extend(parse_config(&text, &terminal));
-            }
+        let home = home_dir();
+        for (path, base) in config_paths() {
+            entries.extend(read_config(&path, &base, home.as_deref(), &terminal, 0));
         }
 
         entries.sort_by_key(|a| a.label.to_lowercase());
@@ -57,15 +56,118 @@ impl Mode for Ssh {
     }
 }
 
-fn config_paths() -> Vec<PathBuf> {
+/// Each config file, with the directory its relative `Include`s resolve
+/// against (ssh_config(5): `~/.ssh` for the user's, `/etc/ssh` for the
+/// system's).
+fn config_paths() -> Vec<(PathBuf, PathBuf)> {
     let mut paths = Vec::new();
     if let Some(home) = home_dir() {
-        paths.push(home.join(".ssh").join("config"));
+        let dir = home.join(".ssh");
+        paths.push((dir.join("config"), dir));
     }
     // System-wide ssh config only exists on Unix.
     #[cfg(unix)]
-    paths.push(PathBuf::from("/etc/ssh/ssh_config"));
+    paths.push((
+        PathBuf::from("/etc/ssh/ssh_config"),
+        PathBuf::from("/etc/ssh"),
+    ));
     paths
+}
+
+/// How deep `Include`s may nest: OpenSSH's own limit (`READCONF_MAX_DEPTH`),
+/// which also ends a file that includes itself.
+const MAX_INCLUDE_DEPTH: usize = 16;
+
+/// The entries of the config at `path` and of everything it includes, an
+/// included file's entries where its `Include` stands. A file that cannot be
+/// read gives none, as ssh skips an `Include` that matches nothing.
+fn read_config(
+    path: &Path,
+    base: &Path,
+    home: Option<&Path>,
+    terminal: &Terminal,
+    depth: usize,
+) -> Vec<Entry> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    parse_config_with(&text, terminal, &mut |value| {
+        if depth >= MAX_INCLUDE_DEPTH {
+            tracing::warn!(path = %path.display(), "ssh config Include nested too deep; ignored");
+            return Vec::new();
+        }
+        include_paths(value, base, home)
+            .iter()
+            .flat_map(|file| read_config(file, base, home, terminal, depth + 1))
+            .collect()
+    })
+}
+
+/// The files an `Include` line's `value` names, in the order ssh reads them:
+/// each whitespace-separated path, `~/` taken from `home`, a relative one
+/// resolved against `base`, and a last component with `*` or `?` expanded to
+/// the matching files in its directory, sorted. Wildcards in a directory
+/// component, `[...]` classes, `%` tokens and environment variables, which
+/// ssh also accepts, are not expanded.
+fn include_paths(value: &str, base: &Path, home: Option<&Path>) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for word in value.split_whitespace() {
+        let path = match (word.strip_prefix("~/"), home) {
+            (Some(rest), Some(home)) => home.join(rest),
+            _ => base.join(word),
+        };
+        let pattern = path.file_name().and_then(|name| name.to_str());
+        let Some(pattern) = pattern.filter(|name| name.contains(['*', '?'])) else {
+            files.push(path);
+            continue;
+        };
+        let dir = path.parent().unwrap_or(base);
+        let Ok(listing) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        let mut matched: Vec<PathBuf> = listing
+            .filter_map(|item| item.ok())
+            .filter(|item| {
+                item.file_name()
+                    .to_str()
+                    .is_some_and(|name| wildcard_match(pattern, name))
+            })
+            .map(|item| item.path())
+            .collect();
+        matched.sort();
+        files.extend(matched);
+    }
+    files
+}
+
+/// Whether `name` matches `pattern`, where `*` stands for any run of chars
+/// and `?` for one, as glob(3) matches a single path component: a leading
+/// `.` in `name` is matched only by a leading `.` in `pattern`.
+fn wildcard_match(pattern: &str, name: &str) -> bool {
+    if name.starts_with('.') && !pattern.starts_with('.') {
+        return false;
+    }
+    let pattern: Vec<char> = pattern.chars().collect();
+    let name: Vec<char> = name.chars().collect();
+    // Greedy match with backtracking to the last `*`.
+    let (mut p, mut n) = (0, 0);
+    let mut star: Option<(usize, usize)> = None;
+    while n < name.len() {
+        if p < pattern.len() && (pattern[p] == '?' || pattern[p] == name[n]) {
+            p += 1;
+            n += 1;
+        } else if p < pattern.len() && pattern[p] == '*' {
+            star = Some((p, n));
+            p += 1;
+        } else if let Some((star_p, star_n)) = star {
+            p = star_p + 1;
+            n = star_n + 1;
+            star = Some((star_p, star_n + 1));
+        } else {
+            return false;
+        }
+    }
+    pattern[p..].iter().all(|&c| c == '*')
 }
 
 /// Portable home-directory lookup.
@@ -86,9 +188,19 @@ fn home_dir() -> Option<PathBuf> {
     }
 }
 
-/// Walk the ssh config text, returning one Entry per non-wildcard Host.
-pub fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
+/// Walk the ssh config text, returning one Entry per non-wildcard Host,
+/// with each `Include` line's value handed to `include`. The block the line
+/// sits in carries on after it, as ssh restores its state after an included
+/// file, and the included entries follow that block's: the order hosts were
+/// first defined in, which decides which of two same-named ones is kept.
+fn parse_config_with(
+    text: &str,
+    terminal: &Terminal,
+    include: &mut dyn FnMut(&str) -> Vec<Entry>,
+) -> Vec<Entry> {
     let mut entries = Vec::new();
+    // Included entries, held until the block the `Include` sat in is out.
+    let mut included = Vec::new();
     let mut current_hosts: Vec<String> = Vec::new();
     let mut hostname: Option<String> = None;
     let mut user: Option<String> = None;
@@ -107,6 +219,10 @@ pub fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
         let value = rest.strip_prefix('=').unwrap_or(rest).trim().to_string();
         let key = key.to_ascii_lowercase();
 
+        if key == "include" {
+            included.extend(include(&value));
+            continue;
+        }
         if key == "host" || key == "match" {
             // Flush the previous block before starting a new one.
             flush_hosts(
@@ -116,6 +232,7 @@ pub fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
                 &mut user,
                 terminal,
             );
+            entries.append(&mut included);
             if key == "match" {
                 // A `Match` block names no hosts of its own; its settings
                 // apply conditionally, so they belong to no listed entry.
@@ -154,6 +271,7 @@ pub fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
         &mut user,
         terminal,
     );
+    entries.append(&mut included);
     entries
 }
 
@@ -394,6 +512,11 @@ fn is_executable_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One config's text alone, its `Include` lines skipped.
+    fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
+        parse_config_with(text, terminal, &mut |_| Vec::new())
+    }
 
     #[test]
     fn parse_simple_host_block() {
@@ -725,5 +848,83 @@ Host = beta
             std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         assert!(is_tool_installed(tool.to_str().unwrap()));
+    }
+
+    #[test]
+    fn wildcard_match_follows_glob_rules() {
+        assert!(wildcard_match("*.conf", "a.conf"));
+        assert!(!wildcard_match("*.conf", "a.conf.bak"));
+        assert!(wildcard_match("a?c", "abc"));
+        assert!(!wildcard_match("a?c", "ac"));
+        assert!(wildcard_match("a*b*c", "axxbyyc"));
+        assert!(wildcard_match("a*b", "ab"));
+        assert!(!wildcard_match("a*b", "abc"));
+        assert!(wildcard_match("**", "x"));
+        // glob(3): a leading dot is matched only by a leading dot.
+        assert!(!wildcard_match("*", ".hidden"));
+        assert!(!wildcard_match("*.conf", ".hidden.conf"));
+        assert!(wildcard_match(".*", ".hidden"));
+    }
+
+    fn labels(entries: &[Entry]) -> Vec<String> {
+        entries.iter().map(|entry| entry.label.clone()).collect()
+    }
+
+    #[test]
+    fn include_reads_matching_files_in_order_where_it_stands() {
+        let dir = tempfile::tempdir().unwrap();
+        let conf_d = dir.path().join("conf.d");
+        std::fs::create_dir(&conf_d).unwrap();
+        std::fs::write(conf_d.join("b.conf"), "Host bravo\n").unwrap();
+        std::fs::write(conf_d.join("a.conf"), "Host alpha\n").unwrap();
+        std::fs::write(conf_d.join("notes.txt"), "Host notes\n").unwrap();
+        std::fs::write(conf_d.join(".hidden.conf"), "Host hidden\n").unwrap();
+        let config = dir.path().join("config");
+        std::fs::write(&config, "Host first\nInclude conf.d/*.conf\nHost last\n").unwrap();
+        let entries = read_config(&config, dir.path(), None, &Terminal::simple("alacritty"), 0);
+        assert_eq!(labels(&entries), ["first", "alpha", "bravo", "last"]);
+    }
+
+    #[test]
+    fn include_resolves_home_and_absolute_paths() {
+        let home = tempfile::tempdir().unwrap();
+        let base = tempfile::tempdir().unwrap();
+        std::fs::write(home.path().join("hosts"), "Host from-home\n").unwrap();
+        let absolute = base.path().join("abs");
+        std::fs::write(&absolute, "Host from-absolute\n").unwrap();
+        let config = base.path().join("config");
+        std::fs::write(&config, format!("Include ~/hosts {}\n", absolute.display())).unwrap();
+        let entries = read_config(
+            &config,
+            base.path(),
+            Some(home.path()),
+            &Terminal::simple("alacritty"),
+            0,
+        );
+        assert_eq!(labels(&entries), ["from-home", "from-absolute"]);
+    }
+
+    #[test]
+    fn include_inside_a_host_block_keeps_the_block_going() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("extra"), "Host child\n").unwrap();
+        let config = dir.path().join("config");
+        std::fs::write(
+            &config,
+            "Host parent\n    Include extra\n    HostName parent.example\n",
+        )
+        .unwrap();
+        let entries = read_config(&config, dir.path(), None, &Terminal::simple("alacritty"), 0);
+        assert_eq!(labels(&entries), ["parent", "child"]);
+        assert_eq!(entries[0].description.as_deref(), Some("parent.example"));
+    }
+
+    #[test]
+    fn a_config_including_itself_stops_at_the_depth_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config");
+        std::fs::write(&config, "Host loop\nInclude config\n").unwrap();
+        let entries = read_config(&config, dir.path(), None, &Terminal::simple("alacritty"), 0);
+        assert_eq!(entries.len(), MAX_INCLUDE_DEPTH + 1);
     }
 }

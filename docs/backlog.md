@@ -160,8 +160,13 @@
     excludes `Hyprland`, a `NotShowIn` naming it, or a `TryExec` program that is
     missing, so honouring them would change nothing there. A GNOME or KDE
     install with the other desktop's settings apps is where it would.
-  - ssh has no `known_hosts` parsing and no `Include` support; `~/.ssh/config`
-    files that split hosts across `Include`d files list only the main file's.
+  - ssh has no `known_hosts` parsing. `Include` is followed (2026-10-22,
+    `modes::ssh::read_config`) with `~/`, relative and absolute paths and
+    `*`/`?` in the last path component; not expanded: wildcards in a directory
+    component, `[...]` classes, `%` tokens and environment variables. Arch's
+    `/etc/ssh/ssh_config` includes systemd's `20-systemd-ssh-proxy.conf`, so ssh
+    mode now also lists its `.host` and `machine/.host` (real targets:
+    `ssh .host` reaches the local machine through systemd's proxy).
 - **Not verified (coverage gaps).**
   - No whole-codebase correctness or security review since the crcbl port. The
     last ones (2026-08-06) read the floem UI, which is gone; `ui/` and

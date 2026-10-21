@@ -8,6 +8,14 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- ssh mode follows `Include` in `~/.ssh/config` and `/etc/ssh/ssh_config`, so
+  hosts defined in included files are listed: paths may start with `~/`, be
+  relative (to `~/.ssh` or `/etc/ssh`) or absolute, and use `*` and `?` in the
+  file name, as `Include config.d/*` does. On systemd systems this also lists
+  the `.host` entries systemd's ssh proxy config defines.
+
 ## [0.9.1] - 2026-10-21
 
 ### Fixed
