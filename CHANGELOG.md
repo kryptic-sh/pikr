@@ -8,6 +8,33 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-21
+
+### Breaking
+
+- **pikr is drawn with crcbl instead of floem.** The window, input, layout and
+  rendering, icon-theme lookup and image decoding now come from
+  [crcbl](https://github.com/kryptic-sh/crcbl); floem, its winit fork, wgpu,
+  resvg, `freedesktop-icons` and `image` are gone. Rendering needs Vulkan on
+  Linux and FreeBSD (Mesa's lavapipe works without a GPU), Direct3D 12 on
+  Windows and Metal on macOS. With no usable GPU pikr prints why and exits
+  non-zero. Where the window system or GPU cannot draw pikr transparent, it logs
+  a warning and draws the window opaque, the corners outside its rounded panel
+  showing black.
+- **`-P` / `--password` is a bare password prompt.** It shows only the masked
+  input and the status bar: no list, no filtering, and stdin is not read. Enter
+  prints exactly what was typed, surrounding spaces included, in any mode;
+  before, it accepted the highlighted row, and which rows stayed visible hinted
+  at the secret. The `:` prompt and Ctrl-P / Ctrl-N history recall are off under
+  `-P`, and `--loading` or a `--kb-custom KEY=PROMPT` binding alongside it is
+  refused (exit 2), as neither has a list to show on. A plain `--kb-custom KEY`
+  still works and prints the typed text with its exit code.
+
+- dmenu reads at most 256 MiB from stdin. More is an error
+  (`more than 256 MiB on stdin`, exit 1), with or without `--loading`, rather
+  than a picker holding whatever the producer writes in memory.
+- The minimum supported Rust version is 1.98.
+
 ### Changed
 
 - pikr renders on the GPU that drives its display when that GPU is discrete, and
@@ -18,21 +45,9 @@ and this project adheres to
 - Clicks on the see-through corners outside the rounded panel reach the window
   beneath, where the window system supports an input region (Windows, Wayland,
   X11 with libxcb-shape).
-- dmenu reads at most 256 MiB from stdin. More is an error
-  (`more than 256 MiB on stdin`, exit 1), with or without `--loading`, rather
-  than a picker holding whatever the producer writes in memory.
 - Typing in a list with non-ASCII labels, such as emoji mode, reranks about four
   times faster: each label's Unicode segmentation is done once when the list
   loads instead of on every keystroke.
-- **pikr is drawn with crcbl instead of floem.** The window, input, layout and
-  rendering, icon-theme lookup and image decoding now come from
-  [crcbl](https://github.com/kryptic-sh/crcbl); floem, its winit fork, wgpu,
-  resvg, `freedesktop-icons` and `image` are gone. Rendering needs Vulkan on
-  Linux and FreeBSD (Mesa's lavapipe works without a GPU), Direct3D 12 on
-  Windows and Metal on macOS. With no usable GPU pikr prints why and exits
-  non-zero. Where the window system or GPU cannot draw pikr transparent, it logs
-  a warning and draws the window opaque, the corners outside its rounded panel
-  showing black.
 - **Wayland: pikr opens on the layer-shell `overlay` layer instead of `top`**,
   for both the picker and `--message`. It now shows above a fullscreen app
   rather than opening hidden behind it. Compositor rules that match the `pikr`
@@ -45,26 +60,16 @@ and this project adheres to
   system's sans-serif face.
 - Characters the theme font lacks (emoji, CJK, symbols) are drawn from the
   system's fallback fonts for it, colour emoji in colour. Text is shaped, so ZWJ
-  sequences and skin tones draw as one emoji. Right-to-left text is not
-  reordered yet.
+  sequences and skin tones draw as one emoji.
 - SVG icons are drawn by crcbl's own renderer, text included. An icon it cannot
   draw, such as text in characters no installed font has, shows the generic
   application icon instead.
-- The minimum supported Rust version is 1.98.
 - Linux packages declare the libraries pikr now loads at run time: the `.deb`
   and `.rpm` depend on libwayland-client, libxkbcommon, the Vulkan loader and
   fontconfig, and recommend a Mesa Vulkan driver and the X11 fallback's libxcb
   and libxkbcommon-x11; the EGL, GL and wayland-cursor/egl dependencies floem
   needed are gone. The AUR package gains the same dependencies, which it never
   declared. Package descriptions no longer say "built on floem".
-- **`-P` / `--password` is a bare password prompt.** It shows only the masked
-  input and the status bar: no list, no filtering, and stdin is not read. Enter
-  prints exactly what was typed, surrounding spaces included, in any mode;
-  before, it accepted the highlighted row, and which rows stayed visible hinted
-  at the secret. The `:` prompt and Ctrl-P / Ctrl-N history recall are off under
-  `-P`, and `--loading` or a `--kb-custom KEY=PROMPT` binding alongside it is
-  refused (exit 2), as neither has a list to show on. A plain `--kb-custom KEY`
-  still works and prints the typed text with its exit code.
 
 ### Added
 
@@ -1274,7 +1279,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.8.13...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.0...main
+[0.9.0]: https://github.com/kryptic-sh/pikr/compare/v0.8.13...v0.9.0
 [0.8.13]: https://github.com/kryptic-sh/pikr/compare/v0.8.12...v0.8.13
 [0.8.12]: https://github.com/kryptic-sh/pikr/compare/v0.8.11...v0.8.12
 [0.8.11]: https://github.com/kryptic-sh/pikr/compare/v0.8.10...v0.8.11
