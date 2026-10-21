@@ -62,15 +62,36 @@ mod unix_impl {
             return Ok(entries);
         }
 
-        // Map app-id → entry so the FIRST `.desktop` file (user-local,
-        // iterated before system dirs) overrides later ones (system) per the
-        // freedesktop search-order convention.
-        let mut by_id: HashMap<String, Entry> = HashMap::new();
+        let entries = entries_from(Iter::new(default_paths()), &locales);
 
-        for path in Iter::new(default_paths()) {
-            let Ok(de) = DesktopEntry::from_path(path, Some(&locales)) else {
+        // --- Cache write (best-effort) ---
+        if let (Some(mtime), Some(path)) = (current_mtime, cache_path()) {
+            write_cache(&dirs, &locales, mtime, &entries, &path);
+        }
+
+        Ok(entries)
+    }
+
+    /// The launchable entries among the `.desktop` files at `paths`, sorted
+    /// by label. The FIRST file for an app id decides it (user-local files
+    /// come before system ones, per the freedesktop search order), even when
+    /// it hides the app: a user copy with `Hidden=true` or `NoDisplay=true`,
+    /// which is how menu editors hide an app, must not let the system copy
+    /// through.
+    pub fn entries_from(
+        paths: impl IntoIterator<Item = PathBuf>,
+        locales: &[String],
+    ) -> Vec<Entry> {
+        let mut by_id: HashMap<String, Entry> = HashMap::new();
+        let mut claimed: HashSet<String> = HashSet::new();
+
+        for path in paths {
+            let Ok(de) = DesktopEntry::from_path(path, Some(locales)) else {
                 continue;
             };
+            if !claimed.insert(de.appid.clone()) {
+                continue;
+            }
 
             if de.no_display() || de.hidden() {
                 continue;
@@ -87,13 +108,13 @@ mod unix_impl {
             };
 
             let label = de
-                .name(&locales)
+                .name(locales)
                 .map(|s| s.into_owned())
                 .unwrap_or_else(|| program.clone());
 
             let description = de
-                .generic_name(&locales)
-                .or_else(|| de.comment(&locales))
+                .generic_name(locales)
+                .or_else(|| de.comment(locales))
                 .map(|s| s.into_owned());
 
             let icon = de.icon().map(|s| s.to_string());
@@ -104,13 +125,7 @@ mod unix_impl {
 
         let mut entries: Vec<Entry> = by_id.into_values().collect();
         entries.sort_by_key(|a| a.label.to_lowercase());
-
-        // --- Cache write (best-effort) ---
-        if let (Some(mtime), Some(path)) = (current_mtime, cache_path()) {
-            write_cache(&dirs, &locales, mtime, &entries, &path);
-        }
-
-        Ok(entries)
+        entries
     }
 
     /// Merge one parsed entry into the id → entry map so the FIRST occurrence
@@ -233,7 +248,7 @@ mod unix_impl {
     /// The drun cache's format. Bump it whenever parsing changes which
     /// entries a `.desktop` file yields or what they hold, so a cache written
     /// by an older pikr is rebuilt instead of trusted.
-    pub const CACHE_FORMAT: u32 = 2;
+    pub const CACHE_FORMAT: u32 = 3;
 
     /// On-disk cache for drun entries.
     ///
@@ -435,10 +450,35 @@ mod unix_impl {
 mod tests {
     use super::super::{Entry, Payload};
     use super::unix_impl::{
-        CACHE_FORMAT, insert_first, load_cache, parse_exec, pick_locale, strip_field_codes,
-        tree_mtime, write_cache,
+        CACHE_FORMAT, entries_from, insert_first, load_cache, parse_exec, pick_locale,
+        strip_field_codes, tree_mtime, write_cache,
     };
     use std::collections::HashMap;
+
+    #[test]
+    fn a_user_copy_that_hides_an_app_hides_it() {
+        let root = tempfile::tempdir().unwrap();
+        let user = root.path().join("user/applications");
+        let system = root.path().join("system/applications");
+        std::fs::create_dir_all(&user).unwrap();
+        std::fs::create_dir_all(&system).unwrap();
+        let app = |name: &str, extra: &str| {
+            format!("[Desktop Entry]\nType=Application\nName={name}\nExec={name}\n{extra}")
+        };
+        std::fs::write(
+            user.join("firefox.desktop"),
+            app("firefox", "Hidden=true\n"),
+        )
+        .unwrap();
+        std::fs::write(system.join("firefox.desktop"), app("firefox", "")).unwrap();
+        std::fs::write(system.join("gimp.desktop"), app("gimp", "")).unwrap();
+        let paths = freedesktop_desktop_entry::Iter::new([user, system].into_iter());
+        let labels: Vec<String> = entries_from(paths, &[])
+            .into_iter()
+            .map(|e| e.label)
+            .collect();
+        assert_eq!(labels, ["gimp"]);
+    }
 
     #[test]
     fn user_local_entry_wins_over_system_copy() {

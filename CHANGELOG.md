@@ -18,6 +18,10 @@ and this project adheres to
 
 ### Fixed
 
+- drun respects an app hidden by your own `.desktop` file. A copy in
+  `~/.local/share/applications` with `Hidden=true` or `NoDisplay=true` (what
+  menu editors write to hide an app) was skipped, and the system's copy was
+  listed in its place.
 - A history or frecency file that cannot be parsed is moved aside to
   `history.toml.unreadable` / `usage.toml.unreadable`, with a warning, instead
   of being replaced by the next save: one bad value used to discard every mode's
