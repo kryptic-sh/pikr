@@ -77,6 +77,10 @@ mod startup_readiness_script {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    /// Focus-marker polls (10 ms apart) allowed when the fake pikr does log
+    /// focus: far more than its start ever takes, which only a hang uses up.
+    const FOCUS_ARRIVES_ATTEMPTS: &str = "1000";
+
     #[derive(Clone, Copy)]
     enum WtypeBehavior {
         Succeed,
@@ -169,14 +173,27 @@ mod startup_readiness_script {
             .env("WAYLAND_DISPLAY", "test")
             .env("PIKR_BIN", pikr)
             .env("WTYPE_BIN", wtype)
-            // > 10 so the script's headless-nudge F12 (fired at attempt 10)
-            // is exercised by `terminates_when_focus_marker_never_arrives`.
-            .env("PIKR_FOCUS_ATTEMPTS", "20")
             .env("PIKR_TEST_TRIGGER", trigger)
             .env("PIKR_TEST_PID", &pid_log)
             .env("PIKR_TEST_WTYPE_ARGS", &args_log);
-        if let Some(focus_us) = focus_us {
-            command.env("PIKR_TEST_FOCUS_US", focus_us.to_string());
+        match focus_us {
+            // The fake pikr logs its marker as soon as bash starts, which on a
+            // loaded runner can take longer than a few polls: allow plenty
+            // (the poll stops at the marker), and keep the nudge out of reach
+            // so the keys sent do not depend on how fast it started.
+            Some(focus_us) => {
+                command
+                    .env("PIKR_TEST_FOCUS_US", focus_us.to_string())
+                    .env("PIKR_FOCUS_ATTEMPTS", FOCUS_ARRIVES_ATTEMPTS)
+                    .env("PIKR_FOCUS_NUDGE_ATTEMPT", FOCUS_ARRIVES_ATTEMPTS);
+            }
+            // No marker ever comes: a short budget past the nudge, so the
+            // nudge fires and the probe still gives up.
+            None => {
+                command
+                    .env("PIKR_FOCUS_ATTEMPTS", "20")
+                    .env("PIKR_FOCUS_NUDGE_ATTEMPT", "10");
+            }
         }
         let process = bounded_output(command);
         let wtype_args = fs::read_to_string(args_log).unwrap_or_default();

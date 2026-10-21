@@ -21,6 +21,10 @@ Environment:
   PIKR_BIN          Explicit binary to test (default: build current source)
   WTYPE_BIN         wtype executable (default: wtype)
   TIMEOUT_BIN       timeout executable (default: timeout)
+  PIKR_FOCUS_ATTEMPTS        Polls for the focus marker, 10 ms apart
+                             (default: (--delay + 1) * 100)
+  PIKR_FOCUS_NUDGE_ATTEMPT   Poll at which the headless-compositor F12 nudge
+                             is sent if focus has not arrived (default: 10)
 
 Run this inside the graphical Wayland session being measured. Do not switch
 focus while the probe runs. Keys are sent only after Pikr reports compositor
@@ -164,6 +168,7 @@ focus_line=""
 # Any pikr module: the marker has moved between modules before.
 focus_pattern='^[^[:space:]]+[[:space:]]+DEBUG[[:space:]]+pikr(::[a-z_]+)*:[[:space:]]+startup first focus received[[:space:]]+elapsed_us=[0-9]+$'
 focus_attempts="${PIKR_FOCUS_ATTEMPTS:-$default_focus_attempts}"
+nudge_attempt="${PIKR_FOCUS_NUDGE_ATTEMPT:-10}"
 
 for ((attempt = 0; attempt < focus_attempts; attempt++)); do
   if focus_line=$(grep -m1 -E "$focus_pattern" "$err_file"); then
@@ -177,7 +182,7 @@ for ((attempt = 0; attempt < focus_attempts; attempt++)); do
   # once, early, to trigger the seat — the focus-marker gate below still
   # applies. In a real session pikr is focused within a few attempts and the
   # nudge never fires.
-  if ((attempt == 10)) && [[ -z "$focus_line" ]]; then
+  if ((attempt == nudge_attempt)) && [[ -z "$focus_line" ]]; then
     "$timeout_bin" --signal=TERM --kill-after=0.1 2 \
       "$wtype_bin" -k F12 >/dev/null 2>&1 || true
   fi
