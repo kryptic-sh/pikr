@@ -8,6 +8,13 @@
   them together. If a fix pikr needs is only on crcbl main, pin every crate to
   the same CI-green rev and add the repo back to `deny.toml`'s `allow-git` until
   a release carries it.
+- **crcbl 0.8.1** (2026-10-21) fixes Wayland events that arrive during a Vulkan
+  present waiting out `wait_events`' timeout. Measured on Hyprland (nested,
+  Intel iGPU) from wtype to pikr's rerank log: keys 300 ms apart took a median 7
+  to 10 ms on both 0.8.0 and 0.8.1; a 30-key burst at 25 ms intervals took
+  medians of 79 to 89 ms (0.8.0) and 74 to 76 ms (0.8.1), maxima 148 to 160 and
+  140 to 146 ms. No timeout-long stall showed on either, so the fix was not
+  observed here; the burst numbers assume wtype keeps to its 25 ms interval.
 - **Windows transparency is D3D12 only.** crcbl draws a transparent Win32 window
   through a DirectComposition swapchain and refuses one on Vulkan, which pikr
   does not use on Windows. From crcbl 0.6.0 `ui::run`'s `update_input_region`

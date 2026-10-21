@@ -93,6 +93,9 @@ and this project adheres to
 
 ### Fixed
 
+- On Wayland, keys and pointer events that arrive while a frame is being
+  presented are handled straight away instead of waiting for the loop's next
+  timeout (crcbl 0.8.1).
 - Right-to-left and mixed-direction text in the query draws in the right order,
   with the caret where typing goes. The query was drawn as separate pieces
   around the caret, which reordered each piece on its own: `שלום עולם` with the
