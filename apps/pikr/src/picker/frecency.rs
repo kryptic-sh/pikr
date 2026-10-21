@@ -67,17 +67,10 @@ impl Usage {
             .map_or_else(Self::default, |path| Self::load_from(&path))
     }
 
+    /// `usage.toml` at `path`, without the clipboard section an older pikr
+    /// wrote (see [`Usage::record`]), so the next save removes it.
     fn load_from(path: &Path) -> Self {
-        let Ok(text) = std::fs::read_to_string(path) else {
-            return Self::default();
-        };
-        Self::from_toml(&text)
-    }
-
-    /// `usage.toml`'s text parsed, without the clipboard section an older
-    /// pikr wrote (see [`Usage::record`]), so the next save removes it.
-    fn from_toml(text: &str) -> Self {
-        let mut usage: Self = toml::from_str(text).unwrap_or_default();
+        let mut usage: Self = crate::picker::read_state_toml(path);
         usage.modes.remove(&CliMode::Clipboard.key());
         usage
     }
@@ -510,8 +503,11 @@ mod tests {
 
     #[test]
     fn an_older_clipboard_section_is_dropped_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("usage.toml");
         let text = "[clipboard.hunter2]\ncount = 3\nlast_used = 1\n\n[emoji.x]\ncount = 1\nlast_used = 1\n";
-        let usage = Usage::from_toml(text);
+        std::fs::write(&path, text).unwrap();
+        let usage = Usage::load_from(&path);
         assert!(!usage.modes.contains_key("clipboard"));
         assert!(usage.modes.contains_key("emoji"));
     }

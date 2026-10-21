@@ -42,10 +42,7 @@ impl History {
     }
 
     fn load_from(path: &Path) -> Self {
-        let Ok(text) = std::fs::read_to_string(path) else {
-            return Self::default();
-        };
-        toml::from_str(&text).unwrap_or_default()
+        crate::picker::read_state_toml(path)
     }
 
     /// Persist: this session's pushes replayed onto `history.toml` as it is
@@ -122,6 +119,26 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unparsable_file_is_moved_aside_not_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.toml");
+        let broken = "drun = [\"firefox\"]\nnot toml at all\n";
+        std::fs::write(&path, broken).unwrap();
+        let mut history = History::load_from(&path);
+        assert_eq!(history.len(CliMode::Drun), 0);
+        let aside = dir.path().join("history.toml.unreadable");
+        assert_eq!(std::fs::read_to_string(&aside).unwrap(), broken);
+        history.push(CliMode::Drun, "audacity");
+        history.save_to(&path);
+        assert_eq!(History::load_from(&path).list(CliMode::Drun), ["audacity"]);
+        assert_eq!(
+            std::fs::read_to_string(&aside).unwrap(),
+            broken,
+            "kept for recovery"
+        );
+    }
 
     #[test]
     fn saves_from_two_open_pikrs_both_keep_their_pushes() {

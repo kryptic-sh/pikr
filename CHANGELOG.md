@@ -18,6 +18,10 @@ and this project adheres to
 
 ### Fixed
 
+- A history or frecency file that cannot be parsed is moved aside to
+  `history.toml.unreadable` / `usage.toml.unreadable`, with a warning, instead
+  of being replaced by the next save: one bad value used to discard every mode's
+  history or frecency without a word.
 - Two pikrs open at once no longer lose each other's history and frecency: each
   saved the file as it was when it started plus its own accepts, so the one
   saving last dropped the other's. A save now adds this session's accepts to the

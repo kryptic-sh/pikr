@@ -33,6 +33,43 @@ pub(crate) fn state_file_path(name: &str) -> Option<PathBuf> {
     }
 }
 
+/// `path`'s TOML, or the default when there is none. A file that does not
+/// parse is moved aside to `<name>.unreadable`, with a warning, so the next
+/// save does not replace a whole history or frecency table that one bad value
+/// made unreadable; the user can still recover it from there.
+pub(crate) fn read_state_toml<T: serde::de::DeserializeOwned + Default>(path: &Path) -> T {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return T::default(),
+        Err(e) => {
+            tracing::warn!(error = %e, path = %path.display(), "cannot read state file");
+            return T::default();
+        }
+    };
+    match toml::from_str(&text) {
+        Ok(state) => state,
+        Err(e) => {
+            let mut aside = path.as_os_str().to_owned();
+            aside.push(".unreadable");
+            let aside = PathBuf::from(aside);
+            match std::fs::rename(path, &aside) {
+                Ok(()) => tracing::warn!(
+                    error = %e,
+                    path = %aside.display(),
+                    "state file does not parse; moved aside and starting empty"
+                ),
+                Err(move_error) => tracing::warn!(
+                    error = %e,
+                    move_error = %move_error,
+                    path = %path.display(),
+                    "state file does not parse and could not be moved aside"
+                ),
+            }
+            T::default()
+        }
+    }
+}
+
 /// Replace `path` with `bytes`, readable by the owner only (0600) on unix.
 /// Used for persisted query history, frecency keys and the drun caches —
 /// typed queries and program arguments a launcher user may not want
