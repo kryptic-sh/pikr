@@ -193,6 +193,20 @@ On Wayland, pikr opens as a centred overlay panel on compositors with the
 …), above fullscreen windows and holding the keyboard. Elsewhere — GNOME Mutter,
 X11 — it opens as an ordinary window.
 
+pikr draws on the integrated GPU when the display is not driven by a discrete
+one; `CRCBL_ADAPTER=integrated|discrete|cpu` picks one instead. On a hybrid
+laptop (an iGPU plus an NVIDIA dGPU), the Vulkan loader still loads every
+installed driver while pikr picks, so each launch opens the dGPU's device and
+pays for initialising its driver. Limiting the loader to the iGPU's driver in
+the command your launcher binding runs avoids both:
+
+```sh
+VK_LOADER_DRIVERS_SELECT='*intel*' pikr
+```
+
+Use the pattern that matches your iGPU's ICD file in `/usr/share/vulkan/icd.d/`
+(`*radeon*` for AMD).
+
 ## Architecture
 
 Built on [crcbl](https://github.com/kryptic-sh/crcbl): its window shell, GPU

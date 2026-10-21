@@ -25,12 +25,30 @@
 - **GPU choice is crcbl-app's rule (crcbl 0.6.0).** `ui::gpu::Gpu::open` ranks
   adapters with `crcbl_app::adapter::choose`: `CRCBL_ADAPTER` if set, else the
   adapter driving the window's display when it is discrete, else `LowPower`
-  (integrated before discrete), so a laptop's dGPU can sleep. On the Windows
-  test desktop `Instance::display_adapter` named the RX 7900 XTX, which drives
-  the display, and it was chosen. Not verified: a hybrid laptop (none to hand),
-  and Wayland, X11 and macOS, where crcbl's `display_adapter` answers `None` so
-  the preference alone decides. Not handled: a window moved to another GPU's
-  display after start (pikr is short-lived).
+  (integrated before discrete). On the Windows test desktop
+  `Instance::display_adapter` named the RX 7900 XTX, which drives the display,
+  and it was chosen. On Wayland, X11 and macOS crcbl's `display_adapter` answers
+  `None`, so the preference alone decides. Not handled: a window moved to
+  another GPU's display after start (pikr is short-lived).
+  - **Hybrid laptop, checked 2026-10-21** (the Arch machine: Intel Raptor Lake
+    UHD driving eDP and HDMI, NVIDIA GeForce MX550 with no outputs, NVIDIA's
+    proprietary Vulkan driver; nested Hyprland). Default: Intel, first paint 264
+    ms. `CRCBL_ADAPTER=discrete`: the MX550 renders and presents across to the
+    Intel-driven output, first paint 512 ms. `cpu`: llvmpipe, 250 ms. All three
+    typed, matched and accepted.
+  - **But the dGPU's driver is opened on every launch.** With Intel chosen, pikr
+    still held 12 `/dev/nvidia*` file descriptors and mapped NVIDIA's libraries:
+    the Vulkan loader loads every ICD, and enumerating devices initialises
+    NVIDIA's. That cost GPU setup 215, 121 and 123 ms against 36, 19 and 15 ms
+    with `VK_ICD_FILENAMES` limited to Intel's ICD (first paint 319/196/190
+    against 203/128/105 ms). `VK_LOADER_DRIVERS_SELECT='*intel*'` (loader
+    1.4.363) leaves no NVIDIA descriptor or mapping, and first paint came at 72
+    ms; the README now documents it. Not verified: whether opening the device
+    wakes a runtime-suspended dGPU (this machine keeps the MX550's
+    `power/control` at `on`, so it never sleeps). The fix belongs in crcbl: pick
+    the render device before loading drivers (e.g. from the compositor's
+    linux-dmabuf main device, or the boot VGA DRM node) and load only its ICD
+    unless `CRCBL_ADAPTER` asks otherwise. Reported to crcbl 2026-10-21.
 - **Unverified from pikr after crcbl 0.6.0.**
   - Regional-indicator flags (🇺🇸) draw as two letters with Segoe UI Emoji, which
     has no flag ligatures; Noto Color Emoji draws them. Not a crcbl bug.

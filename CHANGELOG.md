@@ -11,8 +11,10 @@ and this project adheres to
 ### Changed
 
 - pikr renders on the GPU that drives its display when that GPU is discrete, and
-  otherwise prefers the integrated one, so a laptop's discrete GPU can stay
-  asleep. `CRCBL_ADAPTER` still picks one explicitly.
+  otherwise prefers the integrated one. `CRCBL_ADAPTER` (`integrated`,
+  `discrete`, `cpu`) still picks one explicitly. Choosing among GPUs still loads
+  every installed Vulkan driver, so on a hybrid laptop the discrete GPU's device
+  is opened at each launch; the README shows how to limit the loader.
 - Clicks on the see-through corners outside the rounded panel reach the window
   beneath, where the window system supports an input region (Windows, Wayland,
   X11 with libxcb-shape).
