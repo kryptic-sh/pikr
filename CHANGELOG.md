@@ -18,6 +18,10 @@ and this project adheres to
 
 ### Fixed
 
+- Text an input method commits without a key press of its own (a direct
+  punctuation commit, an on-screen keyboard) is no longer dropped after a Ctrl
+  shortcut: pikr kept the shortcut's Ctrl until the next key press and took the
+  text as part of the chord.
 - `-P` no longer writes the typed keys to the log at `RUST_LOG=trace`, where the
   password could be read back from stderr; the key events are logged without
   their keys.

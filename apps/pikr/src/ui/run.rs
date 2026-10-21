@@ -553,6 +553,16 @@ impl<'a> Window<'a> {
                 }
                 Ok(key.map_or(Step::Continue(false), |key| self.key(&key, content)))
             }
+            // A chord's own commit comes before its key is let go; after
+            // that, a commit with no key press (an input method's direct
+            // punctuation, an on-screen keyboard) is typing, not the chord.
+            ShellEvent::Key {
+                state: ButtonState::Released,
+                ..
+            } => {
+                self.mods = Default::default();
+                Ok(Step::Continue(false))
+            }
             ShellEvent::TextCommit { text, .. } => {
                 let key = key_from_commit(&text, self.mods);
                 Ok(key.map_or(Step::Continue(false), |key| self.key(&key, content)))

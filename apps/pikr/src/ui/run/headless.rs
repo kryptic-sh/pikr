@@ -21,6 +21,8 @@ enum Input {
     Text(&'static str),
     /// A key press with the modifiers held.
     Key(KeyCode, ShellModifiers),
+    /// A key release, no modifiers held.
+    Release(KeyCode),
     /// The clipboard's answer to the run's first clipboard read: HeadlessShell
     /// numbers reads from 1, and its own answer would arrive only after the
     /// rest of the script.
@@ -80,6 +82,7 @@ fn run(content: Content, input: &[Input]) -> (Vec<Payload>, i32) {
                 shell.key_press(window, code).unwrap();
                 shell.set_modifiers(ShellModifiers::empty());
             }
+            Input::Release(code) => shell.key_release(window, code).unwrap(),
         }
     }
     shell.request_close(window).unwrap();
@@ -213,6 +216,23 @@ fn ctrl_v_and_shift_insert_paste_the_clipboard() {
         );
         assert_eq!(got, (stdout("cherry"), 0));
     }
+}
+
+/// An input method can commit with no key press of its own (a direct
+/// punctuation commit, an on-screen keyboard). A Ctrl chord pressed and
+/// released before must not make that commit read as part of the chord.
+#[test]
+fn a_commit_after_a_released_chord_is_typed() {
+    let got = run(
+        picker(fruit(), ""),
+        &[
+            Input::Key(KeyCode::KeyU, ShellModifiers::CTRL),
+            Input::Release(KeyCode::KeyU),
+            Input::Text("cher"),
+            key(RETURN),
+        ],
+    );
+    assert_eq!(got, (stdout("cherry"), 0));
 }
 
 #[test]
