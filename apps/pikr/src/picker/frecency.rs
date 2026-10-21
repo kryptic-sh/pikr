@@ -57,7 +57,15 @@ impl Usage {
         let Ok(text) = std::fs::read_to_string(&path) else {
             return Self::default();
         };
-        toml::from_str(&text).unwrap_or_default()
+        Self::from_toml(&text)
+    }
+
+    /// `usage.toml`'s text parsed, without the clipboard section an older
+    /// pikr wrote (see [`Usage::record`]), so the next save removes it.
+    fn from_toml(text: &str) -> Self {
+        let mut usage: Self = toml::from_str(text).unwrap_or_default();
+        usage.modes.remove(&CliMode::Clipboard.key());
+        usage
     }
 
     /// Persist to `usage.toml` in the state dir. Best-effort; errors are
@@ -89,7 +97,14 @@ impl Usage {
     /// what `modes::execute` would run. Stamps `last_used` with the current
     /// time. Saving is the caller's responsibility (we batch a single save
     /// at the call site so a Visual-mode multi-accept doesn't fsync N times).
+    ///
+    /// Clipboard mode is not recorded: its rows are passing clipboard
+    /// contents, so a key would be the copied text itself (a password,
+    /// written to disk) or a `cliphist` id that never comes back.
     pub fn record(&mut self, cli_mode: CliMode, payload: &Payload) {
+        if cli_mode == CliMode::Clipboard {
+            return;
+        }
         let now = unix_seconds(SystemTime::now());
         let key = payload_key(payload);
         let entry = self
@@ -333,6 +348,23 @@ mod tests {
             args: vec!["y".into(), "z".into()],
         };
         assert_ne!(payload_key(&single), payload_key(&split));
+    }
+
+    #[test]
+    fn clipboard_accepts_are_not_recorded() {
+        let mut usage = Usage::default();
+        usage.record(CliMode::Clipboard, &Payload::SetClipboard("hunter2".into()));
+        assert!(usage.modes.is_empty());
+        let text = toml::to_string(&usage).unwrap();
+        assert!(!text.contains("hunter2"));
+    }
+
+    #[test]
+    fn an_older_clipboard_section_is_dropped_on_load() {
+        let text = "[clipboard.hunter2]\ncount = 3\nlast_used = 1\n\n[emoji.x]\ncount = 1\nlast_used = 1\n";
+        let usage = Usage::from_toml(text);
+        assert!(!usage.modes.contains_key("clipboard"));
+        assert!(usage.modes.contains_key("emoji"));
     }
 
     #[test]

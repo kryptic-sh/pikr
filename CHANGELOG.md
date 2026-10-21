@@ -18,6 +18,12 @@ and this project adheres to
 
 ### Fixed
 
+- **Clipboard mode no longer saves what you pick to disk.** Accepting a row
+  recorded it for frecency, which on Windows wrote the copied text itself (a
+  password, say) into `%LOCALAPPDATA%\pikr\usage.toml`, kept indefinitely; on
+  Linux it kept `cliphist` ids that never return. Clipboard accepts are no
+  longer recorded, and the clipboard section an older pikr wrote is removed at
+  the next save.
 - Typing into the `:` prompt with an input method shows the composition in the
   prompt, where the text goes. It was drawn in the query row, or nowhere when
   the prompt was opened from Normal mode.
