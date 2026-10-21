@@ -77,8 +77,12 @@ impl Session {
         session
     }
 
-    /// Swaps in the `--loading` rows once stdin has closed.
+    /// Swaps in the `--loading` rows once stdin has closed, unless `:mode`
+    /// has since left the list they were read for.
     pub fn entries_arrived(&mut self, entries: &[Entry]) {
+        if self.loading.is_none() {
+            return;
+        }
         self.app
             .set_entries(entries.iter().cloned().map(Arc::new).collect());
         self.app.rerank();
@@ -283,6 +287,16 @@ impl Session {
                     "q" | "q!" => return Outcome::exit(Vec::new(), 0),
                     _ => return Outcome::Continue,
                 };
+                if self.loading.is_some() {
+                    // The `--loading` rows are this list's, still being
+                    // read from stdin: stay on it rather than re-read stdin,
+                    // and leaving it drops them, so they cannot land under
+                    // another mode's name.
+                    if mode == self.app.cli_mode {
+                        return Outcome::Continue;
+                    }
+                    self.loading = None;
+                }
                 self.app.switch_mode(mode);
                 // The new mode starts with a clean recall state.
                 self.history_cursor = None;
@@ -721,6 +735,31 @@ mod tests {
         s.entries_arrived(&[Entry::stdout("x-ray")]);
         assert_eq!(s.loading, None);
         assert_eq!(s.app.matches.len(), 1);
+    }
+
+    #[test]
+    fn leaving_a_loading_list_drops_its_rows() {
+        let mut s = Session::new(
+            app_state(CliMode::Dmenu, &[], false),
+            Some("loading".into()),
+        );
+        s.handle_key(&named(NamedKey::Escape), none());
+        s.handle_key(&ch(":"), none());
+        type_text(&mut s, "emoji");
+        s.handle_key(&named(NamedKey::Enter), none());
+        assert_eq!(s.app.cli_mode, CliMode::Emoji);
+        assert_eq!(
+            s.loading, None,
+            "the loading text belonged to the stdin list"
+        );
+        let emoji = s.app.entries.len();
+        assert!(emoji > 0);
+        s.entries_arrived(&[Entry::stdout("x-ray")]);
+        assert_eq!(
+            s.app.entries.len(),
+            emoji,
+            "stdin rows must not replace emoji's"
+        );
     }
 
     #[test]

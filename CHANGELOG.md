@@ -18,6 +18,11 @@ and this project adheres to
 
 ### Fixed
 
+- Switching mode with `:` while `--loading` rows are still arriving leaves them
+  behind: before, the new mode's list stayed hidden behind the loading text and
+  was then replaced by the stdin rows under the new mode's name, whose history
+  and frecency an accept then wrote to. `:dmenu` while the stdin list is still
+  loading does nothing.
 - A `--width` or `--lines` too large for the screen no longer opens a window
   bigger than the monitor, with the input row off it: the window is shrunk to
   the smallest connected monitor, with a warning. `--width 0` (or any width
