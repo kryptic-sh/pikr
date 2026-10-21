@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow};
 use crcbl_shell::{
     ButtonState, ClipboardContent, ClipboardRequestId, CloseReply, CursorIcon, LogicalSize,
-    MimeType, PanelAnchor, PanelDesc, PanelKeyboard, PanelLayer, PhysicalRect, PointerButton,
-    ScrollDelta, Shell, ShellCaps, ShellEvent, TextPurpose, WindowDesc, WindowId, WindowRole,
+    MimeType, MonitorInfo, PanelAnchor, PanelDesc, PanelKeyboard, PanelLayer, PhysicalRect,
+    PointerButton, ScrollDelta, Shell, ShellCaps, ShellEvent, TextPurpose, WindowDesc, WindowId,
+    WindowRole,
 };
 use crcbl_ui::draw_list::DrawList;
 use crcbl_ui::font::Font;
@@ -134,7 +135,11 @@ fn create_window(shell: &mut dyn Shell, spec: &WindowSpec) -> Result<(WindowId, 
         .create_window(&WindowDesc {
             title: "pikr",
             app_id: "pikr",
-            size: LogicalSize::new(snapped(spec.width), snapped(spec.height)),
+            size: fitted_size(
+                shell.monitors().iter().map(logical_size_of),
+                spec.width,
+                spec.height,
+            ),
             resizable: false,
             role,
             transparent,
@@ -153,6 +158,48 @@ const SIZE_STEP: f64 = 4.0;
 
 fn snapped(logical: f64) -> f64 {
     (logical / SIZE_STEP).ceil() * SIZE_STEP
+}
+
+/// The narrowest window pikr opens: the prompt, a row and the status bar
+/// still show, so `--width 0` cannot leave an invisible window holding the
+/// keyboard.
+const MIN_WIDTH: f64 = 120.0;
+
+/// A monitor's size in logical pixels.
+fn logical_size_of(monitor: &MonitorInfo) -> (f64, f64) {
+    (
+        f64::from(monitor.bounds.width) / monitor.scale_factor,
+        f64::from(monitor.bounds.height) / monitor.scale_factor,
+    )
+}
+
+/// The window's logical size for `width` x `height`: [`snapped`], at least
+/// [`MIN_WIDTH`] wide, and no larger than the smallest of the `monitors`'
+/// logical sizes, since which one pikr opens on is the window system's
+/// choice. A huge `--lines` otherwise opened a window far taller than the
+/// screen, centred so its input row was off it.
+fn fitted_size(
+    monitors: impl IntoIterator<Item = (f64, f64)>,
+    width: f64,
+    height: f64,
+) -> LogicalSize {
+    let smallest = monitors
+        .into_iter()
+        .reduce(|(w, h), (mw, mh)| (w.min(mw), h.min(mh)));
+    let mut size = (snapped(width.max(MIN_WIDTH)), snapped(height));
+    if let Some((max_width, max_height)) = smallest
+        && (size.0 > max_width || size.1 > max_height)
+    {
+        tracing::warn!(
+            width,
+            height,
+            max_width,
+            max_height,
+            "window larger than the smallest monitor; shrunk to fit"
+        );
+        size = (size.0.min(max_width), size.1.min(max_height));
+    }
+    LogicalSize::new(size.0, size.1)
 }
 
 /// Pumps until the window system gives the new window a size. Returns the
@@ -819,6 +866,24 @@ mod tests {
         // Detents are already in logical units and ignore the scale.
         let wheel = ScrollDelta::Lines { x: 0.0, y: -1.0 };
         assert_eq!(wheel_scroll(wheel, 2.0), WHEEL_LINE_PIXELS);
+    }
+
+    #[test]
+    fn window_fits_the_smallest_monitor_and_keeps_a_minimum_width() {
+        let size = |monitors: &[(f64, f64)], width, height| {
+            let size = fitted_size(monitors.iter().copied(), width, height);
+            (size.width, size.height)
+        };
+        let screens = [(1920.0, 1080.0), (1280.0, 800.0)];
+        // Fits: only snapped.
+        assert_eq!(size(&screens, 720.0, 447.0), (720.0, 448.0));
+        // A huge --lines or --width is held to the smallest monitor.
+        assert_eq!(size(&screens, 720.0, 4_000_128.0), (720.0, 800.0));
+        assert_eq!(size(&screens, 100_000.0, 448.0), (1280.0, 448.0));
+        // --width 0 cannot make an invisible window.
+        assert_eq!(size(&screens, 0.0, 448.0), (MIN_WIDTH, 448.0));
+        // No monitor known (a headless shell): nothing to fit to.
+        assert_eq!(size(&[], 720.0, 4_000_128.0), (720.0, 4_000_128.0));
     }
 
     #[test]

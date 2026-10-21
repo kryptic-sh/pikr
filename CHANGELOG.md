@@ -16,6 +16,14 @@ and this project adheres to
   file name, as `Include config.d/*` does. On systemd systems this also lists
   the `.host` entries systemd's ssh proxy config defines.
 
+### Fixed
+
+- A `--width` or `--lines` too large for the screen no longer opens a window
+  bigger than the monitor, with the input row off it: the window is shrunk to
+  the smallest connected monitor, with a warning. `--width 0` (or any width
+  under 120) opens 120 pixels wide instead of an invisible window that holds the
+  keyboard.
+
 ## [0.9.1] - 2026-10-21
 
 ### Fixed

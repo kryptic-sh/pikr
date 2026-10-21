@@ -436,9 +436,12 @@
 
 Re-verified against the tree on 2026-10-18.
 
-- Coarse-granularity same-tick cache staleness; `--lines 0` / `--width 0`;
-  non-UTF8 PATH names (skipped by `run::scan_dir`). (review pass 2026-08-06; not
-  re-checked individually)
+- Coarse-granularity same-tick cache staleness; non-UTF8 PATH names (skipped by
+  `run::scan_dir`). (review pass 2026-08-06; not re-checked individually)
+- `--lines 0` opens with no rows and still selects the first match, so Return
+  accepts a row the user cannot see, and a stray scrollbar end shows at the
+  list's edge (Hyprland, 2026-10-22). `--width 0` and oversized `--lines` /
+  `--width` are handled by `ui::run::fitted_size` since 2026-10-22.
 - No accept path runs a shell on a string pikr builds from untrusted text:
   launches are `Command::new(program).args(args)`. The two script strings are
   clipboard's `cliphist decode {id} | wl-copy` (`clipboard::make_entry`, `id`
