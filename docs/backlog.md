@@ -223,14 +223,17 @@
     (crcbl's X11 shell has no ARGB visual yet).
   - Clipboard mode on Linux was checked on headless sway (2026-10-21, cliphist
     pointed at a scratch `XDG_CACHE_HOME`, which keeps the user's history out):
-    a seeded history lists newest first, and accepting a row ran
-    `cliphist decode {id} | wl-copy`, after which `wl-paste` read the row's
-    text. Without cliphist pikr warns and shows "No entries.". A history nothing
-    was ever stored in makes `cliphist list` exit 1 ("please store something
-    first"), so `clipboard::unix_impl::collect` logs a non-zero exit at debug
-    level only. An image entry (2026-10-21) is listed under cliphist's own
-    preview label (`[[ binary data 123 B png 64x32 ]]`), and accepting it put an
-    `image/png` on the clipboard byte-identical to the stored PNG.
+    a seeded history lists newest first, and accepting a row put its text on the
+    clipboard (`wl-paste` read it back). Since 2026-10-22 the accept runs
+    `clipboard::unix_impl::copy_script`, which decodes to a temporary file and
+    runs `wl-copy` only on success; with the real tools, a missing id exited 1
+    and left the clipboard as it was, where the old pipe set it empty. Without
+    cliphist pikr warns and shows "No entries.". A history nothing was ever
+    stored in makes `cliphist list` exit 1 ("please store something first"), so
+    `clipboard::unix_impl::collect` logs a non-zero exit at debug level only. An
+    image entry (2026-10-21) is listed under cliphist's own preview label
+    (`[[ binary data 123 B png 64x32 ]]`), and accepting it put an `image/png`
+    on the clipboard byte-identical to the stored PNG.
   - **Linux startup over 500 ms seen only on a loaded machine.** Five drun
     launches in a row in a nested Hyprland (2026-10-20) reached first paint at
     1075, 176, 153, 163 and 240 ms; the first spent 657 ms in
@@ -456,10 +459,10 @@ Re-verified against the tree on 2026-10-18.
   `--width` are handled by `ui::run::fitted_size` since 2026-10-22.
 - No accept path runs a shell on a string pikr builds from untrusted text:
   launches are `Command::new(program).args(args)`. The two script strings are
-  clipboard's `cliphist decode {id} | wl-copy` (`clipboard::make_entry`, `id`
-  parsed as `u64`) and ssh's pwsh and cmd arms (`ssh::build_terminal_args`: pwsh
-  single-quotes the host, cmd takes only hosts in `is_safe_host`'s charset).
-  Re-checked 2026-10-19; keep it that way.
+  clipboard's `copy_script` (`clipboard::unix_impl`, `id` parsed as `u64`, the
+  only value in the script) and ssh's pwsh and cmd arms
+  (`ssh::build_terminal_args`: pwsh single-quotes the host, cmd takes only hosts
+  in `is_safe_host`'s charset). Re-checked 2026-10-19; keep it that way.
 - History and frecency saves (`History::save_to`, `Usage::save_to`) re-read the
   file and replay this session's changes onto it, so a second pikr's save in the
   meantime is kept. There is no lock: a save landing between another's read and

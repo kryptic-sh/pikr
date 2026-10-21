@@ -1,6 +1,7 @@
 //! clipboard mode — clipboard history picker.
 //!
-//! - Unix: shells out to `cliphist list` / `cliphist decode | wl-copy`.
+//! - Unix: shells out to `cliphist list`, then `cliphist decode` into
+//!   `wl-copy`.
 //! - Windows: reads current clipboard text via `arboard`; single entry shown.
 //!   Full per-item history requires Windows 10 1809+ WinRT (future work).
 //! - Other targets: returns an empty list.
@@ -79,13 +80,24 @@ mod unix_impl {
     }
 
     pub fn make_entry(id: u64, preview: String) -> Entry {
-        // ExecWait, not Exec: the accept path must observe the pipeline's
+        // ExecWait, not Exec: the accept path must observe the script's
         // exit — a missing wl-copy (or a failed decode) otherwise fails
         // silently and the user's selection never reaches the clipboard.
-        Entry::exec_wait(preview_label(&preview), "sh").with_args(vec![
-            "-c".to_string(),
-            format!("cliphist decode {id} | wl-copy"),
-        ])
+        Entry::exec_wait(preview_label(&preview), "sh")
+            .with_args(vec!["-c".to_string(), copy_script(id)])
+    }
+
+    /// The `sh` script that puts history item `id` on the clipboard: decoded
+    /// to a temporary file first, and handed to `wl-copy` only if that
+    /// worked. Piping straight into `wl-copy` set an empty clipboard and
+    /// reported success when the decode failed (an item rotated out of
+    /// cliphist's history, a locked database). A file rather than a shell
+    /// variable, since an image item is binary. `id` is a parsed integer, so
+    /// nothing from the clipboard reaches the script's text.
+    pub fn copy_script(id: u64) -> String {
+        format!(
+            "f=$(mktemp) || exit 1\ntrap 'rm -f \"$f\"' EXIT\ncliphist decode {id} >\"$f\" && wl-copy <\"$f\""
+        )
     }
 }
 
@@ -143,7 +155,7 @@ mod windows_impl {
 #[cfg(all(test, unix))]
 mod tests {
     use super::PREVIEW_MAX;
-    use super::unix_impl::{make_entry, parse_line};
+    use super::unix_impl::{copy_script, make_entry, parse_line};
     use crate::modes::Payload;
 
     #[test]
@@ -172,6 +184,47 @@ mod tests {
         }
     }
 
+    /// Runs [`copy_script`] under `sh` with stand-in `cliphist` and
+    /// `wl-copy` first on `PATH`: `cliphist` runs `decode`, and `wl-copy`
+    /// records what it was given. Returns the exit status and that record.
+    fn run_copy_script(decode: &str) -> (bool, Option<Vec<u8>>) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let tool = |name: &str, body: &str| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let got = dir.path().join("got");
+        tool("cliphist", decode);
+        tool("wl-copy", &format!("cat >'{}'", got.display()));
+        let path = format!(
+            "{}:{}",
+            dir.path().display(),
+            std::env::var("PATH").unwrap()
+        );
+        let status = std::process::Command::new("sh")
+            .args(["-c", &copy_script(7)])
+            .env("PATH", path)
+            .status()
+            .unwrap();
+        (status.success(), std::fs::read(&got).ok())
+    }
+
+    #[test]
+    fn a_failed_decode_leaves_the_clipboard_alone_and_fails() {
+        let (ok, copied) = run_copy_script("exit 1");
+        assert!(!ok, "a failed decode must fail the accept");
+        assert_eq!(copied, None, "wl-copy must not run");
+    }
+
+    #[test]
+    fn a_decoded_item_reaches_wl_copy_byte_for_byte() {
+        let (ok, copied) = run_copy_script("printf 'pic\\000ture'");
+        assert!(ok);
+        assert_eq!(copied.as_deref(), Some(&b"pic\0ture"[..]));
+    }
+
     #[test]
     fn long_preview_truncated() {
         let long: String = "x".repeat(100);
@@ -195,7 +248,7 @@ mod tests {
         match entry.payload {
             Payload::ExecWait { program, args } => {
                 assert_eq!(program, "sh");
-                assert_eq!(args, ["-c", "cliphist decode 42 | wl-copy"]);
+                assert_eq!(args, ["-c".to_string(), copy_script(42)]);
             }
             payload => panic!("expected ExecWait payload, got {payload:?}"),
         }

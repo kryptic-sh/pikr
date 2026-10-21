@@ -19,6 +19,10 @@ and this project adheres to
 
 ### Fixed
 
+- Clipboard mode no longer empties the clipboard when an item cannot be decoded
+  (rotated out of cliphist's history, a locked database): pikr reported success
+  while `wl-copy` set an empty clipboard. The item is decoded first, the
+  clipboard is only set if that worked, and a failure fails the accept.
 - ssh mode reads `~/.ssh/config` values as ssh does: a trailing `# comment` is
   no longer listed as hosts (`Host web # prod box` listed `#`, `prod` and `box`)
   or shown in a host's description, and double-quoted values stay whole, so an
