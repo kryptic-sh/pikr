@@ -111,10 +111,10 @@ fn read_config(
 /// ssh also accepts, are not expanded.
 fn include_paths(value: &str, base: &Path, home: Option<&Path>) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    for word in value.split_whitespace() {
+    for word in config_words(value) {
         let path = match (word.strip_prefix("~/"), home) {
             (Some(rest), Some(home)) => home.join(rest),
-            _ => base.join(word),
+            _ => base.join(&word),
         };
         let pattern = path.file_name().and_then(|name| name.to_str());
         let Some(pattern) = pattern.filter(|name| name.contains(['*', '?'])) else {
@@ -138,6 +138,36 @@ fn include_paths(value: &str, base: &Path, home: Option<&Path>) -> Vec<PathBuf> 
         files.extend(matched);
     }
     files
+}
+
+/// A config value's words as ssh reads them: split at whitespace, with
+/// double quotes keeping a word whole (`\"` and `\\` escape inside them),
+/// and a `#` that starts a word, outside quotes, ending the line as a
+/// comment, after OpenSSH's `argv_split`.
+fn config_words(value: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut chars = value.chars().peekable();
+    loop {
+        while chars.next_if(|c| c.is_whitespace()).is_some() {}
+        match chars.peek() {
+            None | Some('#') => break,
+            Some(_) => {}
+        }
+        let mut word = String::new();
+        let mut quoted = false;
+        while let Some(c) = chars.next() {
+            match c {
+                '"' => quoted = !quoted,
+                '\\' if quoted && matches!(chars.peek(), Some('"' | '\\')) => {
+                    word.extend(chars.next());
+                }
+                c if c.is_whitespace() && !quoted => break,
+                c => word.push(c),
+            }
+        }
+        words.push(word);
+    }
+    words
 }
 
 /// Whether `name` matches `pattern`, where `*` stands for any run of chars
@@ -243,10 +273,9 @@ fn parse_config_with(
             // ssh_config(5) allows `Host a b` — one entry per pattern.
             // Wildcard and negated (`!host`) patterns are not real hosts —
             // skip them.
-            current_hosts = value
-                .split_whitespace()
+            current_hosts = config_words(&value)
+                .into_iter()
                 .filter(|p| !p.contains('*') && !p.contains('?') && !p.starts_with('!'))
-                .map(str::to_string)
                 .collect();
             if current_hosts.is_empty() {
                 // A wildcard-only block contributes no entries — its
@@ -256,9 +285,10 @@ fn parse_config_with(
             }
         } else if !current_hosts.is_empty() {
             // ssh uses the first value it reads for each keyword.
-            match key.as_str() {
-                "hostname" => _ = hostname.get_or_insert(value),
-                "user" => _ = user.get_or_insert(value),
+            let first = config_words(&value).into_iter().next();
+            match (key.as_str(), first) {
+                ("hostname", Some(word)) => _ = hostname.get_or_insert(word),
+                ("user", Some(word)) => _ = user.get_or_insert(word),
                 _ => {}
             }
         }
@@ -848,6 +878,40 @@ Host = beta
             std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         assert!(is_tool_installed(tool.to_str().unwrap()));
+    }
+
+    #[test]
+    fn config_words_follow_ssh_quoting_and_comments() {
+        assert_eq!(config_words("web # prod box"), ["web"]);
+        assert_eq!(config_words("a b\tc"), ["a", "b", "c"]);
+        assert_eq!(
+            config_words("\"My Configs/hosts\" other"),
+            ["My Configs/hosts", "other"]
+        );
+        assert_eq!(config_words("\"has # inside\""), ["has # inside"]);
+        assert_eq!(config_words("\"say \\\"hi\\\"\""), ["say \"hi\""]);
+        assert_eq!(config_words("not#comment"), ["not#comment"]);
+        assert!(config_words("# all comment").is_empty());
+        assert!(config_words("").is_empty());
+    }
+
+    #[test]
+    fn trailing_comments_are_not_hosts_or_values() {
+        let input = "Host web # prod box\n    HostName example.com # eu\n    User bob # me\n";
+        let entries = parse_config(input, &Terminal::simple("alacritty"));
+        assert_eq!(labels(&entries), ["web"]);
+        assert_eq!(entries[0].description.as_deref(), Some("example.com (bob)"));
+    }
+
+    #[test]
+    fn a_quoted_include_path_may_hold_spaces() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("My Configs")).unwrap();
+        std::fs::write(dir.path().join("My Configs/hosts"), "Host spaced\n").unwrap();
+        let config = dir.path().join("config");
+        std::fs::write(&config, "Include \"My Configs/hosts\"\n").unwrap();
+        let entries = read_config(&config, dir.path(), None, &Terminal::simple("alacritty"), 0);
+        assert_eq!(labels(&entries), ["spaced"]);
     }
 
     #[test]

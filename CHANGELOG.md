@@ -18,6 +18,10 @@ and this project adheres to
 
 ### Fixed
 
+- ssh mode reads `~/.ssh/config` values as ssh does: a trailing `# comment` is
+  no longer listed as hosts (`Host web # prod box` listed `#`, `prod` and `box`)
+  or shown in a host's description, and double-quoted values stay whole, so an
+  `Include "~/My Configs/hosts"` path with a space works.
 - drun respects an app hidden by your own `.desktop` file. A copy in
   `~/.local/share/applications` with `Hidden=true` or `NoDisplay=true` (what
   menu editors write to hide an app) was skipped, and the system's copy was
