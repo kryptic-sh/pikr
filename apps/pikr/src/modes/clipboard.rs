@@ -2,8 +2,8 @@
 //!
 //! - Unix: shells out to `cliphist list`, then `cliphist decode` into
 //!   `wl-copy`.
-//! - Windows: reads current clipboard text via `arboard`; single entry shown.
-//!   Full per-item history requires Windows 10 1809+ WinRT (future work).
+//! - Windows: the text items of Windows' clipboard history (Win+V), newest
+//!   first; with history off, the current clipboard text alone.
 //! - Other targets: returns an empty list.
 
 #[cfg(windows)]
@@ -101,20 +101,96 @@ mod unix_impl {
     }
 }
 
-// ── Windows — arboard (current clipboard text) ────────────────────────────────
+// ── Windows — clipboard history (WinRT), else arboard ─────────────────────────
 //
-// arboard exposes only the *current* clipboard item, not the full Windows
-// clipboard history (Win32 ClipboardHistory WinRT API). This means the picker
-// shows a single entry for the text currently on the clipboard. Selecting it
-// is effectively a no-op (it re-sets the same text), but it keeps the
-// interaction model consistent and confirms the clipboard is accessible.
-// Full history support via WinRT is tracked in issue #37 as future work.
+// Windows keeps its own history (Settings › System › Clipboard, Win+V) and
+// hands it out through WinRT's `Clipboard::GetHistoryItemsAsync`, newest
+// first. Only items holding text are listed; images and files are skipped.
+// Accepting one puts its text back on the clipboard through arboard, which
+// Windows then records as the newest history item.
 
 #[cfg(windows)]
 mod windows_impl {
     use super::{Entry, Payload, Result, preview_label};
+    use windows::ApplicationModel::DataTransfer::{
+        Clipboard, ClipboardHistoryItemsResultStatus, StandardDataFormats,
+    };
 
     pub fn collect() -> Result<Vec<Entry>> {
+        match history_texts() {
+            Ok(Some(texts)) => {
+                tracing::debug!(
+                    items = texts.len(),
+                    "clipboard: Windows clipboard history read"
+                );
+                Ok(texts.into_iter().map(make_entry).collect())
+            }
+            Ok(None) => {
+                tracing::info!(
+                    "clipboard: Windows clipboard history is off (Settings › System › \
+                     Clipboard); showing the current clipboard text only"
+                );
+                current_text()
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "clipboard: cannot read Windows clipboard history, showing the \
+                     current clipboard text only: {e:#}"
+                );
+                current_text()
+            }
+        }
+    }
+
+    /// The text of every history item that holds text, newest first, or
+    /// `None` when the user has clipboard history turned off.
+    ///
+    /// WinRT's `Clipboard` only activates in a single-threaded apartment, and
+    /// the calling thread may already be in a multithreaded one, so the read
+    /// runs on a thread that joins an STA of its own.
+    pub(super) fn history_texts() -> Result<Option<Vec<String>>> {
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let _com = crate::modes::drun::ComApartment::enter();
+                read_history()
+            })
+            .join()
+            .map_err(|_| anyhow::anyhow!("the clipboard history thread panicked"))?
+        })
+    }
+
+    fn read_history() -> Result<Option<Vec<String>>> {
+        if !Clipboard::IsHistoryEnabled()? {
+            return Ok(None);
+        }
+        let result = Clipboard::GetHistoryItemsAsync()?.join()?;
+        let status = result.Status()?;
+        if status == ClipboardHistoryItemsResultStatus::ClipboardHistoryDisabled {
+            return Ok(None);
+        }
+        anyhow::ensure!(
+            status == ClipboardHistoryItemsResultStatus::Success,
+            "clipboard history answered with status {}",
+            status.0
+        );
+        let text_format = StandardDataFormats::Text()?;
+        let mut texts = Vec::new();
+        for item in result.Items()? {
+            let content = item.Content()?;
+            if !content.Contains(&text_format)? {
+                continue;
+            }
+            let text = content.GetTextAsync()?.join()?.to_string_lossy();
+            if !text.is_empty() {
+                texts.push(text);
+            }
+        }
+        Ok(Some(texts))
+    }
+
+    /// The current clipboard text as the only entry, for when the history
+    /// cannot be read.
+    fn current_text() -> Result<Vec<Entry>> {
         let mut cb = match arboard::Clipboard::new() {
             Ok(c) => c,
             Err(e) => {
@@ -124,13 +200,7 @@ mod windows_impl {
         };
 
         match cb.get_text() {
-            Ok(text) if !text.is_empty() => {
-                tracing::info!(
-                    "clipboard: Windows arboard — showing current clipboard text only \
-                     (full history requires WinRT; see issue #37)"
-                );
-                Ok(vec![make_entry(text)])
-            }
+            Ok(text) if !text.is_empty() => Ok(vec![make_entry(text)]),
             Ok(_) => Ok(vec![]),
             Err(e) => {
                 tracing::warn!("clipboard: could not read clipboard text: {e}");
@@ -263,7 +333,16 @@ mod tests {
 
 #[cfg(all(test, windows))]
 mod windows_tests {
-    use super::windows_impl::collect;
+    use super::windows_impl::{collect, history_texts};
+
+    /// Whether history is on or off, asking for it must succeed: WinRT's
+    /// `Clipboard` refuses activation outside a single-threaded apartment,
+    /// which a test thread is not in.
+    #[test]
+    fn clipboard_history_can_be_asked_for() {
+        let result = history_texts();
+        assert!(result.is_ok(), "history read failed: {result:?}");
+    }
 
     #[test]
     fn collect_does_not_panic() {

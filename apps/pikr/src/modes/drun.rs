@@ -21,6 +21,9 @@ mod windows_impl;
 #[cfg(windows)]
 pub use windows_impl::launch;
 
+#[cfg(windows)]
+pub(crate) use windows_impl::ComApartment;
+
 #[derive(Default)]
 pub struct Drun;
 

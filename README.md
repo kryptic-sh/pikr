@@ -20,7 +20,8 @@ Shipping. Latest release on
 - `run` — `$PATH` executable runner
 - `ssh` — pick a host from `~/.ssh/config` / `~/.ssh/known_hosts`
 - `emoji` — searchable Unicode emoji picker (output via stdout)
-- `clipboard` — recent clipboard history
+- `clipboard` — recent clipboard history (cliphist; on Windows, the clipboard
+  history from Win+V when it is turned on)
 - `calc` — reactive expression evaluator
 
 ## Install

@@ -15,6 +15,10 @@ and this project adheres to
   `XDG_CURRENT_DESKTOP`), is no longer listed. A GNOME install's settings apps
   stop showing under KDE, and the other way round. The keys are checked on every
   launch, including from the drun cache, which is rebuilt once to store them.
+- Windows: `--show clipboard` lists the text items of Windows' clipboard history
+  (Win+V), newest first, when it is turned on in Settings › System › Clipboard.
+  Before, it showed only the text currently on the clipboard, which it still
+  does when the history is off. Images and files in the history are not listed.
 
 ### Changed
 

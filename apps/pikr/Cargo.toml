@@ -45,15 +45,18 @@ unicode-segmentation.workspace = true
 freedesktop-desktop-entry.workspace = true
 xdg.workspace = true
 
-# arboard provides clipboard read/write on Windows (current text only).
-# Full clipboard history requires the WinRT ClipboardHistory API (issue #37).
+# arboard writes the chosen clipboard entry on Windows, and reads the current
+# text when clipboard history is off.
 [target.'cfg(windows)'.dependencies]
 arboard = { version = "3", default-features = false }
 # Win32 API bindings for drun (issues #38, #40): shell:AppsFolder enumeration
 # and launch (SHGetKnownFolderItem, ShellExecuteExW — which needs
 # System_Registry for its struct), shell-item icons via GetDIBits, and the
-# console re-attach. Feature set kept narrow — only what we call into.
+# console re-attach; clipboard mode's history through WinRT's
+# ApplicationModel_DataTransfer. Feature set kept narrow — only what we call
+# into.
 windows = { version = "0.62", features = [
+    "ApplicationModel_DataTransfer",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
     "Win32_Graphics_Gdi",

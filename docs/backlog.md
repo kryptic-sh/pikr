@@ -602,4 +602,13 @@ macOS and Windows.
   the empty-state row; its on-screen placement was not looked at. The e2e test
   `kb_custom_confirm_with_no_match_prints_query` covers the behaviour (CI,
   Linux).
-- run, ssh and clipboard modes were not exercised on Windows beyond unit tests.
+- run and ssh modes were not exercised on Windows beyond unit tests.
+- Clipboard mode reads Windows' clipboard history through WinRT
+  (`clipboard::windows_impl::history_texts`, on a thread of its own in a
+  single-threaded apartment, since `Clipboard` refuses activation from an MTA:
+  the first run on 2026-10-22 failed with `0x8000001D` until it moved there).
+  Checked on Windows 11 with history off (the default): it logs that and lists
+  the current clipboard text, collected in 35 ms. Not checked: a history that is
+  on (turning it on starts Windows recording the user's clipboard, so it waits
+  for the owner), text items' order and accepting one, and how long a long
+  history takes to read at startup.

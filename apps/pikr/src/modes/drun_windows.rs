@@ -226,13 +226,14 @@ fn display_name(item: &IShellItem, kind: SIGDN) -> Option<String> {
 /// asks for: some shell extensions it may load need STA. If the thread is
 /// already in a multithreaded apartment the join fails with
 /// `RPC_E_CHANGED_MODE`; the shell calls here still work there, so the guard
-/// just doesn't release it.
-struct ComApartment {
+/// just doesn't release it. Clipboard mode uses it too, on a thread of its
+/// own, since WinRT's `Clipboard` refuses activation from an MTA.
+pub(crate) struct ComApartment {
     joined: bool,
 }
 
 impl ComApartment {
-    fn enter() -> Self {
+    pub(crate) fn enter() -> Self {
         let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
         Self { joined: hr.is_ok() }
     }
