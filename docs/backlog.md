@@ -602,7 +602,11 @@ macOS and Windows.
   the empty-state row; its on-screen placement was not looked at. The e2e test
   `kb_custom_confirm_with_no_match_prints_query` covers the behaviour (CI,
   Linux).
-- run and ssh modes were not exercised on Windows beyond unit tests.
+- run and ssh modes on Windows were launched and listed (2026-10-22, release
+  build): run collected 1044 `PATH` executables in 8 ms and drew them (first
+  paint 384 ms; the counter reads 256, `max_results`); ssh listed this host's
+  three configured hosts in 5 ms (not screenshotted, the names are private).
+  Accepting a row in either was not driven; it needs synthesized keys.
 - Clipboard mode reads Windows' clipboard history through WinRT
   (`clipboard::windows_impl::history_texts`, on a thread of its own in a
   single-threaded apartment, since `Clipboard` refuses activation from an MTA:
