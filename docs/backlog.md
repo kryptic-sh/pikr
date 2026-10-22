@@ -198,8 +198,13 @@
     `.desktop` copy that hides an app was ignored, ssh config comments and
     quotes were misread, `Include` fan-out was exponential, a failed
     `cliphist decode` emptied the clipboard, and an evalexpr panic killed calc
-    mode; all fixed. Not checked: that foot and kitty accept ssh mode's
-    `-e ssh <host>` (their man pages were not installed).
+    mode; all fixed. ssh mode's `-e ssh <host>` holds for every Unix terminal it
+    looks for (checked 2026-10-22 from their docs and source, none of foot or
+    kitty installed): alacritty's `-e, --command` (its `--help` here), xterm's
+    `-e`, foot's man page ("Ignored; for compatibility with xterm -e", trailing
+    words being the command), and kitty's `simple_cli_definitions.py`, which
+    defines `--execute -e` as a hidden flag taking no value, so the words after
+    it are the program.
   - Linux was verified only through CI's sway session on lavapipe: the e2e
     keyboard suite and the startup gate passed (run 39002212977, 237 ms
     launch-to-result against the 500 ms deadline). Hyprland 0.56.2 (Arch,
