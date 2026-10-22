@@ -412,8 +412,11 @@
     visible row (each an Image and a Text with the app's name), the ScrollBar
     and the status Texts, the same tree as AT-SPI on Linux, with the same two
     gaps: every ListItem's name is empty and none is selected. The query is a
-    Text with no ValuePattern, so a reader cannot tell it is editable. Narrator
-    was not run.
+    Text with no ValuePattern, so a reader cannot tell it is editable. Only
+    crcbl-ui's own `text_input` widget maps to `Role::TextInput`, and pikr draws
+    its query itself (caret, pre-edit, vim modes); asked crcbl on 2026-10-22 for
+    a way to mark a custom block as a text input with a value. Narrator was not
+    run.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
