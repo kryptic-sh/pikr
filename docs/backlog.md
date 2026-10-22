@@ -92,13 +92,18 @@
     around the caret to underline the pre-edit, so right-to-left text being
     composed into is reordered per piece, as the whole query was before
     `TextLayout::caret` (2026-10-21). Not seen with a real RTL input method.
-  - **Confirm injected unsided Ctrl for crcbl.** crcbl 0.8.0 (which pikr is on
-    since 2026-10-21) counts `VK_CONTROL`/`VK_MENU`/`VK_SHIFT` without a side
-    toward the modifier state; on 0.6.0 an injected generic `VK_CONTROL` lost
-    Ctrl, so pikr's on-screen paste test sent `VK_LCONTROL` (0xA2, scancode
-    0x1D). crcbl asked pikr to confirm on Windows 11 that a generic
-    `VK_CONTROL` + V pastes (their change is unit-tested only). Needs the
-    Windows test desktop and synthesized keys, so the user's go-ahead.
+  - **Confirm injected generic Ctrl on crcbl's next release.** On 0.6.0 an
+    injected generic `VK_CONTROL` + V arrived as a plain v, so pikr's on-screen
+    paste test sent `VK_LCONTROL` (0xA2, scancode 0x1D) instead. crcbl found
+    (2026-10-23) that the cause was not the missing side: its Win32 shell read
+    `GetKeyboardState` when the pump translated each key, after the whole batch
+    had been dispatched, so a Ctrl released in the same batch (as an injected
+    Ctrl+V does) was already up. The window procedure now reads the modifiers
+    with each key, button and wheel message; their desktop test of an injected
+    `VK_CONTROL` passes on CI, and Windows 11 sets the sided bit for it anyway.
+    The fix is on crcbl main, unreleased. Once pikr takes that release, re-run
+    the paste with a generic `VK_CONTROL`. Needs the Windows test desktop and
+    synthesized keys, so the user's go-ahead.
   - IME, checked on Windows 2026-10-20 with the Microsoft Japanese IME (keys
     synthesized while pikr held the foreground): the pre-edit draws inline and
     underlined at the caret, the candidate list opens right below the caret, the
