@@ -108,7 +108,9 @@ pub(crate) fn with_state_lock(path: &Path, update: impl FnOnce()) {
 /// `path`, so a reader, another pikr saving at the same moment, or the next
 /// launch after pikr was killed mid-save sees the old file or the new one,
 /// never part of one. The rename also replaces a file an older pikr left
-/// 0644. Not synced to disk: a power cut can still lose the save.
+/// 0644. The bytes are synced to disk before the rename and the directory
+/// after it (see [`sync_dir`]), so a power cut after a save returns does
+/// not lose it.
 ///
 /// Off unix there is no mode to set. On Windows [`state_file_path`] lands
 /// under `%LOCALAPPDATA%`, whose inherited ACL already grants only the user,
@@ -132,19 +134,50 @@ pub(crate) fn write_private_state(path: &Path, bytes: &[u8]) -> std::io::Result<
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
     let written = options
         .open(&tmp)
-        .and_then(|mut f| f.write_all(bytes))
+        .and_then(|mut f| f.write_all(bytes).and_then(|()| f.sync_all()))
         .and_then(|()| std::fs::rename(&tmp, path));
     if written.is_err() {
         // The error being returned is the one worth reporting; a temporary
         // file that is already gone, or never opened, needs no cleanup.
         let _ = std::fs::remove_file(&tmp);
+        return written;
     }
-    written
+    // The new file is in place either way; a directory that cannot be
+    // synced (some network and FUSE filesystems refuse) only leaves the
+    // rename to the filesystem's own schedule.
+    if let Some(dir) = path.parent()
+        && let Err(e) = sync_dir(dir)
+    {
+        tracing::warn!(
+            "saved {} but could not sync its directory: {e}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+/// Flushes `dir`'s entries to disk, so a rename into it survives a power
+/// cut. A directory is opened for writing with `FILE_FLAG_BACKUP_SEMANTICS`
+/// on Windows, where `FlushFileBuffers` (`sync_all`) needs a write handle,
+/// and read-only elsewhere, where `fsync` takes any descriptor.
+fn sync_dir(dir: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    let dir = {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0)
+            .open(dir)?
+    };
+    #[cfg(not(windows))]
+    let dir = std::fs::File::open(dir)?;
+    dir.sync_all()
 }
 
 #[cfg(test)]
 mod state_path_tests {
-    use super::{state_file_path, write_private_state};
+    use super::{state_file_path, sync_dir, write_private_state};
 
     /// Every shipped platform must persist state; a `None` here silently
     /// turns history and frecency into per-session memory.
@@ -188,6 +221,14 @@ mod state_path_tests {
                 });
             }
         });
+    }
+
+    /// A state directory can be synced on every OS CI runs, so saves do not
+    /// warn on an ordinary disk.
+    #[test]
+    fn a_state_directory_can_be_synced() {
+        let dir = tempfile::tempdir().unwrap();
+        sync_dir(dir.path()).unwrap();
     }
 
     /// A write leaves only the target behind, and a failed one removes its

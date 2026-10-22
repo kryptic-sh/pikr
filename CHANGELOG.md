@@ -15,6 +15,9 @@ and this project adheres to
   every mode. Before, the first match stayed selected under a window with no
   room for it, so Enter accepted a row nobody could see. `--loading` and
   `--kb-custom KEY=PROMPT` are refused with `--lines 0`, as with `-P`.
+- History, frecency and the drun caches are synced to disk when they are saved:
+  the new file before it is renamed into place, and its directory after. A power
+  cut right after an accept no longer loses that accept's history.
 
 ## [0.9.2] - 2026-10-22
 

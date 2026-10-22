@@ -486,9 +486,13 @@ Re-verified against the tree on 2026-10-18.
   only arguments in `is_safe_host`'s charset). Re-checked 2026-10-19; keep it
   that way.
 - State writes (`picker::write_private_state`: history, frecency, the drun
-  caches) rename a complete temporary file into place but do not `fsync`, so a
-  power cut can still lose a save. History and frecency saves run under
-  `picker::with_state_lock` (an exclusive `File::lock` on a `<name>.lock`
+  caches, the Windows icon cache) sync the temporary file, rename it into place
+  and sync the directory (`picker::sync_dir`); a directory that cannot be synced
+  only warns. On Linux the order was observed with gdb syscall catchpoints
+  (2026-10-22): `fsync`, `rename`, `fsync`. The Windows directory flush
+  (`FlushFileBuffers` on a `FILE_FLAG_BACKUP_SEMANTICS` handle) is checked only
+  by `a_state_directory_can_be_synced` in CI. History and frecency saves run
+  under `picker::with_state_lock` (an exclusive `File::lock` on a `<name>.lock`
   sibling, never deleted); where no lock can be had they save unlocked, with a
   warning. On Windows the rename fails while another process holds the file open
   without delete sharing; that save is dropped with a warning, never
