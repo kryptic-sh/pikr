@@ -198,40 +198,105 @@ fn read_config(
 }
 
 /// The files an `Include` line's `value` names, in the order ssh reads them:
-/// each whitespace-separated path, `~/` taken from `home`, a relative one
-/// resolved against `base`, and a last component with `*` or `?` expanded to
-/// the matching files in its directory, sorted. Wildcards in a directory
-/// component, `[...]` classes, `%` tokens and environment variables, which
-/// ssh also accepts, are not expanded.
+/// each whitespace-separated path with its tokens and environment variables
+/// expanded ([`expand_include_word`]), `~/` taken from `home`, a relative
+/// one resolved against `base`, and wildcards expanded ([`glob_paths`]).
 fn include_paths(value: &str, base: &Path, home: Option<&Path>) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for word in config_words(value) {
+        let Some(word) = expand_include_word(&word, home, |name| std::env::var(name).ok()) else {
+            tracing::debug!(%word, "ssh config Include path not expandable here; skipped");
+            continue;
+        };
         let path = match (word.strip_prefix("~/"), home) {
             (Some(rest), Some(home)) => home.join(rest),
             _ => base.join(&word),
         };
-        let pattern = path.file_name().and_then(|name| name.to_str());
-        let Some(pattern) = pattern.filter(|name| name.contains(['*', '?'])) else {
-            files.push(path);
-            continue;
-        };
-        let dir = path.parent().unwrap_or(base);
-        let Ok(listing) = std::fs::read_dir(dir) else {
-            continue;
-        };
-        let mut matched: Vec<PathBuf> = listing
-            .filter_map(|item| item.ok())
-            .filter(|item| {
-                item.file_name()
-                    .to_str()
-                    .is_some_and(|name| wildcard_match(pattern, name))
-            })
-            .map(|item| item.path())
-            .collect();
-        matched.sort();
-        files.extend(matched);
+        files.extend(glob_paths(&path));
     }
     files
+}
+
+/// `word` from an `Include` line with its `%` tokens and `${NAME}`
+/// environment variables (ssh_config(5) "TOKENS" and "ENVIRONMENT
+/// VARIABLES") replaced, `env` looking the variables up. `None` when ssh
+/// would ignore the path (an unset variable, an unknown token, an unclosed
+/// `${`) or when it uses a token pikr cannot know while it lists hosts: the
+/// destination's (`%h`, `%p`, `%r`, …) and the local user's and machine's
+/// (`%u`, `%i`, `%L`, `%l`). Only `%%` and `%d` (`home`) are expanded.
+fn expand_include_word(
+    word: &str,
+    home: Option<&Path>,
+    env: impl Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let mut expanded = String::with_capacity(word.len());
+    let mut rest = word;
+    while let Some(at) = rest.find(['%', '$']) {
+        expanded.push_str(&rest[..at]);
+        let marker = &rest[at..];
+        if let Some(var) = marker.strip_prefix("${") {
+            let (name, after) = var.split_once('}')?;
+            expanded.push_str(&env(name)?);
+            rest = after;
+        } else if let Some(after) = marker.strip_prefix("%%") {
+            expanded.push('%');
+            rest = after;
+        } else if let Some(after) = marker.strip_prefix("%d") {
+            expanded.push_str(home?.to_str()?);
+            rest = after;
+        } else if marker.starts_with('%') {
+            return None;
+        } else {
+            expanded.push('$');
+            rest = &marker[1..];
+        }
+    }
+    expanded.push_str(rest);
+    Some(expanded)
+}
+
+/// The paths `pattern` names, as glob(3) expands it: each component holding
+/// a wildcard is matched ([`wildcard_match`]) against the listing of the
+/// directories the components before it named, and the result is sorted by
+/// bytes, as glob's `strcmp` sort is. A pattern without wildcards names
+/// itself, whether or not it exists.
+fn glob_paths(pattern: &Path) -> Vec<PathBuf> {
+    let mut found = vec![PathBuf::new()];
+    for component in pattern.components() {
+        let wildcard = component
+            .as_os_str()
+            .to_str()
+            .filter(|text| text.contains(['*', '?', '[']));
+        let Some(wildcard) = wildcard else {
+            for path in &mut found {
+                path.push(component);
+            }
+            continue;
+        };
+        found = found
+            .iter()
+            .flat_map(|dir| {
+                let listed = if dir.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    dir
+                };
+                std::fs::read_dir(listed)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|item| item.ok())
+                    .filter(|item| {
+                        item.file_name()
+                            .to_str()
+                            .is_some_and(|name| wildcard_match(wildcard, name))
+                    })
+                    .map(|item| dir.join(item.file_name()))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+    }
+    found.sort_by(|a, b| a.as_os_str().cmp(b.as_os_str()));
+    found
 }
 
 /// A config value's words as ssh reads them: split at whitespace, with
@@ -264,23 +329,110 @@ fn config_words(value: &str) -> Vec<String> {
     words
 }
 
-/// Whether `name` matches `pattern`, where `*` stands for any run of chars
-/// and `?` for one, as glob(3) matches a single path component: a leading
-/// `.` in `name` is matched only by a leading `.` in `pattern`.
+/// One element of a glob(7) pattern.
+enum Glob {
+    Char(char),
+    /// `?`
+    Any,
+    /// `*`
+    Star,
+    /// `[...]`: inclusive ranges, a lone character being a range of one.
+    Class {
+        negated: bool,
+        ranges: Vec<(char, char)>,
+    },
+}
+
+impl Glob {
+    fn matches(&self, c: char) -> bool {
+        match self {
+            Glob::Char(want) => *want == c,
+            Glob::Any => true,
+            Glob::Star => false,
+            Glob::Class { negated, ranges } => {
+                ranges.iter().any(|&(low, high)| (low..=high).contains(&c)) != *negated
+            }
+        }
+    }
+}
+
+/// `pattern` read as glob(7) reads one path component: `*`, `?`, and
+/// `[...]` classes with ranges, negated by a leading `!` (or `^`, which
+/// glibc also takes), a `]` first in the class standing for itself; a `\`
+/// makes the next character literal, and a `[` that is never closed is a
+/// literal `[`.
+fn glob_pattern(pattern: &str) -> Vec<Glob> {
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut parsed = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '*' => parsed.push(Glob::Star),
+            '?' => parsed.push(Glob::Any),
+            '\\' if i + 1 < chars.len() => {
+                i += 1;
+                parsed.push(Glob::Char(chars[i]));
+            }
+            '[' => match glob_class(&chars, i + 1) {
+                Some((class, end)) => {
+                    parsed.push(class);
+                    i = end;
+                    continue;
+                }
+                None => parsed.push(Glob::Char('[')),
+            },
+            c => parsed.push(Glob::Char(c)),
+        }
+        i += 1;
+    }
+    parsed
+}
+
+/// The class whose body starts at `chars[start]`, just past its `[`, and the
+/// index just past its `]`; `None` if it is never closed.
+fn glob_class(chars: &[char], start: usize) -> Option<(Glob, usize)> {
+    let mut i = start;
+    let negated = matches!(chars.get(i), Some('!' | '^'));
+    if negated {
+        i += 1;
+    }
+    let body = i;
+    let mut ranges = Vec::new();
+    loop {
+        let low = *chars.get(i)?;
+        if low == ']' && i > body {
+            return Some((Glob::Class { negated, ranges }, i + 1));
+        }
+        match (chars.get(i + 1), chars.get(i + 2)) {
+            (Some('-'), Some(&high)) if high != ']' => {
+                ranges.push((low, high));
+                i += 3;
+            }
+            _ => {
+                ranges.push((low, low));
+                i += 1;
+            }
+        }
+    }
+}
+
+/// Whether `name` matches `pattern` as glob(3) matches a single path
+/// component ([`glob_pattern`]): a leading `.` in `name` is matched only by
+/// a literal leading `.` in `pattern`.
 fn wildcard_match(pattern: &str, name: &str) -> bool {
-    if name.starts_with('.') && !pattern.starts_with('.') {
+    let pattern = glob_pattern(pattern);
+    if name.starts_with('.') && !matches!(pattern.first(), Some(Glob::Char('.'))) {
         return false;
     }
-    let pattern: Vec<char> = pattern.chars().collect();
     let name: Vec<char> = name.chars().collect();
     // Greedy match with backtracking to the last `*`.
     let (mut p, mut n) = (0, 0);
     let mut star: Option<(usize, usize)> = None;
     while n < name.len() {
-        if p < pattern.len() && (pattern[p] == '?' || pattern[p] == name[n]) {
+        if p < pattern.len() && pattern[p].matches(name[n]) {
             p += 1;
             n += 1;
-        } else if p < pattern.len() && pattern[p] == '*' {
+        } else if p < pattern.len() && matches!(pattern[p], Glob::Star) {
             star = Some((p, n));
             p += 1;
         } else if let Some((star_p, star_n)) = star {
@@ -291,7 +443,7 @@ fn wildcard_match(pattern: &str, name: &str) -> bool {
             return false;
         }
     }
-    pattern[p..].iter().all(|&c| c == '*')
+    pattern[p..].iter().all(|glob| matches!(glob, Glob::Star))
 }
 
 /// Portable home-directory lookup.
@@ -1119,6 +1271,117 @@ github.com,140.82.121.4 ssh-ed25519 AAAAC3Nza
         assert!(!wildcard_match("*", ".hidden"));
         assert!(!wildcard_match("*.conf", ".hidden.conf"));
         assert!(wildcard_match(".*", ".hidden"));
+    }
+
+    /// File names `pattern` expands to in `dir`.
+    fn globbed(dir: &Path, pattern: &str) -> Vec<String> {
+        glob_paths(&dir.join(pattern))
+            .iter()
+            .map(|path| path.file_name().unwrap().to_str().unwrap().to_owned())
+            .collect()
+    }
+
+    // Unix only: Windows forbids `*` in a file name, and glibc is the
+    // reference.
+    #[cfg(unix)]
+    #[test]
+    fn glob_paths_agree_with_glibc() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in [
+            "a.conf", "b.conf", "c.conf", "B.conf", "1.conf", ".h.conf", "]x", "-x", "!x", "a-b",
+            "a[b", "x*y",
+        ] {
+            std::fs::write(dir.path().join(name), "").unwrap();
+        }
+        // What glibc's glob(3), which OpenSSH calls, returned for each
+        // pattern over the same files (LC_ALL=C, `.` and `..` left out).
+        let glibc = [
+            ("[ab].conf", "a.conf b.conf"),
+            ("[!a].conf", "1.conf B.conf b.conf c.conf"),
+            ("[^a].conf", "1.conf B.conf b.conf c.conf"),
+            ("[a-c].conf", "a.conf b.conf c.conf"),
+            ("[!a-c].conf", "1.conf B.conf"),
+            ("[]]x", "]x"),
+            ("[!]]x", "!x -x"),
+            ("a[-]b", "a-b"),
+            ("[-]x", "-x"),
+            ("[!x]x", "!x -x ]x"),
+            (
+                "*",
+                "!x -x 1.conf B.conf ]x a-b a.conf a[b b.conf c.conf x*y",
+            ),
+            (".*", ".h.conf"),
+            ("[.]h.conf", ""),
+            ("a\\[b", "a[b"),
+            ("x\\*y", "x*y"),
+            ("[0-9]*", "1.conf"),
+            ("[A-Z]*", "B.conf"),
+            ("*[!f]", "!x -x ]x a-b a[b x*y"),
+        ];
+        for (pattern, want) in glibc {
+            assert_eq!(globbed(dir.path(), pattern).join(" "), want, "{pattern}");
+        }
+        // No wildcard: the path itself, whether or not it exists.
+        assert_eq!(globbed(dir.path(), "a[b"), ["a[b"]);
+        assert_eq!(globbed(dir.path(), "missing"), ["missing"]);
+    }
+
+    #[test]
+    fn glob_paths_expand_directory_components_in_byte_order() {
+        let dir = tempfile::tempdir().unwrap();
+        for sub in ["a", "a-b", "skip"] {
+            std::fs::create_dir(dir.path().join(sub)).unwrap();
+        }
+        std::fs::write(dir.path().join("a/x.conf"), "").unwrap();
+        std::fs::write(dir.path().join("a-b/x.conf"), "").unwrap();
+        std::fs::write(dir.path().join("a-b/y.txt"), "").unwrap();
+        std::fs::write(dir.path().join("skip/x.conf"), "").unwrap();
+        std::fs::write(dir.path().join("afile"), "").unwrap();
+        let found: Vec<PathBuf> = glob_paths(&dir.path().join("a*/*.conf"))
+            .iter()
+            .map(|path| path.strip_prefix(dir.path()).unwrap().to_path_buf())
+            .collect();
+        // strcmp order: `-` sorts before `/`, so a-b/… comes first.
+        assert_eq!(
+            found,
+            [PathBuf::from("a-b/x.conf"), PathBuf::from("a/x.conf")]
+        );
+    }
+
+    #[test]
+    fn include_words_expand_tokens_and_variables_or_are_skipped() {
+        let home = Path::new("/home/u");
+        let env = |name: &str| (name == "CONF").then(|| "/etc/conf".to_owned());
+        let expand = |word| expand_include_word(word, Some(home), env);
+        assert_eq!(expand("plain").as_deref(), Some("plain"));
+        assert_eq!(expand("%d/.ssh/x").as_deref(), Some("/home/u/.ssh/x"));
+        assert_eq!(expand("100%%").as_deref(), Some("100%"));
+        assert_eq!(expand("${CONF}/a").as_deref(), Some("/etc/conf/a"));
+        assert_eq!(expand("$CONF").as_deref(), Some("$CONF"));
+        assert_eq!(expand("${UNSET}/a"), None);
+        assert_eq!(expand("${CONF"), None);
+        assert_eq!(expand("hosts/%h"), None);
+        assert_eq!(expand("%u.conf"), None);
+        assert_eq!(expand("trailing%"), None);
+        assert_eq!(expand_include_word("%d", None, env), None);
+    }
+
+    #[test]
+    fn include_follows_a_home_token() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("conf.d")).unwrap();
+        std::fs::write(dir.path().join("conf.d/a.conf"), "Host viatoken\n").unwrap();
+        let config = dir.path().join("config");
+        std::fs::write(&config, "Include %d/conf.d/[a-z].conf\n").unwrap();
+        let entries = read_config(
+            &config,
+            Path::new("/nonexistent"),
+            Some(dir.path()),
+            &Terminal::simple("alacritty"),
+            0,
+            &mut Default::default(),
+        );
+        assert_eq!(labels(&entries), ["viatoken"]);
     }
 
     fn labels(entries: &[Entry]) -> Vec<String> {

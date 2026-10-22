@@ -16,8 +16,10 @@ and this project adheres to
   `ssh -p PORT host`; hashed entries and wildcard patterns are not listed.
 - ssh mode follows `Include` in `~/.ssh/config` and `/etc/ssh/ssh_config`, so
   hosts defined in included files are listed: paths may start with `~/`, be
-  relative (to `~/.ssh` or `/etc/ssh`) or absolute, and use `*` and `?` in the
-  file name, as `Include config.d/*` does. Each file is read once, so files that
+  relative (to `~/.ssh` or `/etc/ssh`) or absolute, use glob wildcards (`*`,
+  `?`, `[a-z]`) in any component, as `Include config.d/*` does, and use `%d`,
+  `%%` and `${VAR}`. A path using a token that depends on the host being
+  connected to, such as `%h`, is skipped. Each file is read once, so files that
   include each other cannot stall the picker. On systemd systems this also lists
   the `.host` entries systemd's ssh proxy config defines.
 

@@ -166,12 +166,18 @@
     anything outside `is_safe_host`), skipping hashed entries, `@` marker lines,
     wildcard and negated patterns, and names starting with `-`. `Include` is
     followed (2026-10-22, `modes::ssh::read_config`) with `~/`, relative and
-    absolute paths and `*`/`?` in the last path component; not expanded:
-    wildcards in a directory component, `[...]` classes, `%` tokens and
-    environment variables. Arch's `/etc/ssh/ssh_config` includes systemd's
-    `20-systemd-ssh-proxy.conf`, so ssh mode now also lists its `.host` and
-    `machine/.host` (real targets: `ssh .host` reaches the local machine through
-    systemd's proxy).
+    absolute paths, glob(7) wildcards in any component (`glob_paths`, its
+    results checked against glibc's `glob(3)` in `glob_paths_agree_with_glibc`),
+    `%%`, `%d` and `${VAR}` (`expand_include_word`). A path with any other token
+    is skipped: `%h`, `%p`, `%r` and the rest name the host being connected to,
+    which pikr does not have while it lists, and `%u`, `%i`, `%L`, `%l` would
+    need `getpwuid`/`gethostname`, which pikr does not link (no `libc`
+    dependency). `~user/` is not expanded. OpenSSH 10.6 checked with `ssh -G`:
+    it follows `${VAR}` and a class in a directory component, and skips an
+    `Include` whose variable is unset while applying the rest of the file.
+    Arch's `/etc/ssh/ssh_config` includes systemd's `20-systemd-ssh-proxy.conf`,
+    so ssh mode now also lists its `.host` and `machine/.host` (real targets:
+    `ssh .host` reaches the local machine through systemd's proxy).
 - **Not verified (coverage gaps).**
   - `ui/` and `picker::session` were reviewed for correctness and security on
     2026-10-22 (one read-only agent; every finding re-checked and fixed with a
@@ -297,7 +303,8 @@
     before a frame is drawn: layout, presenting and the swapchain's out-of-date
     retry (`ui::run`, which now waits `PRESENT_RETRY` before redrawing rather
     than spinning) are not exercised by them. Scripting input across frames
-    would need a hook in the loop.
+    would need a hook in the loop. What one frame builds can be checked through
+    `headless::builds_a_list`, which calls `Window::frame` directly.
   - While CI was stalled org-wide (2026-10-19 to 2026-10-20; it ran again from
     run 39368692698, green), the Linux suite was run locally in WSL (Ubuntu
     26.04, uutils coreutils) with `WAYLAND_DISPLAY`, `DISPLAY` and
