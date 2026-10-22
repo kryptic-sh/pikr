@@ -333,8 +333,14 @@
     screenshots. Keyboard input was driven on 2026-10-20 with keys synthesized
     only while pikr held the foreground: typing, Enter, Ctrl+V paste and the
     Microsoft IME (above). In that run's log pikr's focus was first refused,
-    then arrived about three seconds later. Clicks, the wheel and drun icons
-    were not exercised, and a launch from a hotkey tool was never tried.
+    then arrived about three seconds later. drun's icons were looked at on
+    2026-10-22 (`--show drun`, 138 apps): each row drew its app's own icon from
+    `%LOCALAPPDATA%\pikr\icon-cache`, and Windows' generic icon where an app has
+    none. A first drun launch with no `drun-apps.toml` walks `AppsFolder` in the
+    foreground (`drun_windows::collect`): 943 ms to collect, first paint at 1313
+    ms, with the icons already cached; the next five launches collected in 1 ms
+    and painted at 315 to 360 ms. Clicks and the wheel were not exercised, and a
+    launch from a hotkey tool was never tried.
   - Real theme icons and HiDPI were checked on Hyprland at scale 2 (nested,
     2026-10-20): drun rows drew hicolor PNGs (Discord at 256 px, Firefox at 48
     px) sharp, with sharp text, and the layer mapped centred at its logical
@@ -575,10 +581,14 @@ macOS and Windows.
 
 ### Coverage gaps (not verified)
 
-- Window posture (issue #9): at crcbl 0.3.0 the visible window is unowned,
-  `WS_EX_TOOLWINDOW` and `WS_EX_TOPMOST`, without `WS_EX_APPWINDOW` (read with
-  `GetWindowLongPtr`), and no taskbar button showed in a screenshot. The Alt-Tab
-  switcher itself was not opened.
+- Window posture (issue #9): re-read at `cba69cf` (crcbl 0.7.0, 2026-10-22) with
+  `GetWindowLongPtr`: pikr has one visible window, unowned, style `0x96000000`
+  (`WS_POPUP | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN`) and extended
+  style `0x00200088`
+  (`WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOOLWINDOW | WS_EX_TOPMOST`), without
+  `WS_EX_APPWINDOW`, as at crcbl 0.3.0, when no taskbar button showed in a
+  screenshot. The Alt-Tab switcher itself was not opened (it needs synthesized
+  keys).
 - drun accept on Windows was not driven through the GUI keystroke path; only
   `drun_windows::launch` was called directly (Notepad from its WindowsApps
   package and `cmd.exe` from its known-folder id both started). dmenu, emoji and
