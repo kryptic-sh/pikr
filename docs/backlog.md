@@ -213,17 +213,22 @@
     taking no value, so the words after it are the program.
   - Linux was verified only through CI's sway session on lavapipe: the e2e
     keyboard suite and the startup gate passed (run 39002212977, 237 ms
-    launch-to-result against the 500 ms deadline). Hyprland 0.56.2 (Arch,
-    2026-10-20, Intel RPL-U iGPU on Vulkan, scale 1) was run and looked at in
-    screenshots: the overlay layer maps centred, the corners are see-through,
-    and dmenu typing, highlighting and Return work, with Hebrew, CJK and colour
-    emoji rows drawn. First paint (`RUST_LOG=pikr=debug`) came at 366 ms on the
-    live desktop (fonts 229 ms), 943 ms on the first launch in a nested Hyprland
-    (fonts 554 ms, the binary just rebuilt) and 86 ms on the next one. Pointer
-    input was driven with `wlrctl` (virtual-pointer) in the nested Hyprland:
-    hover lights the row under the pointer with a hand cursor, the wheel scrolls
-    the list with the hover following, and a left click accepted the row under
-    the pointer after the scroll.
+    launch-to-result against the 500 ms deadline). One flake: in run 39788163184
+    (`67bbf56`, 2026-10-22) `accept_matched_candidate_with_return_emits_stdout`
+    failed because pikr did not exit within 15 s while Return was resent; no log
+    showed why (a window never mapped or focused, or a stalled first present).
+    It passed on rerun and 40 times out of 40 on a local headless sway. A repeat
+    is worth reading the job log for. Hyprland 0.56.2 (Arch, 2026-10-20, Intel
+    RPL-U iGPU on Vulkan, scale 1) was run and looked at in screenshots: the
+    overlay layer maps centred, the corners are see-through, and dmenu typing,
+    highlighting and Return work, with Hebrew, CJK and colour emoji rows drawn.
+    First paint (`RUST_LOG=pikr=debug`) came at 366 ms on the live desktop
+    (fonts 229 ms), 943 ms on the first launch in a nested Hyprland (fonts 554
+    ms, the binary just rebuilt) and 86 ms on the next one. Pointer input was
+    driven with `wlrctl` (virtual-pointer) in the nested Hyprland: hover lights
+    the row under the pointer with a hand cursor, the wheel scrolls the list
+    with the hover following, and a left click accepted the row under the
+    pointer after the scroll.
   - niri 26.04 (2026-10-21, nested inside a headless sway, since a niri window
     hidden on the live Hyprland gets no frames): pikr maps on the overlay layer
     with exclusive keyboard, the corners are see-through, bidi, CJK and emoji
