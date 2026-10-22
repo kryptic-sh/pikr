@@ -12,8 +12,8 @@ and this project adheres to
 
 - ssh mode also lists the hosts in `~/.ssh/known_hosts` and
   `/etc/ssh/ssh_known_hosts`, as rofi does, so a host you have connected to
-  without a config entry can be picked. Hashed entries, `[host]:port` entries
-  and wildcard patterns are not listed.
+  without a config entry can be picked. A `[host]:port` entry opens
+  `ssh -p PORT host`; hashed entries and wildcard patterns are not listed.
 - ssh mode follows `Include` in `~/.ssh/config` and `/etc/ssh/ssh_config`, so
   hosts defined in included files are listed: paths may start with `~/`, be
   relative (to `~/.ssh` or `/etc/ssh`) or absolute, and use `*` and `?` in the

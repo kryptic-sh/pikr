@@ -3,6 +3,7 @@
 
 use super::{Entry, Mode};
 use anyhow::Result;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 #[derive(Default)]
@@ -59,8 +60,8 @@ impl Mode for Ssh {
         // carry a description, is the one kept.
         for path in known_hosts_paths() {
             if let Ok(text) = std::fs::read_to_string(&path) {
-                for host in known_hosts(&text) {
-                    entries.push(make_entry(host, None, None, &terminal));
+                for known in known_hosts(&text) {
+                    entries.push(known_host_entry(known, &terminal));
                 }
             }
         }
@@ -103,26 +104,58 @@ fn known_hosts_paths() -> Vec<PathBuf> {
     paths
 }
 
-/// The host names in a known_hosts file (sshd(8) "SSH_KNOWN_HOSTS FILE
-/// FORMAT"): each line's comma-separated first field. Not listed: hashed
-/// entries (`|1|…`, which only ssh can match), `@cert-authority` and
-/// `@revoked` lines, wildcard and negated patterns, and `[host]:port`
-/// entries, which would need `ssh -p`.
-fn known_hosts(text: &str) -> Vec<String> {
+/// One host a known_hosts file names, with its port when not ssh's default.
+#[derive(Debug, PartialEq, Eq)]
+struct KnownHost {
+    host: String,
+    port: Option<u16>,
+}
+
+/// The hosts in a known_hosts file (sshd(8) "SSH_KNOWN_HOSTS FILE FORMAT"):
+/// each line's comma-separated first field, `[host]:port` read as a host on
+/// that port. Not listed: hashed entries (`|1|…`, which only ssh can match),
+/// `@cert-authority` and `@revoked` lines, wildcard and negated patterns,
+/// and a name starting with `-`, which ssh never writes and would read as an
+/// option.
+fn known_hosts(text: &str) -> Vec<KnownHost> {
     text.lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#') && !line.starts_with('@'))
         .filter_map(|line| line.split_whitespace().next())
         .filter(|field| !field.starts_with('|'))
         .flat_map(|field| field.split(','))
-        .filter(|name| {
-            !name.is_empty()
-                && !name.starts_with('[')
-                && !name.starts_with('!')
-                && !name.contains(['*', '?'])
+        .filter_map(|name| {
+            let known = match name.strip_prefix('[') {
+                Some(bracketed) => {
+                    let (host, port) = bracketed.split_once("]:")?;
+                    KnownHost {
+                        host: host.to_owned(),
+                        port: Some(port.parse().ok()?),
+                    }
+                }
+                None => KnownHost {
+                    host: name.to_owned(),
+                    port: None,
+                },
+            };
+            let bad = known.host.is_empty()
+                || known.host.starts_with(['!', '-'])
+                || known.host.contains(['*', '?']);
+            (!bad).then_some(known)
         })
-        .map(str::to_owned)
         .collect()
+}
+
+/// The row for a known host: `host`, or `host:port` run as `ssh -p PORT host`.
+fn known_host_entry(known: KnownHost, terminal: &Terminal) -> Entry {
+    match known.port {
+        Some(port) => {
+            let label = format!("{}:{port}", known.host);
+            let ssh = ["-p".to_owned(), port.to_string(), known.host];
+            ssh_entry(label, &ssh, None, terminal)
+        }
+        None => ssh_entry(known.host.clone(), &[known.host], None, terminal),
+    }
 }
 
 /// How deep `Include`s may nest: OpenSSH's own limit (`READCONF_MAX_DEPTH`),
@@ -398,29 +431,40 @@ fn make_entry(
         (None, Some(u)) => Some(u.to_string()),
         (None, None) => None,
     };
+    ssh_entry(host.clone(), &[host], description, terminal)
+}
+
+/// A row labelled `label` that opens `terminal` running `ssh` with `ssh_args`.
+fn ssh_entry(
+    label: String,
+    ssh_args: &[String],
+    description: Option<String>,
+    terminal: &Terminal,
+) -> Entry {
     // Prefix args from `$TERMINAL` (e.g. `--class foo`) come before the
     // terminal's own launch convention.
     let mut args = terminal.prefix_args.clone();
-    args.extend(build_terminal_args(&terminal.program, &host));
-    Entry::exec_with(host, terminal.program.clone(), args, description, None)
+    args.extend(build_terminal_args(&terminal.program, ssh_args));
+    Entry::exec_with(label, terminal.program.clone(), args, description, None)
 }
 
-/// Build the argv for the chosen terminal to run `ssh <host>`.
+/// Build the argv for the chosen terminal to run `ssh` with `ssh_args` (the
+/// host, after `-p PORT` for a port).
 ///
 /// Each terminal has its own calling convention:
-/// - Unix terminals (`alacritty`, `kitty`, `foot`, `xterm`): `-e ssh <host>`
-/// - `wt.exe` (Windows Terminal): `-- ssh <host>`
+/// - Unix terminals (`alacritty`, `kitty`, `foot`, `xterm`): `-e ssh <args>`
+/// - `wt.exe` (Windows Terminal): `-- ssh <args>`
 ///   Windows Terminal forwards everything after `--` to its shell/command.
-/// - `pwsh.exe` / `powershell.exe`: `-NoExit -Command ssh '<host>'`
+/// - `pwsh.exe` / `powershell.exe`: `-NoExit -Command ssh '<arg>' …`
 ///   `-NoExit` keeps the window open after ssh exits so the user can see
-///   error messages before the pane closes. The host is single-quoted —
+///   error messages before the pane closes. Each argument is single-quoted —
 ///   pwsh `-Command` parses a script, and single quotes are literal there.
-/// - `cmd.exe`: `/K ssh <host>` for a host in the safe charset, which needs
-///   no quoting; `/K` runs the command and keeps the prompt alive
-///   afterwards. cmd has no reliable quoting, so any other host is refused
+/// - `cmd.exe`: `/K ssh <args>` when every argument is in the safe charset,
+///   which needs no quoting; `/K` runs the command and keeps the prompt alive
+///   afterwards. cmd has no reliable quoting, so anything else is refused
 ///   with a fixed message in the window rather than reaching its command
 ///   line.
-fn build_terminal_args(terminal: &str, host: &str) -> Vec<String> {
+fn build_terminal_args(terminal: &str, ssh_args: &[String]) -> Vec<String> {
     let binary = std::path::Path::new(terminal)
         .file_name()
         .and_then(|n| n.to_str())
@@ -428,20 +472,31 @@ fn build_terminal_args(terminal: &str, host: &str) -> Vec<String> {
         .to_ascii_lowercase();
 
     match binary.as_str() {
-        "wt.exe" | "wt" => vec!["--".to_string(), "ssh".to_string(), host.to_string()],
+        "wt.exe" | "wt" => ["--", "ssh"]
+            .into_iter()
+            .map(str::to_owned)
+            .chain(ssh_args.iter().cloned())
+            .collect(),
         "pwsh.exe" | "pwsh" | "powershell.exe" | "powershell" => vec![
             "-NoExit".to_string(),
             "-Command".to_string(),
             // pwsh -Command parses a script; single quotes are literal in pwsh
             // and an embedded quote is escaped by doubling. PowerShell takes
             // the typographic single quotes as quotes too, so each is doubled.
-            format!("ssh '{}'", pwsh_single_quoted(host)),
+            ssh_args.iter().fold("ssh".to_owned(), |mut script, arg| {
+                let _ = write!(script, " '{}'", pwsh_single_quoted(arg));
+                script
+            }),
         ],
         "cmd.exe" | "cmd" => {
             // Separate arguments: one `ssh "host"` argument reaches cmd as
             // `"ssh \"host\""`, and ssh gets the quotes as part of the host.
-            if is_safe_host(host) {
-                vec!["/K".to_string(), "ssh".to_string(), host.to_string()]
+            if ssh_args.iter().all(|arg| is_safe_host(arg)) {
+                ["/K", "ssh"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .chain(ssh_args.iter().cloned())
+                    .collect()
             } else {
                 vec![
                     "/K".to_string(),
@@ -451,7 +506,11 @@ fn build_terminal_args(terminal: &str, host: &str) -> Vec<String> {
             }
         }
         // Unix terminals (alacritty, kitty, foot, xterm) and anything unknown.
-        _ => vec!["-e".to_string(), "ssh".to_string(), host.to_string()],
+        _ => ["-e", "ssh"]
+            .into_iter()
+            .map(str::to_owned)
+            .chain(ssh_args.iter().cloned())
+            .collect(),
     }
 }
 
@@ -603,6 +662,7 @@ fn is_executable_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modes::Payload;
 
     /// One config's text alone, its `Include` lines skipped.
     fn parse_config(text: &str, terminal: &Terminal) -> Vec<Entry> {
@@ -778,25 +838,25 @@ Host = beta
 
     #[test]
     fn wt_args_use_double_dash() {
-        let args = build_terminal_args("wt.exe", "myserver");
+        let args = build_terminal_args("wt.exe", &["myserver".to_owned()]);
         assert_eq!(args, vec!["--", "ssh", "myserver"]);
     }
 
     #[test]
     fn pwsh_args_use_noexist_command() {
-        let args = build_terminal_args("pwsh.exe", "myserver");
+        let args = build_terminal_args("pwsh.exe", &["myserver".to_owned()]);
         assert_eq!(args, vec!["-NoExit", "-Command", "ssh 'myserver'"]);
     }
 
     #[test]
     fn powershell_args_use_noexist_command() {
-        let args = build_terminal_args("powershell.exe", "myserver");
+        let args = build_terminal_args("powershell.exe", &["myserver".to_owned()]);
         assert_eq!(args, vec!["-NoExit", "-Command", "ssh 'myserver'"]);
     }
 
     #[test]
     fn cmd_args_use_slash_k() {
-        let args = build_terminal_args("cmd.exe", "myserver");
+        let args = build_terminal_args("cmd.exe", &["myserver".to_owned()]);
         assert_eq!(args, vec!["/K", "ssh", "myserver"]);
     }
 
@@ -805,7 +865,7 @@ Host = beta
     #[cfg(windows)]
     #[test]
     fn cmd_passes_the_host_without_quotes() {
-        let mut args = build_terminal_args("cmd.exe", "my.server-1");
+        let mut args = build_terminal_args("cmd.exe", &["my.server-1".to_owned()]);
         args[0] = "/C".into();
         args[1] = "echo".into();
         let out = std::process::Command::new("cmd.exe")
@@ -819,7 +879,7 @@ Host = beta
     fn pwsh_host_with_metacharacters_is_quoted() {
         // `Host foo; notepad` must not become a script: pwsh -Command parses
         // the string, so the metacharacters must sit inside a literal quote.
-        let args = build_terminal_args("pwsh.exe", "foo; notepad");
+        let args = build_terminal_args("pwsh.exe", &["foo; notepad".to_owned()]);
         assert_eq!(args, vec!["-NoExit", "-Command", "ssh 'foo; notepad'"]);
     }
 
@@ -827,7 +887,7 @@ Host = beta
     fn pwsh_host_with_single_quote_is_doubled() {
         // Embedded single quotes are escaped by doubling inside pwsh's
         // single-quoted literal.
-        let args = build_terminal_args("pwsh.exe", "it's");
+        let args = build_terminal_args("pwsh.exe", &["it's".to_owned()]);
         assert_eq!(args, vec!["-NoExit", "-Command", "ssh 'it''s'"]);
     }
 
@@ -835,21 +895,21 @@ Host = beta
     fn cmd_host_with_metacharacters_is_refused() {
         // cmd has no reliable quoting — an unsafe host must not reach its
         // command line at all; cmd shows a fixed message instead.
-        let args = build_terminal_args("cmd.exe", "foo & notepad");
+        let args = build_terminal_args("cmd.exe", &["foo & notepad".to_owned()]);
         assert_eq!(args, vec!["/K", "echo", CMD_UNSAFE_HOST]);
         assert!(!args.iter().any(|a| a.contains("notepad")));
     }
 
     #[test]
     fn pwsh_doubles_every_kind_of_single_quote() {
-        let args = build_terminal_args("pwsh.exe", "foo\u{2019};calc;\u{2019}");
+        let args = build_terminal_args("pwsh.exe", &["foo\u{2019};calc;\u{2019}".to_owned()]);
         assert_eq!(args[2], "ssh 'foo\u{2019}\u{2019};calc;\u{2019}\u{2019}'");
     }
 
     #[test]
     fn unix_terminal_uses_dash_e() {
         for terminal in ["alacritty", "kitty", "foot", "xterm"] {
-            let args = build_terminal_args(terminal, "myserver");
+            let args = build_terminal_args(terminal, &["myserver".to_owned()]);
             assert_eq!(
                 args,
                 vec!["-e", "ssh", "myserver"],
@@ -954,9 +1014,53 @@ github.com,140.82.121.4 ssh-ed25519 AAAAC3Nza
 
   server-01   ecdsa-sha2-nistp256 AAAAE2
 ";
+        let named = |host: &str, port| KnownHost {
+            host: host.to_owned(),
+            port,
+        };
         assert_eq!(
             known_hosts(text),
-            ["github.com", "140.82.121.4", "box.lan", "server-01"]
+            [
+                named("github.com", None),
+                named("140.82.121.4", None),
+                named("git.example.com", Some(2222)),
+                named("box.lan", None),
+                named("server-01", None),
+            ]
+        );
+        assert_eq!(known_hosts("[a]:notaport k\n-oProxy k\n"), []);
+    }
+
+    #[test]
+    fn a_known_host_on_a_port_runs_ssh_with_p() {
+        let terminal = Terminal {
+            program: "alacritty".to_owned(),
+            prefix_args: Vec::new(),
+        };
+        let entry = known_host_entry(
+            KnownHost {
+                host: "git.example.com".to_owned(),
+                port: Some(2222),
+            },
+            &terminal,
+        );
+        assert_eq!(entry.label, "git.example.com:2222");
+        match entry.payload {
+            Payload::Exec { program, args } => {
+                assert_eq!(program, "alacritty");
+                assert_eq!(args, ["-e", "ssh", "-p", "2222", "git.example.com"]);
+            }
+            other => panic!("expected Exec, got {other:?}"),
+        }
+        let ssh = ["-p".to_owned(), "2222".to_owned(), "h".to_owned()];
+        assert_eq!(build_terminal_args("pwsh", &ssh)[2], "ssh '-p' '2222' 'h'");
+        assert_eq!(
+            build_terminal_args("cmd", &ssh),
+            ["/K", "ssh", "-p", "2222", "h"]
+        );
+        assert_eq!(
+            build_terminal_args("wt", &ssh),
+            ["--", "ssh", "-p", "2222", "h"]
         );
     }
 
