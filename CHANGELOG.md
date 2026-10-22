@@ -23,6 +23,8 @@ and this project adheres to
 
 ### Fixed
 
+- `--lines 0` no longer draws a sliver of scrollbar between the input row and
+  the `:` bar.
 - Calc mode no longer crashes pikr on an expression its evaluator panics on,
   such as `str::substring("é", 0, 1)`: that keystroke shows no result and the
   picker stays open.

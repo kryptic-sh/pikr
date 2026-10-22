@@ -107,6 +107,10 @@ pub struct AppState {
     /// of the actual glyph. The underlying `query` signal still holds the
     /// real text — masking is display-only.
     pub password: bool,
+    /// Result rows the window is sized for (`--lines`). At 0 the list is not
+    /// built: the window has no room for a row, only for a sliver of
+    /// scrollbar.
+    pub rows: usize,
     /// Per-mode frecency (count × half-life decay). Loaded from disk at
     /// startup; bumped on Accept and persisted then.
     pub usage: crate::picker::frecency::Usage,
@@ -341,6 +345,7 @@ pub(crate) mod tests {
             max_results: 256,
             matcher: crate::picker::matcher::Matcher::new(),
             password,
+            rows: crate::ui::view::VISIBLE_ROWS,
             usage: Default::default(),
             history: Default::default(),
             calc_results: Default::default(),

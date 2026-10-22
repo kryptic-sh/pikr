@@ -168,6 +168,12 @@ pub struct Preedit {
 }
 
 impl View {
+    /// Whether last frame built the result list.
+    #[cfg(test)]
+    pub fn built_a_list(&self) -> bool {
+        self.list.is_some()
+    }
+
     pub fn new(query_font: QueryFont) -> Self {
         Self {
             list: None,
@@ -231,8 +237,9 @@ impl View {
                 );
             });
 
-            // -P is a bare password prompt: no list under it.
-            if app.password {
+            // -P is a bare password prompt: no list under it. Nor is there one
+            // in a window sized for no rows.
+            if app.password || app.rows == 0 {
                 self.list = None;
             } else if let Some(text) = &session.loading {
                 ui.block(".loading", &[], |ui| {

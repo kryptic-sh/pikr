@@ -464,15 +464,20 @@ Re-verified against the tree on 2026-10-18.
 - Coarse-granularity same-tick cache staleness; non-UTF8 PATH names (skipped by
   `run::scan_dir`). (review pass 2026-08-06; not re-checked individually)
 - `--lines 0` opens with no rows and still selects the first match, so Return
-  accepts a row the user cannot see, and a stray scrollbar end shows at the
-  list's edge (Hyprland, 2026-10-22). `--width 0` and oversized `--lines` /
-  `--width` are handled by `ui::run::fitted_size` since 2026-10-22.
+  accepts a row the user cannot see (Hyprland, 2026-10-22). Needs the user's
+  call: keep that, or make zero lines an input-only prompt that prints the
+  query. Since 2026-10-22 the view builds no list at zero rows
+  (`AppState::rows`), which removed a 1 px scrollbar sliver (the window height
+  rounds up to `ui::run::SIZE_STEP`, leaving the list a pixel). `--width 0` and
+  oversized `--lines` / `--width` are handled by `ui::run::fitted_size` since
+  2026-10-22.
 - No accept path runs a shell on a string pikr builds from untrusted text:
   launches are `Command::new(program).args(args)`. The two script strings are
   clipboard's `copy_script` (`clipboard::unix_impl`, `id` parsed as `u64`, the
   only value in the script) and ssh's pwsh and cmd arms
-  (`ssh::build_terminal_args`: pwsh single-quotes the host, cmd takes only hosts
-  in `is_safe_host`'s charset). Re-checked 2026-10-19; keep it that way.
+  (`ssh::build_terminal_args`: pwsh single-quotes each ssh argument, cmd takes
+  only arguments in `is_safe_host`'s charset). Re-checked 2026-10-19; keep it
+  that way.
 - History and frecency saves (`History::save_to`, `Usage::save_to`) re-read the
   file and replay this session's changes onto it, so a second pikr's save in the
   meantime is kept. There is no lock: a save landing between another's read and

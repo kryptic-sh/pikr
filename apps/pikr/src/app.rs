@@ -102,10 +102,16 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         max_results: cfg.max_results,
         matcher: crate::picker::matcher::Matcher::with_case_sensitive(cfg.case_sensitive),
         password: cli.password,
+        rows: cli.lines.unwrap_or(VISIBLE_ROWS),
         usage: crate::picker::frecency::Usage::load(),
         history,
         calc_results,
         kb_custom: cli.kb_custom,
+    };
+    let height = if app.password {
+        password_window_height()
+    } else {
+        window_height(app.rows)
     };
     let loading = pending.as_ref().and(cli.loading);
     let session = Session::new(app, loading);
@@ -114,11 +120,6 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         "startup state ranked"
     );
 
-    let height = if cli.password {
-        password_window_height()
-    } else {
-        window_height(cli.lines.unwrap_or(VISIBLE_ROWS))
-    };
     crate::ui::run::run(
         spec(height),
         Content::Picker {

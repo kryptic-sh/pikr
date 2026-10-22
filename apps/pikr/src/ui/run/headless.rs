@@ -49,10 +49,58 @@ fn shifted(code: KeyCode) -> Input {
 /// close request, and returns what the loop chose to run and its exit code.
 /// The close request ends a run the input left open, with exit 1.
 fn run(content: Content, input: &[Input]) -> (Vec<Payload>, i32) {
+    with_window(
+        VISIBLE_ROWS,
+        |shell, window| {
+            for input in input {
+                match *input {
+                    Input::Text(text) => shell.commit_text(window, text).unwrap(),
+                    Input::Clipboard(text) => shell.inject(ShellEvent::ClipboardData {
+                        window,
+                        request: crcbl_shell::ClipboardRequestId(1),
+                        mime: crcbl_shell::MimeType::TextUtf8.into(),
+                        content: crcbl_shell::ClipboardContent::Bytes(text.as_bytes().to_vec()),
+                    }),
+                    Input::Key(code, modifiers) => {
+                        shell.set_modifiers(modifiers);
+                        shell.key_press(window, code).unwrap();
+                        shell.set_modifiers(ShellModifiers::empty());
+                    }
+                    Input::Release(code) => shell.key_release(window, code).unwrap(),
+                }
+            }
+            shell.request_close(window).unwrap();
+        },
+        |window, early| window.run(content, early),
+    )
+}
+
+/// Whether one frame of `content`, in a window sized for `rows` result rows,
+/// builds the result list. [`run`] cannot tell: its loop takes the close
+/// request before it draws.
+fn builds_a_list(content: Content, rows: usize) -> bool {
+    with_window(
+        rows,
+        |_, _| {},
+        |window, _| {
+            window.frame(&content, PointerInput::hovering(Vec2::ZERO))?;
+            Ok(window.view.built_a_list())
+        },
+    )
+}
+
+/// Opens a headless window sized for `rows` result rows, lets `feed` queue
+/// shell events, then hands pikr's [`Window`] and the events that arrived
+/// while it opened to `drive`.
+fn with_window<T>(
+    rows: usize,
+    feed: impl FnOnce(&mut HeadlessShell, WindowId),
+    drive: impl FnOnce(&mut Window, Vec<ShellEvent>) -> Result<T>,
+) -> T {
     let mut shell = HeadlessShell::new();
     let spec = WindowSpec {
         width: 720.0,
-        height: window_height(VISIBLE_ROWS),
+        height: window_height(rows),
         stylesheet: crate::ui::theme_css::stylesheet_source(&Default::default()),
         font_family: "sans-serif".into(),
         font_size: crate::config::Theme::default().font_size,
@@ -68,24 +116,7 @@ fn run(content: Content, input: &[Input]) -> (Vec<Payload>, i32) {
         transparent,
     )
     .unwrap();
-    for input in input {
-        match *input {
-            Input::Text(text) => shell.commit_text(window, text).unwrap(),
-            Input::Clipboard(text) => shell.inject(ShellEvent::ClipboardData {
-                window,
-                request: crcbl_shell::ClipboardRequestId(1),
-                mime: crcbl_shell::MimeType::TextUtf8.into(),
-                content: crcbl_shell::ClipboardContent::Bytes(text.as_bytes().to_vec()),
-            }),
-            Input::Key(code, modifiers) => {
-                shell.set_modifiers(modifiers);
-                shell.key_press(window, code).unwrap();
-                shell.set_modifiers(ShellModifiers::empty());
-            }
-            Input::Release(code) => shell.key_release(window, code).unwrap(),
-        }
-    }
-    shell.request_close(window).unwrap();
+    feed(&mut shell, window);
     // No system fonts: text draws in crcbl's built-in face, and nothing here
     // looks at it.
     let fonts = Fonts {
@@ -93,7 +124,7 @@ fn run(content: Content, input: &[Input]) -> (Vec<Payload>, i32) {
         fallbacks: Vec::new(),
     };
     let outcome = Window::new(&mut shell, window, &spec, fonts, &mut gpu, Instant::now())
-        .and_then(|mut window| window.run(content, early));
+        .and_then(|mut window| drive(&mut window, early));
     gpu.destroy();
     outcome.unwrap()
 }
@@ -123,6 +154,22 @@ fn with_bindings(mut state: AppState, bindings: &[&str]) -> AppState {
 
 fn stdout(text: &str) -> Vec<Payload> {
     vec![Payload::Stdout(text.into())]
+}
+
+#[test]
+fn a_window_sized_for_no_rows_builds_no_list() {
+    let ranked = |rows| {
+        let mut state = fruit();
+        state.rows = rows;
+        state.rerank();
+        assert_eq!(state.matches.len(), 3);
+        picker(state, "")
+    };
+    assert!(
+        !builds_a_list(ranked(0), 0),
+        "no room for a row, so no list and no scrollbar sliver"
+    );
+    assert!(builds_a_list(ranked(VISIBLE_ROWS), VISIBLE_ROWS));
 }
 
 #[test]
