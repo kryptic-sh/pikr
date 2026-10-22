@@ -8,6 +8,14 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- drun honours `TryExec`, `OnlyShowIn` and `NotShowIn`: an app whose `TryExec`
+  program is not installed, or that its file keeps to other desktops (by
+  `XDG_CURRENT_DESKTOP`), is no longer listed. A GNOME install's settings apps
+  stop showing under KDE, and the other way round. The keys are checked on every
+  launch, including from the drun cache, which is rebuilt once to store them.
+
 ### Changed
 
 - `--lines 0` makes pikr an input-only prompt: no list is shown, the mode's rows

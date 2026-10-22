@@ -153,13 +153,18 @@
     transparent pixels, 7,105 of them with a colour channel above alpha (in 110
     icons), which premultiplied data cannot have. `Alpha::Straight` is right
     here; another Windows version or shell extension was not checked.
-  - Not done, by design so far: `TryExec`, `OnlyShowIn`/`NotShowIn`; no `--`
-    before the ssh host (the config is trusted); no `setsid` for Unix spawns.
-    Evidence for the first two (Arch + Hyprland, 2026-10-21, kwin and niri
-    installed): of the 54 visible applications, none had an `OnlyShowIn` that
-    excludes `Hyprland`, a `NotShowIn` naming it, or a `TryExec` program that is
-    missing, so honouring them would change nothing there. A GNOME or KDE
-    install with the other desktop's settings apps is where it would.
+  - Not done, by design so far: no `--` before the ssh host (the config is
+    trusted); no `setsid` for Unix spawns. drun honours `TryExec`, `OnlyShowIn`
+    and `NotShowIn` since 2026-10-22 (`drun::unix_impl::ShowIf`, checked after
+    the cache so a new desktop or program needs no rebuild). Checked on a
+    headless sway with scratch `XDG_DATA_HOME` probes: 2 entries under
+    `XDG_CURRENT_DESKTOP=Hyprland`, 3 under `GNOME` (the `OnlyShowIn=GNOME`
+    probe), never the probe whose `TryExec` program is missing, the same on
+    cache hits. Desktop names compare without case, as
+    `freedesktop_desktop_entry::current_desktop` lowercases them (and maps
+    `Unity` to `gnome`). A relative `TryExec` with a slash is looked up under
+    each `$PATH` directory, as the spec's wording says, not from the working
+    directory.
   - ssh lists `known_hosts` hosts (2026-10-22, `modes::ssh::known_hosts`), with
     `[host]:port` entries run as `ssh -p PORT host` (every `build_terminal_args`
     arm takes the ssh argv; pwsh quotes each argument, cmd still refuses

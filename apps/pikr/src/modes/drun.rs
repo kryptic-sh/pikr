@@ -43,6 +43,7 @@ mod unix_impl {
     use freedesktop_desktop_entry::{DesktopEntry, Iter, default_paths};
     use serde::{Deserialize, Serialize};
     use std::collections::{HashMap, HashSet};
+    use std::ffi::OsStr;
     use std::path::{Path, PathBuf};
     use std::time::SystemTime;
 
@@ -56,20 +57,111 @@ mod unix_impl {
         let current_mtime = tree_mtime(&dirs);
 
         // --- Cache probe ---
-        if let (Some(mtime), Some(path)) = (current_mtime, cache_path())
-            && let Some(entries) = load_cache(&dirs, &locales, mtime, &path)
-        {
-            return Ok(entries);
+        let cached = match (current_mtime, cache_path()) {
+            (Some(mtime), Some(path)) => load_cache(&dirs, &locales, mtime, &path),
+            _ => None,
+        };
+        let listed = cached.unwrap_or_else(|| {
+            let listed = entries_from(Iter::new(default_paths()), &locales);
+            // --- Cache write (best-effort) ---
+            if let (Some(mtime), Some(path)) = (current_mtime, cache_path()) {
+                write_cache(&dirs, &locales, mtime, &listed, &path);
+            }
+            listed
+        });
+
+        let desktops = freedesktop_desktop_entry::current_desktop().unwrap_or_default();
+        let path = std::env::var_os("PATH");
+        Ok(listed
+            .into_iter()
+            .filter(|l| l.show_if.holds(&desktops, path.as_deref()))
+            .map(|l| l.entry)
+            .collect())
+    }
+
+    /// An app drun can list, with the conditions it is shown under.
+    pub struct Listed {
+        pub entry: Entry,
+        pub show_if: ShowIf,
+    }
+
+    /// The keys that decide whether an entry is shown by the session and the
+    /// installed programs rather than by its file: they are kept in the
+    /// cache and checked on every launch, since neither moves the cache key.
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    pub struct ShowIf {
+        /// `TryExec`: a program that must be installed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub try_exec: Option<String>,
+        /// `OnlyShowIn`: when present, the desktops it is shown in.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub only_show_in: Option<Vec<String>>,
+        /// `NotShowIn`: desktops it is hidden in.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub not_show_in: Vec<String>,
+    }
+
+    impl ShowIf {
+        fn of(de: &DesktopEntry) -> Self {
+            let names = |list: Vec<&str>| -> Vec<String> {
+                list.into_iter()
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            };
+            ShowIf {
+                try_exec: de.try_exec().map(str::to_string),
+                only_show_in: de.only_show_in().map(names),
+                not_show_in: de.not_show_in().map(names).unwrap_or_default(),
+            }
         }
 
-        let entries = entries_from(Iter::new(default_paths()), &locales);
-
-        // --- Cache write (best-effort) ---
-        if let (Some(mtime), Some(path)) = (current_mtime, cache_path()) {
-            write_cache(&dirs, &locales, mtime, &entries, &path);
+        /// Whether the entry is shown in `desktops` (`XDG_CURRENT_DESKTOP`,
+        /// in order) with `path` as `$PATH`.
+        pub fn holds(&self, desktops: &[String], path: Option<&OsStr>) -> bool {
+            self.shown_in(desktops)
+                && self
+                    .try_exec
+                    .as_deref()
+                    .is_none_or(|program| installed(program, path))
         }
 
-        Ok(entries)
+        /// The desktop entry spec's rule: the first of `desktops` named in
+        /// `OnlyShowIn` shows the entry and the first named in `NotShowIn`
+        /// hides it; with neither, it is shown unless `OnlyShowIn` is
+        /// present. Names compare without case, as
+        /// `freedesktop_desktop_entry::current_desktop` lowercases them.
+        fn shown_in(&self, desktops: &[String]) -> bool {
+            let names = |list: &[String], desktop: &str| {
+                list.iter().any(|name| name.eq_ignore_ascii_case(desktop))
+            };
+            for desktop in desktops {
+                if names(self.only_show_in.as_deref().unwrap_or_default(), desktop) {
+                    return true;
+                }
+                if names(&self.not_show_in, desktop) {
+                    return false;
+                }
+            }
+            self.only_show_in.is_none()
+        }
+    }
+
+    /// Whether `TryExec`'s `program` is installed: an executable file at an
+    /// absolute path, or in a directory of `path` otherwise.
+    fn installed(program: &str, path: Option<&OsStr>) -> bool {
+        let executable = |file: &Path| {
+            std::fs::metadata(file)
+                .is_ok_and(|m| m.is_file() && crate::modes::run::is_executable(file, &m))
+        };
+        let program = Path::new(program);
+        if program.is_absolute() {
+            return executable(program);
+        }
+        path.into_iter()
+            .flat_map(std::env::split_paths)
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .any(|dir| executable(&dir.join(program)))
     }
 
     /// The launchable entries among the `.desktop` files at `paths`, sorted
@@ -77,12 +169,12 @@ mod unix_impl {
     /// come before system ones, per the freedesktop search order), even when
     /// it hides the app: a user copy with `Hidden=true` or `NoDisplay=true`,
     /// which is how menu editors hide an app, must not let the system copy
-    /// through.
+    /// through; nor may one whose [`ShowIf`] fails.
     pub fn entries_from(
         paths: impl IntoIterator<Item = PathBuf>,
         locales: &[String],
-    ) -> Vec<Entry> {
-        let mut by_id: HashMap<String, Entry> = HashMap::new();
+    ) -> Vec<Listed> {
+        let mut by_id: HashMap<String, Listed> = HashMap::new();
         let mut claimed: HashSet<String> = HashSet::new();
 
         for path in paths {
@@ -120,18 +212,19 @@ mod unix_impl {
             let icon = de.icon().map(|s| s.to_string());
             let id = de.appid.clone();
             let entry = Entry::exec_with(label, program, args, description, icon);
-            insert_first(&mut by_id, id, entry);
+            let show_if = ShowIf::of(&de);
+            insert_first(&mut by_id, id, Listed { entry, show_if });
         }
 
-        let mut entries: Vec<Entry> = by_id.into_values().collect();
-        entries.sort_by_key(|a| a.label.to_lowercase());
-        entries
+        let mut listed: Vec<Listed> = by_id.into_values().collect();
+        listed.sort_by_key(|l| l.entry.label.to_lowercase());
+        listed
     }
 
     /// Merge one parsed entry into the id → entry map so the FIRST occurrence
     /// per app id wins (user-local `.desktop` files are iterated first; a later
     /// system copy must not overwrite the override).
-    pub fn insert_first(by_id: &mut HashMap<String, Entry>, id: String, entry: Entry) {
+    pub fn insert_first<T>(by_id: &mut HashMap<String, T>, id: String, entry: T) {
         by_id.entry(id).or_insert(entry);
     }
 
@@ -248,7 +341,7 @@ mod unix_impl {
     /// The drun cache's format. Bump it whenever parsing changes which
     /// entries a `.desktop` file yields or what they hold, so a cache written
     /// by an older pikr is rebuilt instead of trusted.
-    pub const CACHE_FORMAT: u32 = 3;
+    pub const CACHE_FORMAT: u32 = 4;
 
     /// On-disk cache for drun entries.
     ///
@@ -274,7 +367,8 @@ mod unix_impl {
         /// Max mtime (nanoseconds since UNIX_EPOCH) across every dir and file
         /// under `dirs`.
         max_mtime_unix_nanos: u64,
-        /// Cached entries — labels, descriptions, icons, program + args.
+        /// Cached entries — labels, descriptions, icons, program + args, and
+        /// the conditions each is shown under.
         entries: Vec<CachedEntry>,
     }
 
@@ -287,16 +381,21 @@ mod unix_impl {
         icon: Option<String>,
         program: String,
         args: Vec<String>,
+        #[serde(default)]
+        show_if: ShowIf,
     }
 
-    impl From<CachedEntry> for Entry {
+    impl From<CachedEntry> for Listed {
         fn from(c: CachedEntry) -> Self {
-            Entry::exec_with(c.label, c.program, c.args, c.description, c.icon)
+            Listed {
+                entry: Entry::exec_with(c.label, c.program, c.args, c.description, c.icon),
+                show_if: c.show_if,
+            }
         }
     }
 
-    impl From<&Entry> for CachedEntry {
-        fn from(e: &Entry) -> Self {
+    impl From<&Listed> for CachedEntry {
+        fn from(Listed { entry: e, show_if }: &Listed) -> Self {
             use super::super::Payload;
             let (program, args) = match &e.payload {
                 Payload::Exec { program, args } => (program.clone(), args.clone()),
@@ -310,6 +409,7 @@ mod unix_impl {
                 icon: e.icon.clone(),
                 program,
                 args,
+                show_if: show_if.clone(),
             }
         }
     }
@@ -390,7 +490,7 @@ mod unix_impl {
         locales: &[String],
         current_mtime: u64,
         path: &Path,
-    ) -> Option<Vec<Entry>> {
+    ) -> Option<Vec<Listed>> {
         let _span = tracing::debug_span!("drun_cache_load", path = %path.display()).entered();
         let bytes = std::fs::read(path).ok()?;
         let text = std::str::from_utf8(&bytes).ok()?;
@@ -412,7 +512,7 @@ mod unix_impl {
             return None;
         }
         tracing::debug!(entries = cached.entries.len(), "drun cache hit");
-        Some(cached.entries.into_iter().map(Entry::from).collect())
+        Some(cached.entries.into_iter().map(Listed::from).collect())
     }
 
     /// Write a fresh cache to disk. Best-effort — logs a warning on any error.
@@ -420,7 +520,7 @@ mod unix_impl {
         dirs: &[PathBuf],
         locales: &[String],
         mtime: u64,
-        entries: &[Entry],
+        entries: &[Listed],
         path: &Path,
     ) {
         let _span = tracing::debug_span!("drun_cache_write", path = %path.display()).entered();
@@ -450,10 +550,21 @@ mod unix_impl {
 mod tests {
     use super::super::{Entry, Payload};
     use super::unix_impl::{
-        CACHE_FORMAT, entries_from, insert_first, load_cache, parse_exec, pick_locale,
-        strip_field_codes, tree_mtime, write_cache,
+        CACHE_FORMAT, Listed, ShowIf, entries_from, insert_first, load_cache, parse_exec,
+        pick_locale, strip_field_codes, tree_mtime, write_cache,
     };
     use std::collections::HashMap;
+
+    /// `entries` as drun lists them, shown everywhere.
+    fn listed(entries: Vec<Entry>) -> Vec<Listed> {
+        entries
+            .into_iter()
+            .map(|entry| Listed {
+                entry,
+                show_if: ShowIf::default(),
+            })
+            .collect()
+    }
 
     #[test]
     fn a_user_copy_that_hides_an_app_hides_it() {
@@ -475,9 +586,116 @@ mod tests {
         let paths = freedesktop_desktop_entry::Iter::new([user, system].into_iter());
         let labels: Vec<String> = entries_from(paths, &[])
             .into_iter()
-            .map(|e| e.label)
+            .map(|l| l.entry.label)
             .collect();
         assert_eq!(labels, ["gimp"]);
+    }
+
+    #[test]
+    fn show_in_follows_the_first_named_desktop() {
+        let names = |list: &[&str]| list.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        let shown = |only: Option<&[&str]>, not: &[&str], desktops: &[&str]| {
+            let show_if = ShowIf {
+                try_exec: None,
+                only_show_in: only.map(names),
+                not_show_in: names(not),
+            };
+            show_if.holds(&names(desktops), None)
+        };
+        assert!(shown(None, &[], &[]));
+        assert!(shown(None, &[], &["hyprland"]));
+        // OnlyShowIn hides the entry everywhere it does not name.
+        assert!(!shown(Some(&["GNOME"]), &[], &["hyprland"]));
+        assert!(!shown(Some(&["GNOME"]), &[], &[]));
+        assert!(shown(Some(&["GNOME"]), &[], &["hyprland", "gnome"]));
+        assert!(!shown(None, &["KDE"], &["kde"]));
+        assert!(shown(None, &["KDE"], &["hyprland"]));
+        // The first desktop named in either list decides.
+        assert!(!shown(Some(&["GNOME"]), &["Ubuntu"], &["ubuntu", "gnome"]));
+        assert!(shown(Some(&["GNOME"]), &["Ubuntu"], &["gnome", "ubuntu"]));
+    }
+
+    #[test]
+    fn try_exec_needs_an_executable_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let file = |name: &str, mode: u32| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, b"#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+            path
+        };
+        let tool = file("tool", 0o755);
+        file("plain", 0o644);
+        std::fs::create_dir(dir.path().join("subdir")).unwrap();
+        let path = std::env::join_paths(["/nonexistent".as_ref(), dir.path()]).unwrap();
+        let shown = |program: &str, path: Option<&std::ffi::OsStr>| {
+            let show_if = ShowIf {
+                try_exec: Some(program.to_string()),
+                ..ShowIf::default()
+            };
+            show_if.holds(&[], path)
+        };
+        assert!(shown("tool", Some(&path)));
+        assert!(shown(tool.to_str().unwrap(), None));
+        assert!(!shown("tool", None));
+        assert!(!shown("plain", Some(&path)));
+        assert!(!shown("subdir", Some(&path)));
+        assert!(!shown("missing", Some(&path)));
+    }
+
+    #[test]
+    fn show_if_comes_from_the_claiming_file() {
+        let root = tempfile::tempdir().unwrap();
+        let user = root.path().join("user/applications");
+        let system = root.path().join("system/applications");
+        std::fs::create_dir_all(&user).unwrap();
+        std::fs::create_dir_all(&system).unwrap();
+        let app = |extra: &str| {
+            format!("[Desktop Entry]\nType=Application\nName=Settings\nExec=settings\n{extra}")
+        };
+        std::fs::write(
+            user.join("settings.desktop"),
+            app("OnlyShowIn=GNOME;Unity;\nNotShowIn=XFCE;\nTryExec=settings\n"),
+        )
+        .unwrap();
+        std::fs::write(system.join("settings.desktop"), app("")).unwrap();
+        let paths = freedesktop_desktop_entry::Iter::new([user, system].into_iter());
+        let listed = entries_from(paths, &[]);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            listed[0].show_if,
+            ShowIf {
+                try_exec: Some("settings".into()),
+                only_show_in: Some(vec!["GNOME".into(), "Unity".into()]),
+                not_show_in: vec!["XFCE".into()],
+            }
+        );
+    }
+
+    #[test]
+    fn the_cache_keeps_show_if() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("drun-cache.toml");
+        let show_if = ShowIf {
+            try_exec: Some("settings".into()),
+            only_show_in: Some(vec!["GNOME".into()]),
+            not_show_in: vec!["XFCE".into(), "LXQt".into()],
+        };
+        let entries = [
+            Listed {
+                entry: Entry::exec("Settings", "settings"),
+                show_if: show_if.clone(),
+            },
+            Listed {
+                entry: Entry::exec("Plain", "plain"),
+                show_if: ShowIf::default(),
+            },
+        ];
+        write_cache(&[], &[], 1, &entries, &path);
+        let loaded = load_cache(&[], &[], 1, &path).unwrap();
+        assert_eq!(loaded[0].show_if, show_if);
+        assert_eq!(loaded[1].show_if, ShowIf::default());
     }
 
     #[test]
@@ -627,25 +845,28 @@ mod tests {
             ),
         ];
 
-        write_cache(&dirs, &locales, mtime, &entries, &path);
+        write_cache(&dirs, &locales, mtime, &listed(entries), &path);
         assert!(path.exists(), "cache file must be written");
 
         let loaded = load_cache(&dirs, &locales, mtime, &path).expect("cache must hit on same key");
         assert_eq!(loaded.len(), 2);
-        assert_eq!(loaded[0].label, "Firefox");
-        assert_eq!(loaded[0].description, None);
-        assert_eq!(loaded[0].icon, None);
-        match &loaded[0].payload {
+        assert_eq!(loaded[0].entry.label, "Firefox");
+        assert_eq!(loaded[0].entry.description, None);
+        assert_eq!(loaded[0].entry.icon, None);
+        match &loaded[0].entry.payload {
             Payload::Exec { program, args } => {
                 assert_eq!(program, "firefox");
                 assert_eq!(*args, vec!["-new-window".to_string()]);
             }
             _ => panic!("expected Exec payload"),
         }
-        assert_eq!(loaded[1].label, "Alacritty");
-        assert_eq!(loaded[1].description.as_deref(), Some("Terminal emulator"));
-        assert_eq!(loaded[1].icon.as_deref(), Some("utilities-terminal"));
-        match &loaded[1].payload {
+        assert_eq!(loaded[1].entry.label, "Alacritty");
+        assert_eq!(
+            loaded[1].entry.description.as_deref(),
+            Some("Terminal emulator")
+        );
+        assert_eq!(loaded[1].entry.icon.as_deref(), Some("utilities-terminal"));
+        match &loaded[1].entry.payload {
             Payload::Exec { program, args } => {
                 assert_eq!(program, "alacritty");
                 assert!(args.is_empty());
@@ -669,7 +890,7 @@ mod tests {
         let locales = vec!["en_US".to_string()];
         let entries = vec![Entry::exec("TestApp", "testapp")];
 
-        write_cache(&dirs, &locales, 1, &entries, &path);
+        write_cache(&dirs, &locales, 1, &listed(entries), &path);
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(
@@ -688,7 +909,7 @@ mod tests {
             &dirs,
             &locales,
             1,
-            &[Entry::exec("TestApp", "testapp")],
+            &listed(vec![Entry::exec("TestApp", "testapp")]),
             &path,
         );
         let current = std::fs::read_to_string(&path).unwrap();
@@ -725,7 +946,7 @@ mod tests {
         let locales = vec!["en_US".to_string()];
         let entries = vec![Entry::exec("TestApp", "testapp")];
 
-        write_cache(&dirs, &locales, 1, &entries, &path);
+        write_cache(&dirs, &locales, 1, &listed(entries), &path);
         assert!(path.exists(), "cache file must be written");
 
         let result = load_cache(&dirs, &locales, 2, &path);
@@ -745,7 +966,7 @@ mod tests {
         let mtime: u64 = 42;
         let entries = vec![Entry::exec("TestApp", "testapp")];
 
-        write_cache(&dirs, &locales, mtime, &entries, &path);
+        write_cache(&dirs, &locales, mtime, &listed(entries), &path);
 
         // Same mtime and locales, different dirs → miss.
         let other_dirs = vec![std::path::PathBuf::from("/usr/local/share/applications")];

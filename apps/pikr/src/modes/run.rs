@@ -39,7 +39,7 @@ fn entries(names: BTreeMap<String, String>) -> Vec<Entry> {
 // ── per-OS executable predicate ───────────────────────────────────────────────
 
 #[cfg(unix)]
-fn is_executable(_path: &Path, metadata: &Metadata) -> bool {
+pub(crate) fn is_executable(_path: &Path, metadata: &Metadata) -> bool {
     use std::os::unix::fs::PermissionsExt;
     metadata.permissions().mode() & 0o111 != 0
 }
@@ -48,7 +48,7 @@ fn is_executable(_path: &Path, metadata: &Metadata) -> bool {
 const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
 
 #[cfg(windows)]
-fn is_executable(path: &Path, _metadata: &Metadata) -> bool {
+pub(crate) fn is_executable(path: &Path, _metadata: &Metadata) -> bool {
     // PATHEXT-aware. Default to the canonical Windows extension set when the
     // env var is missing (some shells strip it).
     let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| DEFAULT_PATHEXT.to_string());
@@ -89,7 +89,7 @@ fn shell_preference(_path: &Path) -> usize {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn is_executable(_path: &Path, _metadata: &Metadata) -> bool {
+pub(crate) fn is_executable(_path: &Path, _metadata: &Metadata) -> bool {
     false
 }
 
