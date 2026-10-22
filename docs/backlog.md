@@ -405,8 +405,15 @@
     the matched row reads as one label, "gamma", and is `selected`. pikr's side
     is two calls in `ui::view` (`highlighted` names its block; the results list
     becomes `selectable_list`), kept as a patch until a crcbl release carries
-    them. Not checked: Orca speaking it (Orca is not installed), and UI
-    Automation on Windows.
+    them. Not checked: Orca speaking it (Orca is not installed). UI Automation
+    on Windows was read with .NET's `System.Windows.Automation` client
+    (2026-10-22, release build at `1712f0b`, drun mode, no input sent): pikr's
+    window holds the prompt and query as Text, a List with one ListItem per
+    visible row (each an Image and a Text with the app's name), the ScrollBar
+    and the status Texts, the same tree as AT-SPI on Linux, with the same two
+    gaps: every ListItem's name is empty and none is selected. The query is a
+    Text with no ValuePattern, so a reader cannot tell it is editable. Narrator
+    was not run.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
