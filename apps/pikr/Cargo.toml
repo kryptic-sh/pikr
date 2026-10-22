@@ -45,14 +45,6 @@ unicode-segmentation.workspace = true
 freedesktop-desktop-entry.workspace = true
 xdg.workspace = true
 
-# One GPU backend per platform: Vulkan on Linux and FreeBSD, D3D12 on
-# Windows (it falls back to WARP with no GPU), Metal on macOS.
-[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
-crcbl-vk.workspace = true
-
-[target.'cfg(target_os = "macos")'.dependencies]
-crcbl-mtl.workspace = true
-
 # arboard provides clipboard read/write on Windows (current text only).
 # Full clipboard history requires the WinRT ClipboardHistory API (issue #37).
 [target.'cfg(windows)'.dependencies]
@@ -71,7 +63,6 @@ windows = { version = "0.62", features = [
     "Win32_System_Console",
     "Win32_System_Registry",
 ] }
-crcbl-dx12.workspace = true
 sha2 = "0.11"     # SHA-256 cache-key derivation for icon-cache filenames
 
 [dev-dependencies]

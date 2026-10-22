@@ -18,6 +18,10 @@ and this project adheres to
 
 ### Changed
 
+- The window's GPU device, swapchain and frame pacing now come from crcbl-app's
+  `Presenter` instead of pikr's own setup. Behaviour is the same, with one
+  difference: when the best-ranked GPU can only draw pikr opaque, a GPU that can
+  draw it with see-through corners is now chosen instead.
 - `--lines 0` makes pikr an input-only prompt: no list is shown, the mode's rows
   are not collected (stdin is not read), and Enter prints what was typed in
   every mode. Before, the first match stayed selected under a window with no

@@ -22,7 +22,7 @@ use glam::Vec2;
 use crate::modes::{self, dmenu::LoadedEntries};
 use crate::picker::session::{Outcome, Session};
 use crate::picker::state::VimMode;
-use crate::ui::gpu::Gpu;
+use crate::ui::gpu::{Gpu, platform_backend};
 use crate::ui::keyboard::{key_from_commit, key_from_press, modifiers_from_crcbl};
 use crate::ui::view::{Icons, PANEL_RADIUS, Preedit, QueryFont, View};
 
@@ -74,9 +74,9 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
         std::thread::spawn(move || load_fonts(&family))
     };
     let mut shell = crcbl_shell::open().context("opening the window system")?;
-    let (window, transparent_window) = create_window(shell.as_mut(), &spec)?;
+    let window = create_window(shell.as_mut(), &spec)?;
     let (extent, early) = wait_for_size(shell.as_mut(), window)?;
-    let mut gpu = Gpu::open(&shell.surface_target(window)?, extent, transparent_window)?;
+    let mut gpu = Gpu::open(shell.as_ref(), window, extent, platform_backend()?)?;
     let fonts = fonts.join().unwrap_or_else(|_| Fonts {
         theme: Err("the font loader panicked".into()),
         fallbacks: Vec::new(),
@@ -106,7 +106,7 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
 /// panels (Wayland layer-shell, Win32 tool windows, AppKit panels);
 /// otherwise an ordinary window. Transparent where the platform composites
 /// window alpha, so the panel's rounded corners show the desktop.
-fn create_window(shell: &mut dyn Shell, spec: &WindowSpec) -> Result<(WindowId, bool)> {
+fn create_window(shell: &mut dyn Shell, spec: &WindowSpec) -> Result<WindowId> {
     let caps = shell.caps();
     let role = if caps.contains(ShellCaps::PANEL) {
         WindowRole::Panel(PanelDesc {
@@ -146,7 +146,7 @@ fn create_window(shell: &mut dyn Shell, spec: &WindowSpec) -> Result<(WindowId, 
             ..WindowDesc::default()
         })
         .context("creating the window")?;
-    Ok((window, transparent))
+    Ok(window)
 }
 
 /// Window sizes are rounded up to a multiple of this many logical pixels, so
@@ -245,10 +245,6 @@ struct Window<'a> {
     /// The clipboard read a paste is waiting on.
     paste_request: Option<ClipboardRequestId>,
     focused: bool,
-    /// The window system asked for the next frame, or none was presented
-    /// yet. A FIFO present before then can block the loop, keys and all,
-    /// for as long as the window is not shown (an output switched off).
-    may_present: bool,
     /// A screen reader or other assistive technology is reading the window,
     /// so each frame's tree goes to it.
     reading: bool,
@@ -314,7 +310,6 @@ impl<'a> Window<'a> {
             text_input: None,
             paste_request: None,
             focused: false,
-            may_present: true,
             reading: false,
             blink_at: Instant::now() + BLINK,
             mods: Default::default(),
@@ -356,6 +351,7 @@ impl<'a> Window<'a> {
             let mut events = std::mem::take(&mut early);
             self.shell.pump(&mut |event| events.push(event));
             for event in events {
+                self.gpu.observe(&event);
                 match self.handle(event, &mut content)? {
                     Step::Continue(changed) => dirty |= changed,
                     Step::Exit(payloads, code) => {
@@ -375,17 +371,14 @@ impl<'a> Window<'a> {
                 dirty = true;
             }
 
-            if dirty && self.may_present {
+            if dirty && self.gpu.frame_due() {
                 let pointer = PointerInput {
                     down: self.pointer_down,
                     ..PointerInput::hovering(self.pointer)
                 };
                 self.frame(&content, pointer)?;
-                // Rides this present's commit; its answer lets the next one go.
-                self.shell.request_frame(self.window)?;
-                if self.gpu.present(&self.list, &self.atlas)? {
+                if self.gpu.present(self.shell, &self.list, &self.atlas)? {
                     dirty = false;
-                    self.may_present = false;
                     self.log_first_paint();
                 } else {
                     // Out of date and reconfigured. Retrying at once would
@@ -504,10 +497,6 @@ impl<'a> Window<'a> {
             }
             ShellEvent::AccessibilityAction { window, request } if window == self.window => {
                 Ok(Step::Continue(self.ui.accessibility_action(&request)))
-            }
-            ShellEvent::FrameReady { window } if window == self.window => {
-                self.may_present = true;
-                Ok(Step::Continue(false))
             }
             ShellEvent::CloseRequested { window } => {
                 self.shell.reply_close_request(window, CloseReply::Keep)?;

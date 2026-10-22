@@ -1,200 +1,99 @@
-//! The GPU side of the window: one device, one swapchain on the picker's
-//! surface, and the crcbl UI pass drawing a frame's draw list into it.
+//! The GPU side of the window: crcbl-app's [`Presenter`] (device, swapchain,
+//! adapter choice and frame pacing) and the crcbl UI pass drawing a frame's
+//! draw list into it.
 //!
-//! pikr redraws only when something changed, so each frame is submitted and
-//! waited for before the next is recorded; there is never more than one
-//! frame in flight to track.
-#![allow(unsafe_code)]
+//! pikr redraws only when something changed, so it keeps one frame in
+//! flight: each frame has finished on the GPU before the next is recorded.
 
 use anyhow::{Context, Result, anyhow};
-use crcbl_app::adapter::{PowerPreference, choose, pin};
+use crcbl_app::adapter::{PowerPreference, pin};
+use crcbl_app::backend::GpuBackend;
+use crcbl_app::present::{
+    FrameOutcome, Pacing, PresentError, Presenter, PresenterDesc, Transparency,
+};
 use crcbl_frame::graph::{ImportedImage, InitialClaim, RenderGraph};
 use crcbl_frame::{TransientPool, UiRenderer};
-use crcbl_hal::{
-    CommandEncoderDesc, CompositeAlpha, Device, DeviceDesc, Features, Format, Instance,
-    PresentInfo, PresentMode, QueueHandle, QueueKind, ResourceState, SemaphoreSignal,
-    SemaphoreWait, SubmitInfo, SurfaceError, SurfaceHandle, SwapchainDesc, SwapchainHandle,
-};
-use crcbl_shell::SurfaceTarget;
+use crcbl_hal::{CommandEncoderDesc, CompositeAlpha, Features, ResourceState};
+use crcbl_shell::{Shell, ShellEvent, WindowId};
 use crcbl_ui::draw_list::DrawList;
 use crcbl_ui::image::ImageAtlas;
 use crcbl_ui::text::FontAtlas;
 
-/// The GPU instance for this platform: Vulkan on Linux and FreeBSD, D3D12 on
-/// Windows (which falls back to the WARP software rasteriser with no GPU),
-/// Metal on macOS.
-fn open_instance() -> Result<Box<dyn Instance>> {
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    {
-        crcbl_vk::VkInstance::open()
-            .map(|instance| Box::new(instance) as Box<dyn Instance>)
-            .map_err(|e| anyhow!("no usable GPU: Vulkan failed to open: {e}"))
-    }
-    #[cfg(target_os = "windows")]
-    {
-        crcbl_dx12::Dx12Instance::open()
-            .map(|instance| Box::new(instance) as Box<dyn Instance>)
-            .ok_or_else(|| anyhow!("no usable GPU: Direct3D 12 failed to open"))
-    }
-    #[cfg(target_os = "macos")]
-    {
-        crcbl_mtl::MetalInstance::open()
-            .map(|instance| Box::new(instance) as Box<dyn Instance>)
-            .ok_or_else(|| anyhow!("no usable GPU: Metal failed to open"))
-    }
-    #[cfg(not(any(
-        target_os = "linux",
-        target_os = "freebsd",
-        target_os = "windows",
-        target_os = "macos"
-    )))]
-    {
+/// The GPU backend for this platform: Vulkan on Linux and FreeBSD, D3D12 on
+/// Windows (which falls back to the WARP software rasteriser with no GPU, and
+/// is the backend that draws a transparent Win32 window), Metal on macOS.
+/// Named rather than left to crcbl-app's table, which on Windows would open
+/// Vulkan first and only then fall through to D3D12.
+pub fn platform_backend() -> Result<GpuBackend> {
+    if cfg!(any(target_os = "linux", target_os = "freebsd")) {
+        Ok(GpuBackend::Vulkan)
+    } else if cfg!(target_os = "windows") {
+        Ok(GpuBackend::Dx12)
+    } else if cfg!(target_os = "macos") {
+        Ok(GpuBackend::Metal)
+    } else {
         Err(anyhow!("pikr has no GPU backend for this platform"))
     }
 }
 
 pub struct Gpu {
-    // Field order is drop order for nothing here — `destroy` tears these
-    // down explicitly, in dependency order.
-    instance: Box<dyn Instance>,
-    device: Box<dyn Device>,
-    queue: QueueHandle,
-    surface: SurfaceHandle,
-    swapchain: SwapchainHandle,
-    desc: SwapchainDesc<'static>,
+    presenter: Presenter,
     renderer: UiRenderer,
     pool: TransientPool,
 }
 
 impl Gpu {
-    /// Opens a device that can present to `target` at `extent`.
+    /// Opens a device on `backend` that presents to `window` at `extent`.
     ///
-    /// # Safety contract, enforced by the caller's structure
+    /// The adapter is crcbl's rule: `CRCBL_ADAPTER` if set, else the GPU
+    /// driving the window's display when it is discrete, else integrated
+    /// before discrete, so a launcher lets a laptop's dGPU sleep; an adapter
+    /// that cannot present the window is stepped past. A transparent window
+    /// no adapter can composite is drawn opaque, with a warning.
     ///
-    /// The window behind `target` must outlive the returned `Gpu`, and
-    /// `destroy` must run before the window is destroyed. `ui::run` owns
-    /// both and destroys the `Gpu` first on every exit path.
-    pub fn open(target: &SurfaceTarget, extent: (u32, u32), want_alpha: bool) -> Result<Self> {
-        Self::open_on(open_instance()?, target, extent, want_alpha)
-    }
-
-    /// [`Gpu::open`] on `instance` rather than the platform's backend: the
-    /// headless tests pass crcbl-hal's null backend.
-    pub fn open_on(
-        instance: Box<dyn Instance>,
-        target: &SurfaceTarget,
+    /// `window` must outlive the returned `Gpu`, and [`Gpu::destroy`] must
+    /// run before it is destroyed: `ui::run` owns both and destroys the
+    /// `Gpu` first on every exit path.
+    pub fn open(
+        shell: &dyn Shell,
+        window: WindowId,
         extent: (u32, u32),
-        want_alpha: bool,
+        backend: GpuBackend,
     ) -> Result<Self> {
-        // SAFETY: `target` names the live window `ui::run` created, which it
-        // keeps alive until after `Gpu::destroy` has destroyed this surface;
-        // `open` runs on the thread that pumps that window.
-        let surface = unsafe { instance.create_surface(target) }.context("creating the surface")?;
-
-        // crcbl's rule: `CRCBL_ADAPTER` if set, else the GPU driving the
-        // window's display when it is discrete, else integrated before
-        // discrete, so a launcher lets a laptop's dGPU sleep. Within that
-        // order an adapter that cannot present to this surface is skipped,
-        // not fatal: the first one that can, wins.
-        let adapters = instance.adapters();
-        let on_display = instance
-            .display_adapter(surface)
-            .inspect_err(|e| tracing::debug!("no display adapter: {e}"))
-            .ok()
-            .flatten();
-        let choice = choose(
-            &adapters,
-            pin().as_deref(),
-            None,
-            PowerPreference::LowPower,
-            on_display,
-        );
-        let candidates = match &choice {
-            Ok(choice) => choice.candidates(),
-            Err(e) => {
-                instance.destroy_surface(surface);
-                return Err(anyhow!("no usable GPU: {e}"));
-            }
+        let pinned = pin();
+        let desc = PresenterDesc {
+            label: "pikr",
+            backend: Some(backend),
+            adapter_pin: pinned.as_deref(),
+            power_preference: PowerPreference::LowPower,
+            transparency: Transparency::Preferred,
+            // No present feedback or timing: the frame request already holds
+            // presents back until the window system asks, and pikr has no
+            // frame rate to settle.
+            optional_features: Features::empty(),
+            pacing: Pacing::Vsync,
+            frames_in_flight: 1,
+            ..PresenterDesc::default()
         };
-        let mut chosen = None;
-        for &adapter in candidates {
-            match instance.surface_caps(surface, adapter.id) {
-                Ok(caps) if caps.preferred_format().is_some() => {
-                    chosen = Some((adapter, caps));
-                    break;
-                }
-                Ok(_) => tracing::debug!(adapter = adapter.name, "no usable surface format"),
-                Err(e) => tracing::debug!(adapter = adapter.name, "cannot present: {e}"),
-            }
-        }
-        let Some((adapter, caps)) = chosen else {
-            instance.destroy_surface(surface);
-            return Err(anyhow!(
-                "no usable GPU: no adapter can present to the window"
-            ));
-        };
-        tracing::debug!(
-            adapter = adapter.name,
-            backend = ?instance.backend(),
-            display_adapter = ?on_display,
-            "GPU chosen"
-        );
-
-        let device = instance
-            .create_device(&DeviceDesc {
-                label: Some("pikr"),
-                adapter: adapter.id,
-                required_features: Features::empty(),
-                optional_features: Features::empty(),
-                compatible_surface: Some(surface),
-            })
-            .context("creating the GPU device")?;
-        let queue = device
-            .queue(QueueKind::Graphics)
-            .ok_or_else(|| anyhow!("the GPU device has no graphics queue"))?;
-
-        let format: Format = caps
-            .preferred_format()
-            .ok_or_else(|| anyhow!("the surface offers no format"))?;
-        let transparent = want_alpha
-            && caps
-                .composite_alpha
-                .contains(&CompositeAlpha::PreMultiplied);
-        if want_alpha && !transparent {
+        let presenter = Presenter::open(shell, window, extent, &desc).map_err(no_gpu)?;
+        let transparent = shell
+            .surface_target(window)
+            .is_ok_and(|target| target.transparent());
+        if transparent && presenter.composite_alpha() == CompositeAlpha::Opaque {
             tracing::warn!(
-                adapter = adapter.name,
-                offered = ?caps.composite_alpha,
+                adapter = presenter.adapter().map(|a| a.name),
                 "the GPU surface cannot draw pikr transparent; drawing it opaque, so the corners outside the rounded panel show black"
             );
         }
-        let desc = SwapchainDesc {
-            label: Some("pikr"),
-            surface,
-            format,
-            extent,
-            image_count: caps
-                .min_image_count
-                .saturating_add(1)
-                .min(caps.max_image_count),
-            present_mode: caps.choose_present_mode(&[PresentMode::Fifo]),
-            composite_alpha: if transparent {
-                CompositeAlpha::PreMultiplied
-            } else {
-                CompositeAlpha::Opaque
-            },
-        };
-        let swapchain = device
-            .create_swapchain(&desc)
-            .context("creating the swapchain")?;
-        let renderer =
-            UiRenderer::new(device.as_ref(), queue, format).context("creating the UI renderer")?;
+        tracing::debug!(
+            adapter = presenter.adapter().map(|a| a.name),
+            ?backend,
+            "GPU chosen"
+        );
+        let renderer = UiRenderer::new(presenter.device(), presenter.queue(), presenter.format())
+            .context("creating the UI renderer")?;
         Ok(Self {
-            instance,
-            device,
-            queue,
-            surface,
-            swapchain,
-            desc,
+            presenter,
             renderer,
             pool: TransientPool::new(),
         })
@@ -208,37 +107,44 @@ impl Gpu {
     /// Follows a window resize. A zero extent (a minimised window) keeps the
     /// current swapchain.
     pub fn resize(&mut self, extent: (u32, u32)) -> Result<()> {
-        if extent.0 == 0 || extent.1 == 0 || extent == self.desc.extent {
-            return Ok(());
-        }
-        self.desc.extent = extent;
-        self.reconfigure()
-    }
-
-    fn reconfigure(&mut self) -> Result<()> {
-        self.device.wait_idle().context("waiting for the GPU")?;
-        self.device
-            .reconfigure_swapchain(self.swapchain, &self.desc)
+        self.presenter
+            .resize(extent)
             .context("reconfiguring the swapchain")
     }
 
-    /// Draws `list` and presents it. `false` when the swapchain was out of
-    /// date and was reconfigured instead, so the caller draws again.
-    pub fn present(&mut self, list: &DrawList, atlas: &FontAtlas) -> Result<bool> {
-        let acquired = match self.device.acquire_next_frame(self.swapchain) {
-            Ok(frame) => frame,
-            Err(SurfaceError::OutOfDate) => {
-                self.reconfigure()?;
-                return Ok(false);
-            }
-            Err(e) => return Err(e).context("acquiring a frame"),
+    /// Takes what `event` says about the frame request: its answer lets the
+    /// next frame be presented.
+    pub fn observe(&mut self, event: &ShellEvent) {
+        self.presenter.observe(event);
+    }
+
+    /// Whether the window system has asked for the next frame, or none was
+    /// presented yet. A FIFO present before then can block the loop, keys
+    /// and all, for as long as the window is not shown (an output switched
+    /// off).
+    pub fn frame_due(&self) -> bool {
+        self.presenter.frame_due()
+    }
+
+    /// Draws `list` and presents it, asking `shell` for the next frame.
+    /// `false` when the swapchain was out of date and was reconfigured
+    /// instead, so the caller draws again.
+    pub fn present(
+        &mut self,
+        shell: &mut dyn Shell,
+        list: &DrawList,
+        atlas: &FontAtlas,
+    ) -> Result<bool> {
+        let Some(acquired) = self.presenter.acquire().context("acquiring a frame")? else {
+            return Ok(false);
         };
+        let device = self.presenter.device();
         self.renderer
-            .begin_frame(self.device.as_ref(), list, atlas, 1.0)
+            .begin_frame(device, list, atlas, 1.0)
             .context("preparing the UI pass")?;
 
         let compiled = {
-            let mut graph = RenderGraph::new(self.queue);
+            let mut graph = RenderGraph::new(self.presenter.queue());
             // An acquired image's contents are undefined, and it goes back to
             // the window system for presenting.
             let target = graph.import_image(
@@ -246,7 +152,7 @@ impl Gpu {
                 ImportedImage {
                     image: acquired.image,
                     view: acquired.view,
-                    format: self.desc.format,
+                    format: self.presenter.format(),
                     extent: acquired.extent,
                     initial: ResourceState::Undefined,
                     claim: InitialClaim::Acquired,
@@ -265,77 +171,47 @@ impl Gpu {
             graph.compile(&self.pool).context("compiling the frame")?
         };
 
-        let mut encoder = self.device.create_command_encoder(&CommandEncoderDesc {
+        let mut encoder = device.create_command_encoder(&CommandEncoderDesc {
             label: Some("pikr frame"),
-            queue: self.queue,
+            queue: self.presenter.queue(),
         });
         compiled
-            .execute(self.device.as_ref(), &mut self.pool, encoder.as_mut(), None)
+            .execute(device, &mut self.pool, encoder.as_mut(), None)
             .context("recording the frame")?;
         let commands = encoder.finish().context("finishing the frame")?;
 
-        let waits: Vec<SemaphoreWait> = acquired
-            .acquire_semaphore
-            .map(|semaphore| SemaphoreWait {
-                semaphore,
-                value: 0,
-            })
-            .into_iter()
-            .collect();
-        let signals: Vec<SemaphoreSignal> = acquired
-            .present_semaphore
-            .map(|semaphore| SemaphoreSignal {
-                semaphore,
-                value: 0,
-            })
-            .into_iter()
-            .collect();
-        self.device
-            .submit(
-                self.queue,
-                &SubmitInfo {
-                    command_buffers: &[commands],
-                    waits: &waits,
-                    signals: &signals,
-                },
-            )
-            .context("submitting the frame")?;
-        let presented = self.device.present(
-            self.queue,
-            &PresentInfo {
-                swapchain: self.swapchain,
-                waits: acquired.present_semaphore.as_slice(),
-                present_id: None,
-            },
-        );
-        // One frame in flight: wait for it, then free what it used.
-        self.device.wait_idle().context("waiting for the frame")?;
-        self.device.destroy_command_buffer(commands);
-        self.pool.retire_unused(self.device.as_ref());
-        match presented {
-            Ok(()) if acquired.suboptimal => {
-                self.reconfigure()?;
-                Ok(true)
-            }
-            Ok(()) => Ok(true),
-            Err(SurfaceError::OutOfDate) => {
-                self.reconfigure()?;
-                Ok(false)
-            }
-            Err(e) => Err(e).context("presenting the frame"),
-        }
+        // Rides this present's commit; its answer lets the next one go.
+        self.presenter.request_frame(shell)?;
+        // With one frame in flight this returns after the frame has finished
+        // on the GPU, so what it used can be reused or freed.
+        let outcome = self
+            .presenter
+            .submit_and_present(&acquired, commands)
+            .context("presenting the frame")?;
+        self.pool.retire_unused(self.presenter.device());
+        Ok(outcome == FrameOutcome::Presented)
     }
 
     /// Releases everything, in dependency order. Must run before the window
     /// is destroyed.
     pub fn destroy(mut self) {
-        if let Err(e) = self.device.wait_idle() {
+        if let Err(e) = self.presenter.drain() {
             tracing::warn!("waiting for the GPU at exit: {e}");
         }
-        self.renderer.destroy(self.device.as_ref());
-        self.pool.destroy(self.device.as_ref());
-        self.device.destroy_swapchain(self.swapchain);
-        drop(self.device);
-        self.instance.destroy_surface(self.surface);
+        self.renderer.destroy(self.presenter.device());
+        self.pool.destroy(self.presenter.device());
+        if let Err(e) = self.presenter.destroy() {
+            tracing::warn!("releasing the GPU at exit: {e}");
+        }
+    }
+}
+
+/// A failed open as pikr reports it. crcbl-app's own wording for a backend
+/// that would not open suggests its `--backend null` flag, which pikr does
+/// not have.
+fn no_gpu(error: PresentError) -> anyhow::Error {
+    match error {
+        PresentError::NoBackend(e) => anyhow!("no usable GPU: {e}"),
+        e => anyhow!("no usable GPU: {e}"),
     }
 }

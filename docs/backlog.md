@@ -29,19 +29,20 @@
   was sent.
 - `picker::icons::tests::svg_text_is_drawn` needs a system sans-serif face; the
   Ubuntu test job installs no fonts, so it relies on the runner image.
-- **GPU choice is crcbl-app's rule (crcbl 0.6.0).** `ui::gpu::Gpu::open` ranks
-  adapters with `crcbl_app::adapter::choose`: `CRCBL_ADAPTER` if set, else the
-  adapter driving the window's display when it is discrete, else `LowPower`
-  (integrated before discrete). On the Windows test desktop
-  `Instance::display_adapter` named the RX 7900 XTX, which drives the display,
-  and it was chosen. On Wayland, from crcbl 0.8, `display_adapter` comes from
-  the device the compositor composites on: on the Arch laptop (2026-10-21, crcbl
-  0.8.1) crcbl-vk logged "the compositor composites on DRM device 0xe280,
-  adapter Some(AdapterId(1))", the Intel iGPU, and pikr chose it because that
-  display GPU is integrated. Not verified: a Wayland desktop whose display is on
-  a discrete GPU (the rule picks it there), and X11 and macOS, where the
-  preference alone was all that was seen. Not handled: a window moved to another
-  GPU's display after start (pikr is short-lived).
+- **GPU choice is crcbl-app's rule (crcbl 0.6.0).** `ui::gpu::Gpu::open` opens
+  crcbl-app's `Presenter`, which ranks adapters with
+  `crcbl_app::adapter::choose`: `CRCBL_ADAPTER` if set, else the adapter driving
+  the window's display when it is discrete, else `LowPower` (integrated before
+  discrete). On the Windows test desktop `Instance::display_adapter` named the
+  RX 7900 XTX, which drives the display, and it was chosen. On Wayland, from
+  crcbl 0.8, `display_adapter` comes from the device the compositor composites
+  on: on the Arch laptop (2026-10-21, crcbl 0.8.1) crcbl-vk logged "the
+  compositor composites on DRM device 0xe280, adapter Some(AdapterId(1))", the
+  Intel iGPU, and pikr chose it because that display GPU is integrated. Not
+  verified: a Wayland desktop whose display is on a discrete GPU (the rule picks
+  it there), and X11 and macOS, where the preference alone was all that was
+  seen. Not handled: a window moved to another GPU's display after start (pikr
+  is short-lived).
   - **Hybrid laptop, checked 2026-10-21** (the Arch machine: Intel Raptor Lake
     UHD driving eDP and HDMI, NVIDIA GeForce MX550 with no outputs, NVIDIA's
     proprietary Vulkan driver; nested Hyprland). Default: Intel, first paint 264
@@ -189,27 +190,27 @@
     test or an on-screen check): `:mode` during `--loading`, a Ctrl chord
     swallowing a later IME commit, the `:` prompt's composition, and `-P` keys
     in trace logs. Checked by it and found sound: frame pacing never stalls (an
-    out-of-date present keeps `may_present`), the char/byte index handling in
-    `ui::view`, `fitted_size`, shutdown order and exit codes. A reader's Click
-    on a result row does nothing (rows are `Role::None`, which crcbl refuses to
-    click); not a regression. The rest of the tree (`picker` outside `session`,
-    `config`, `app`, `cli`) was reviewed the same day, the same way: frecency
-    never pruned, Windows clipboard accepts written to disk, lost updates
-    between two open pikrs, an unparsable state file silently wiped, an overflow
-    on a corrupt `last_used`, `--kb-custom Alt++=…` refused, and icon files read
-    whole before any limit; all fixed. Found sound there: the matcher's char
-    positions, `-P` never recording, `Cli::validate`'s combinations, and the
-    icon-theme key-file reader. `modes/` was reviewed again the same day: a user
-    `.desktop` copy that hides an app was ignored, ssh config comments and
-    quotes were misread, `Include` fan-out was exponential, a failed
-    `cliphist decode` emptied the clipboard, and an evalexpr panic killed calc
-    mode; all fixed. ssh mode's `-e ssh <host>` holds for every Unix terminal it
-    looks for (checked 2026-10-22 from their docs and source, none of foot or
-    kitty installed): alacritty's `-e, --command` (its `--help` here), xterm's
-    `-e`, foot's man page ("Ignored; for compatibility with xterm -e", trailing
-    words being the command), and kitty's `simple_cli_definitions.py`, which
-    defines `--execute -e` as a hidden flag taking no value, so the words after
-    it are the program.
+    out-of-date present leaves the frame gate open), the char/byte index
+    handling in `ui::view`, `fitted_size`, shutdown order and exit codes. A
+    reader's Click on a result row does nothing (rows are `Role::None`, which
+    crcbl refuses to click); not a regression. The rest of the tree (`picker`
+    outside `session`, `config`, `app`, `cli`) was reviewed the same day, the
+    same way: frecency never pruned, Windows clipboard accepts written to disk,
+    lost updates between two open pikrs, an unparsable state file silently
+    wiped, an overflow on a corrupt `last_used`, `--kb-custom Alt++=…` refused,
+    and icon files read whole before any limit; all fixed. Found sound there:
+    the matcher's char positions, `-P` never recording, `Cli::validate`'s
+    combinations, and the icon-theme key-file reader. `modes/` was reviewed
+    again the same day: a user `.desktop` copy that hides an app was ignored,
+    ssh config comments and quotes were misread, `Include` fan-out was
+    exponential, a failed `cliphist decode` emptied the clipboard, and an
+    evalexpr panic killed calc mode; all fixed. ssh mode's `-e ssh <host>` holds
+    for every Unix terminal it looks for (checked 2026-10-22 from their docs and
+    source, none of foot or kitty installed): alacritty's `-e, --command` (its
+    `--help` here), xterm's `-e`, foot's man page ("Ignored; for compatibility
+    with xterm -e", trailing words being the command), and kitty's
+    `simple_cli_definitions.py`, which defines `--execute -e` as a hidden flag
+    taking no value, so the words after it are the program.
   - Linux was verified only through CI's sway session on lavapipe: the e2e
     keyboard suite and the startup gate passed (run 39002212977, 237 ms
     launch-to-result against the 500 ms deadline). Hyprland 0.56.2 (Arch,
@@ -293,11 +294,11 @@
     for every pikr a test launches**: each accept writes history and frecency
     (`picker::state_file_path`), and tests on 2026-10-20 wrote theirs into the
     user's real state until they were taken out by hand. The un-drawn output is
-    also a way to reproduce the frame-pacing freeze fixed on 2026-10-20
-    (`ui::run`'s `may_present`); turning a headless output off with DPMS does
-    not reproduce it. For checks that need no Hyprland, sway is also installed
-    on the Arch machine: the e2e suite starts its own headless sway in a private
-    `XDG_RUNTIME_DIR`, and
+    also a way to reproduce the frame-pacing freeze fixed on 2026-10-20 (the
+    frame gate, now crcbl-app's `Presenter`); turning a headless output off with
+    DPMS does not reproduce it. For checks that need no Hyprland, sway is also
+    installed on the Arch machine: the e2e suite starts its own headless sway in
+    a private `XDG_RUNTIME_DIR`, and
     `cargo test --release --test keyboard -- --test-threads=1` (6 passed) and
     `--test startup_gate` (345 ms against the 500 ms deadline) ran there on
     2026-10-20. Keep build output off `/tmp` on that machine: it is a shared
@@ -544,18 +545,24 @@ macOS and Windows.
   were compiling on the machine, which may explain the two outliers). On crcbl
   0.5.0 three launches gave 617, 443 and 493 ms. GPU setup is nearly all of it;
   config, entries, ranking and fonts are done within ~50 ms.
-- **crcbl-app: only its adapter choice is adopted (since crcbl 0.6.0).** pikr
-  uses `crcbl_app::adapter::{choose, pin}` in `ui::gpu::Gpu::open` and nothing
-  else. The rest would replace `ui::gpu` and the window bring-up in `ui::run`:
-  crcbl 0.7.0's `Presenter` also paces presents on `Shell::request_frame`; pikr
-  now does the same itself (`ui::run`'s `may_present`), after a window that the
-  compositor was not drawing froze its loop on Hyprland.
-  `window::wait_for_configure` now hands pumped events to a sink (fixed for
-  0.6.0 after pikr's report), and `Presenter` gained `Transparency::Preferred`,
-  an opaque fallback with a warning, which matches pikr's rule. Both objections
-  from 2026-10-19 are answered; what is left is `text_input::TextPump`, which
-  feeds crcbl-ui's `TextInput` while pikr edits its own query. Moving `ui::gpu`
-  onto `Presenter` is open and not reviewed against pikr's code.
+- **crcbl-app's `Presenter` draws pikr's frames (2026-10-22).** `ui::gpu::Gpu`
+  keeps only the UI renderer, the render graph and the transient pool; the
+  backend, adapter walk, transparency fallback (`Transparency::Preferred`),
+  swapchain, frame request gate (`observe` / `frame_due`) and teardown are
+  crcbl-app's. pikr names the backend (`ui::gpu::platform_backend`), so
+  `CRCBL_GPU` is not read and Windows never opens Vulkan before D3D12; it asks
+  for one frame in flight, `Pacing::Vsync` and no present feedback or timing,
+  which keeps the old behaviour of a frame finished before the next is recorded.
+  One rule changed: the walk now prefers a lower-ranked adapter that can
+  composite the transparent window over a higher-ranked one that can only draw
+  it opaque. Checked on headless sway (Arch, Vulkan, 2026-10-22): the swapchain
+  came up `PreMultiplied` and a screenshot showed the rounded corners
+  see-through over a magenta window; typing and Return accepted `gamma` six
+  times out of six, the same as the v0.9.2 binary; the e2e keyboard suite and
+  the startup gate passed (351 ms against 500). Not checked on screen: D3D12 on
+  Windows and Metal on macOS (CI builds and runs the unit tests there). What is
+  left unadopted is `text_input::TextPump`, which feeds crcbl-ui's `TextInput`
+  while pikr edits its own query.
 
 ### Coverage gaps (not verified)
 

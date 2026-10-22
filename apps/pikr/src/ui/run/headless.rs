@@ -12,7 +12,7 @@ use crate::picker::app_state::AppState;
 use crate::picker::app_state::tests::app_state;
 use crate::picker::keyspec::KbCustom;
 use crate::ui::view::{VISIBLE_ROWS, window_height};
-use crcbl_hal::null::NullInstance;
+use crcbl_app::backend::GpuBackend;
 use crcbl_shell::{HeadlessShell, KeyCode, Modifiers as ShellModifiers};
 
 /// One scripted input.
@@ -106,16 +106,9 @@ fn with_window<T>(
         font_size: crate::config::Theme::default().font_size,
         icon_themes: Vec::new(),
     };
-    let (window, transparent) = create_window(&mut shell, &spec).unwrap();
+    let window = create_window(&mut shell, &spec).unwrap();
     let (extent, early) = wait_for_size(&mut shell, window).unwrap();
-    let target = shell.surface_target(window).unwrap();
-    let mut gpu = Gpu::open_on(
-        Box::new(NullInstance::portable()),
-        &target,
-        extent,
-        transparent,
-    )
-    .unwrap();
+    let mut gpu = Gpu::open(&shell, window, extent, GpuBackend::Null).unwrap();
     feed(&mut shell, window);
     // No system fonts: text draws in crcbl's built-in face, and nothing here
     // looks at it.
@@ -154,6 +147,42 @@ fn with_bindings(mut state: AppState, bindings: &[&str]) -> AppState {
 
 fn stdout(text: &str) -> Vec<Payload> {
     vec![Payload::Stdout(text.into())]
+}
+
+#[test]
+fn a_frame_presents_once_the_window_system_asks_for_it() {
+    with_window(
+        VISIBLE_ROWS,
+        |_, _| {},
+        |window, _| {
+            let content = picker(fruit(), "");
+            let present = |window: &mut Window| -> Result<bool> {
+                window.frame(&content, PointerInput::hovering(Vec2::ZERO))?;
+                window
+                    .gpu
+                    .present(window.shell, &window.list, &window.atlas)
+            };
+            assert!(window.gpu.frame_due(), "nothing presented yet");
+            assert!(present(window)?);
+            // The present asked for the next frame; until the answer is
+            // observed nothing more is presented.
+            assert!(!window.gpu.frame_due());
+            let mut events = Vec::new();
+            window.shell.pump(&mut |event| events.push(event));
+            assert!(
+                events
+                    .iter()
+                    .any(|e| matches!(e, ShellEvent::FrameReady { .. })),
+                "{events:?}"
+            );
+            for event in &events {
+                window.gpu.observe(event);
+            }
+            assert!(window.gpu.frame_due());
+            assert!(present(window)?);
+            Ok(())
+        },
+    );
 }
 
 #[test]
