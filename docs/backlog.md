@@ -537,13 +537,14 @@ macOS and Windows.
 
 ### Open
 
-- **Windows startup is under the 500 ms target in the median, with outliers.**
-  Release build on crcbl 0.6.0 (lazy adapter description, display-adapter
-  choice), D3D12, RX 7900 XTX + iGPU + WARP, 2026-10-20: ten warm background
-  `--dmenu` launches reached first paint at 329, 480, 384, 515, 345, 367, 963,
-  2080, 356 and 339 ms, median ~376 ms (`RUST_LOG=pikr=debug`; other sessions
-  were compiling on the machine, which may explain the two outliers). On crcbl
-  0.5.0 three launches gave 617, 443 and 493 ms. GPU setup is nearly all of it;
+- **Windows startup is under the 500 ms target.** Release build at `cba69cf`
+  (crcbl-app's `Presenter`), D3D12, RX 7900 XTX + iGPU + WARP, 2026-10-22: ten
+  warm background `--dmenu` launches reached first paint at 284, 312, 319, 337,
+  317, 369, 359, 474, 414 and 478 ms, median ~348 ms
+  (`RUST_LOG=pikr=debug,crcbl_app=debug`; other sessions were compiling, CPU
+  load 74% after the run). On crcbl 0.6.0 before the `Presenter` (2026-10-20)
+  the median was ~376 ms with outliers at 963 and 2080 ms, and on crcbl 0.5.0
+  three launches gave 617, 443 and 493 ms. GPU setup is nearly all of it;
   config, entries, ranking and fonts are done within ~50 ms.
 - **crcbl-app's `Presenter` draws pikr's frames (2026-10-22).** `ui::gpu::Gpu`
   keeps only the UI renderer, the render graph and the transient pool; the
@@ -559,10 +560,17 @@ macOS and Windows.
   came up `PreMultiplied` and a screenshot showed the rounded corners
   see-through over a magenta window; typing and Return accepted `gamma` six
   times out of six, the same as the v0.9.2 binary; the e2e keyboard suite and
-  the startup gate passed (351 ms against 500). Not checked on screen: D3D12 on
-  Windows and Metal on macOS (CI builds and runs the unit tests there). What is
-  left unadopted is `text_input::TextPump`, which feeds crcbl-ui's `TextInput`
-  while pikr edits its own query.
+  the startup gate passed (351 ms against 500). Checked on Windows 11 (D3D12,
+  2026-10-22, release build at `cba69cf`): crcbl-app opened dx12, picked the RX
+  7900 XTX (discrete, the display's adapter, first of 3 that can present) as
+  before, and logged a 720x448 `Bgra8UnormSrgb Fifo PreMultiplied` swapchain; a
+  screenshot showed the picker drawn whole, and the pixels outside the rounded
+  border matched the desktop just outside the window (31,31,31, not the panel's
+  41,46,66 or an opaque fallback's black). Not checked: a resize or scale change
+  on D3D12 (the reconfigure that drains in-flight frames), and Metal on macOS
+  (CI builds and runs the unit tests there). What is left unadopted is
+  `text_input::TextPump`, which feeds crcbl-ui's `TextInput` while pikr edits
+  its own query.
 
 ### Coverage gaps (not verified)
 
