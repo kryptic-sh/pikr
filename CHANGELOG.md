@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-22
+
 ### Added
 
 - ssh mode also lists the hosts in `~/.ssh/known_hosts` and
@@ -1364,7 +1366,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.1...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.2...main
+[0.9.2]: https://github.com/kryptic-sh/pikr/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/kryptic-sh/pikr/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/kryptic-sh/pikr/compare/v0.8.13...v0.9.0
 [0.8.13]: https://github.com/kryptic-sh/pikr/compare/v0.8.12...v0.8.13
