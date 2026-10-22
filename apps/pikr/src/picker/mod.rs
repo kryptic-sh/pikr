@@ -70,6 +70,34 @@ pub(crate) fn read_state_toml<T: serde::de::DeserializeOwned + Default>(path: &P
     }
 }
 
+/// Runs `update` holding an exclusive lock on `<path>.lock`, so pikrs saving
+/// `path` at once take turns: each one's read of `path`, merge and rename
+/// finish before the next one reads. A sibling, since the rename replaces
+/// `path` itself. The lock file is left in place: deleting it would let a
+/// third pikr lock a new one while the second still holds the old.
+///
+/// Where no lock can be had (a file system without locking, a lock file that
+/// cannot be created) `update` runs unlocked: a rare lost update beats a
+/// lost save.
+pub(crate) fn with_state_lock(path: &Path, update: impl FnOnce()) {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".lock");
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let lock = options.open(PathBuf::from(name)).and_then(|file| {
+        file.lock()?;
+        Ok(file)
+    });
+    if let Err(e) = &lock {
+        tracing::warn!(error = %e, path = %path.display(), "state file lock; saving unlocked");
+    }
+    update();
+    // Closing the file releases the lock.
+    drop(lock);
+}
+
 /// Replace `path` with `bytes`, readable by the owner only (0600) on unix.
 /// Used for persisted query history, frecency keys and the drun caches —
 /// typed queries and program arguments a launcher user may not want

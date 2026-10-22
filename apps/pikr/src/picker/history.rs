@@ -61,20 +61,22 @@ impl History {
             tracing::warn!(error = %e, path = %parent.display(), "create state dir");
             return;
         }
-        let mut current = Self::load_from(path);
-        for (mode, query) in &self.pushed {
-            current.push(*mode, query);
-        }
-        let text = match toml::to_string(&current) {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::warn!(error = %e, "serialize history");
-                return;
+        crate::picker::with_state_lock(path, || {
+            let mut current = Self::load_from(path);
+            for (mode, query) in &self.pushed {
+                current.push(*mode, query);
             }
-        };
-        if let Err(e) = crate::picker::write_private_state(path, text.as_bytes()) {
-            tracing::warn!(error = %e, path = %path.display(), "write history");
-        }
+            let text = match toml::to_string(&current) {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!(error = %e, "serialize history");
+                    return;
+                }
+            };
+            if let Err(e) = crate::picker::write_private_state(path, text.as_bytes()) {
+                tracing::warn!(error = %e, path = %path.display(), "write history");
+            }
+        });
     }
 
     /// Push `query` to the front of `mode`'s history. Empty / whitespace-only
@@ -152,6 +154,31 @@ mod tests {
         first.save_to(&path);
         let saved = History::load_from(&path);
         assert_eq!(saved.list(CliMode::Drun), ["audacity", "firefox"]);
+    }
+
+    #[test]
+    fn saves_at_the_same_moment_lose_nothing() {
+        const SAVERS: usize = 8;
+        const ROUNDS: usize = 12;
+        const _: () = assert!(SAVERS * ROUNDS <= HISTORY_CAP);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.toml");
+        std::thread::scope(|s| {
+            for saver in 0..SAVERS {
+                let path = &path;
+                s.spawn(move || {
+                    for round in 0..ROUNDS {
+                        let mut history = History::load_from(path);
+                        history.push(CliMode::Drun, &format!("{saver}-{round}"));
+                        history.save_to(path);
+                    }
+                });
+            }
+        });
+        assert_eq!(
+            History::load_from(&path).len(CliMode::Drun),
+            SAVERS * ROUNDS
+        );
     }
 
     #[test]

@@ -49,7 +49,8 @@ and this project adheres to
 - Two pikrs open at once no longer lose each other's history and frecency: each
   saved the file as it was when it started plus its own accepts, so the one
   saving last dropped the other's. A save now adds this session's accepts to the
-  file as it is at that moment.
+  file as it is at that moment, and saves landing at the same moment take turns
+  through a lock file beside it (`history.toml.lock`, `usage.toml.lock`).
 - The frecency file (`usage.toml`) no longer grows without bound. Saving drops
   entries whose use has decayed too far to change any ranking, and keeps at most
   1000 per mode, the highest-scoring. A dmenu fed a changing list (a clipboard

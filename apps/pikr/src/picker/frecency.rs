@@ -94,21 +94,23 @@ impl Usage {
             tracing::warn!(error = %e, path = %parent.display(), "create state dir");
             return;
         }
-        let mut current = Self::load_from(path);
-        for (mode, key, when) in &self.recorded {
-            current.bump(mode.clone(), key.clone(), *when);
-        }
-        current.prune(unix_seconds(SystemTime::now()));
-        let text = match toml::to_string(&current) {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::warn!(error = %e, "serialize usage");
-                return;
+        crate::picker::with_state_lock(path, || {
+            let mut current = Self::load_from(path);
+            for (mode, key, when) in &self.recorded {
+                current.bump(mode.clone(), key.clone(), *when);
             }
-        };
-        if let Err(e) = crate::picker::write_private_state(path, text.as_bytes()) {
-            tracing::warn!(error = %e, path = %path.display(), "write usage");
-        }
+            current.prune(unix_seconds(SystemTime::now()));
+            let text = match toml::to_string(&current) {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!(error = %e, "serialize usage");
+                    return;
+                }
+            };
+            if let Err(e) = crate::picker::write_private_state(path, text.as_bytes()) {
+                tracing::warn!(error = %e, path = %path.display(), "write usage");
+            }
+        });
     }
 
     /// Drops the entries whose bonus at `now_secs` rounds to nothing, which
@@ -490,6 +492,29 @@ mod tests {
         let dmenu = &saved.modes["dmenu"];
         assert_eq!(dmenu["firefox"].count, 2);
         assert_eq!(dmenu["audacity"].count, 1);
+    }
+
+    #[test]
+    fn saves_at_the_same_moment_lose_nothing() {
+        const SAVERS: u32 = 8;
+        const ROUNDS: u32 = 12;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("usage.toml");
+        let shared = Payload::Stdout("shared".into());
+        std::thread::scope(|s| {
+            for _ in 0..SAVERS {
+                let (path, shared) = (&path, &shared);
+                s.spawn(move || {
+                    for _ in 0..ROUNDS {
+                        let mut usage = Usage::load_from(path);
+                        usage.record(CliMode::Dmenu, shared);
+                        usage.save_to(path);
+                    }
+                });
+            }
+        });
+        let saved = Usage::load_from(&path);
+        assert_eq!(saved.modes["dmenu"]["shared"].count, SAVERS * ROUNDS);
     }
 
     #[test]
