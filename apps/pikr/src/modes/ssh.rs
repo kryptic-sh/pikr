@@ -1,5 +1,5 @@
 //! ssh mode — SSH host picker from `~/.ssh/config` (and `/etc/ssh/ssh_config`
-//! on Unix), following their `Include`s.
+//! on Unix), following their `Include`s, and the hosts in `known_hosts`.
 
 use super::{Entry, Mode};
 use anyhow::Result;
@@ -55,6 +55,15 @@ impl Mode for Ssh {
                 &mut read,
             ));
         }
+        // After the configs, so a config `Host` of the same name, which can
+        // carry a description, is the one kept.
+        for path in known_hosts_paths() {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                for host in known_hosts(&text) {
+                    entries.push(make_entry(host, None, None, &terminal));
+                }
+            }
+        }
 
         entries.sort_by_key(|a| a.label.to_lowercase());
         // Deduplicate: user config (~/.ssh/config) is parsed first; if the same
@@ -80,6 +89,40 @@ fn config_paths() -> Vec<(PathBuf, PathBuf)> {
         PathBuf::from("/etc/ssh"),
     ));
     paths
+}
+
+/// The known-hosts files ssh reads by default: the user's
+/// `UserKnownHostsFile` and, on Unix, the system's `GlobalKnownHostsFile`.
+fn known_hosts_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(home) = home_dir() {
+        paths.push(home.join(".ssh").join("known_hosts"));
+    }
+    #[cfg(unix)]
+    paths.push(PathBuf::from("/etc/ssh/ssh_known_hosts"));
+    paths
+}
+
+/// The host names in a known_hosts file (sshd(8) "SSH_KNOWN_HOSTS FILE
+/// FORMAT"): each line's comma-separated first field. Not listed: hashed
+/// entries (`|1|…`, which only ssh can match), `@cert-authority` and
+/// `@revoked` lines, wildcard and negated patterns, and `[host]:port`
+/// entries, which would need `ssh -p`.
+fn known_hosts(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#') && !line.starts_with('@'))
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|field| !field.starts_with('|'))
+        .flat_map(|field| field.split(','))
+        .filter(|name| {
+            !name.is_empty()
+                && !name.starts_with('[')
+                && !name.starts_with('!')
+                && !name.contains(['*', '?'])
+        })
+        .map(str::to_owned)
+        .collect()
 }
 
 /// How deep `Include`s may nest: OpenSSH's own limit (`READCONF_MAX_DEPTH`),
@@ -896,6 +939,25 @@ Host = beta
             std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         assert!(is_tool_installed(tool.to_str().unwrap()));
+    }
+
+    #[test]
+    fn known_hosts_lists_plain_names_only() {
+        let text = "\
+# comment
+github.com,140.82.121.4 ssh-ed25519 AAAAC3Nza
+|1|JfKTdBh7rNbXkVAQCRp4OQoPfmI=|USECr3SWf1JUPsms5AqfD5QfxkM= ssh-rsa AAAAB3
+[git.example.com]:2222 ssh-ed25519 AAAAC3Nza
+@cert-authority *.example.com ssh-rsa AAAAB3
+@revoked bad.example.com ssh-rsa AAAAB3
+*.wild.example.com,!no.example.com,box.lan ssh-rsa AAAAB3
+
+  server-01   ecdsa-sha2-nistp256 AAAAE2
+";
+        assert_eq!(
+            known_hosts(text),
+            ["github.com", "140.82.121.4", "box.lan", "server-01"]
+        );
     }
 
     #[test]

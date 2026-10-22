@@ -160,7 +160,11 @@
     excludes `Hyprland`, a `NotShowIn` naming it, or a `TryExec` program that is
     missing, so honouring them would change nothing there. A GNOME or KDE
     install with the other desktop's settings apps is where it would.
-  - ssh has no `known_hosts` parsing. `Include` is followed (2026-10-22,
+  - ssh lists `known_hosts` hosts (2026-10-22, `modes::ssh::known_hosts`),
+    skipping hashed entries, `@` marker lines, wildcard and negated patterns,
+    and `[host]:port` entries: listing those needs `ssh -p PORT host`, and
+    `build_terminal_args` takes one host argument, so its pwsh and cmd arms
+    would have to quote a second one. `Include` is followed (2026-10-22,
     `modes::ssh::read_config`) with `~/`, relative and absolute paths and
     `*`/`?` in the last path component; not expanded: wildcards in a directory
     component, `[...]` classes, `%` tokens and environment variables. Arch's
