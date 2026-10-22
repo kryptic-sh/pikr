@@ -566,11 +566,12 @@ macOS and Windows.
   before, and logged a 720x448 `Bgra8UnormSrgb Fifo PreMultiplied` swapchain; a
   screenshot showed the picker drawn whole, and the pixels outside the rounded
   border matched the desktop just outside the window (31,31,31, not the panel's
-  41,46,66 or an opaque fallback's black). Not checked: a resize or scale change
-  on D3D12 (the reconfigure that drains in-flight frames), and Metal on macOS
-  (CI builds and runs the unit tests there). What is left unadopted is
-  `text_input::TextPump`, which feeds crcbl-ui's `TextInput` while pikr edits
-  its own query.
+  41,46,66 or an opaque fallback's black). A `SetWindowPos` to 900x600 from a
+  probe logged "reconfiguring the swapchain to 900x600" and redrew the picker
+  laid out at the new size, the corners still see-through. Not checked: a scale
+  (DPI) change on D3D12, and Metal on macOS (CI builds and runs the unit tests
+  there). What is left unadopted is `text_input::TextPump`, which feeds
+  crcbl-ui's `TextInput` while pikr edits its own query.
 
 ### Coverage gaps (not verified)
 
