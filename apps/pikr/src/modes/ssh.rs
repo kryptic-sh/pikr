@@ -1274,7 +1274,7 @@ github.com,140.82.121.4 ssh-ed25519 AAAAC3Nza
     }
 
     /// File names `pattern` expands to in `dir`.
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     fn globbed(dir: &Path, pattern: &str) -> Vec<String> {
         glob_paths(&dir.join(pattern))
             .iter()
@@ -1282,9 +1282,10 @@ github.com,140.82.121.4 ssh-ed25519 AAAAC3Nza
             .collect()
     }
 
-    // Unix only: Windows forbids `*` in a file name, and glibc is the
-    // reference.
-    #[cfg(unix)]
+    // Linux only: glibc is the reference, Windows forbids `*` in a file
+    // name, and macOS's case-insensitive file system makes `B.conf` and
+    // `b.conf` one file.
+    #[cfg(target_os = "linux")]
     #[test]
     fn glob_paths_agree_with_glibc() {
         let dir = tempfile::tempdir().unwrap();
