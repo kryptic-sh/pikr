@@ -8,6 +8,14 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- `--lines 0` makes pikr an input-only prompt: no list is shown, the mode's rows
+  are not collected (stdin is not read), and Enter prints what was typed in
+  every mode. Before, the first match stayed selected under a window with no
+  room for it, so Enter accepted a row nobody could see. `--loading` and
+  `--kb-custom KEY=PROMPT` are refused with `--lines 0`, as with `-P`.
+
 ## [0.9.2] - 2026-10-22
 
 ### Added

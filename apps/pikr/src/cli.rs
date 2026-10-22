@@ -69,7 +69,9 @@ pub struct Cli {
     pub width: Option<u32>,
 
     /// Override the number of visible result rows (replaces VISIBLE_ROWS in
-    /// the window height calculation). Defaults to 8.
+    /// the window height calculation). Defaults to 8. At 0 pikr is an
+    /// input-only prompt: no list is shown, stdin is not read, and Enter
+    /// prints the typed text.
     #[arg(short = 'l', long = "lines")]
     pub lines: Option<usize>,
 
@@ -99,6 +101,11 @@ pub struct Cli {
 }
 
 impl Cli {
+    /// Whether pikr is a bare prompt with no list: `-P`, or `--lines 0`.
+    pub fn bare_prompt(&self) -> bool {
+        self.password || self.lines == Some(0)
+    }
+
     /// The mode pikr opens in: `--dmenu` wins over `--show`.
     pub fn chosen_mode(&self) -> Mode {
         if self.dmenu { Mode::Dmenu } else { self.show }
@@ -126,17 +133,24 @@ impl Cli {
             }
         }
 
-        if self.password {
+        if self.bare_prompt() {
+            let flag = if self.password {
+                "--password"
+            } else {
+                "--lines 0"
+            };
             if self.loading.is_some() {
                 return fail(
                     ErrorKind::ArgumentConflict,
-                    "--loading cannot be used with --password, which shows no list".into(),
+                    format!("--loading cannot be used with {flag}, which shows no list"),
                 );
             }
             if self.kb_custom.iter().any(|b| b.confirm.is_some()) {
                 return fail(
                     ErrorKind::ArgumentConflict,
-                    "--kb-custom KEY=PROMPT cannot be used with --password: the prompt needs a row to show on".into(),
+                    format!(
+                        "--kb-custom KEY=PROMPT cannot be used with {flag}: the prompt needs a row to show on"
+                    ),
                 );
             }
         }
@@ -362,6 +376,19 @@ mod tests {
         }
         // A binding without a prompt prints the input, as Enter does.
         assert!(try_parse(&["--dmenu", "-P", "--kb-custom", "Alt+1"]).is_ok());
+    }
+
+    #[test]
+    fn zero_lines_refuses_flags_that_need_a_list() {
+        for args in [
+            &["--dmenu", "-l", "0", "--loading", "…"][..],
+            &["--dmenu", "--lines", "0", "--kb-custom", "Alt+1=Sure?"],
+        ] {
+            let err = try_parse(args).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::ArgumentConflict, "{args:?}");
+        }
+        assert!(try_parse(&["--dmenu", "-l", "0", "--kb-custom", "Alt+1"]).is_ok());
+        assert!(try_parse(&["--dmenu", "-l", "1", "--loading", "…"]).is_ok());
     }
 
     #[test]

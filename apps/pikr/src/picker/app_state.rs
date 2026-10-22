@@ -107,9 +107,8 @@ pub struct AppState {
     /// of the actual glyph. The underlying `query` signal still holds the
     /// real text — masking is display-only.
     pub password: bool,
-    /// Result rows the window is sized for (`--lines`). At 0 the list is not
-    /// built: the window has no room for a row, only for a sliver of
-    /// scrollbar.
+    /// Result rows the window is sized for (`--lines`). At 0 pikr is an
+    /// input-only prompt: nothing is ranked and Enter prints the query.
     pub rows: usize,
     /// Per-mode frecency (count × half-life decay). Loaded from disk at
     /// startup; bumped on Accept and persisted then.
@@ -126,6 +125,12 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Whether there is a list of rows: `-P` and `--lines 0` are bare
+    /// prompts, where Enter prints what was typed.
+    pub fn lists_rows(&self) -> bool {
+        !self.password && self.rows > 0
+    }
+
     /// Replaces the entries and rebuilds everything kept parallel to them.
     pub fn set_entries(&mut self, entries: Vec<Arc<Entry>>) {
         self.usage_keys = crate::picker::frecency::entry_keys(&entries);
@@ -140,9 +145,9 @@ impl AppState {
             query_len = query.chars().count(),
             "picker query reranked"
         );
-        // -P is a bare password prompt: rows ranked against the secret
-        // would reveal which of them it matches.
-        if self.password {
+        // A bare prompt ranks nothing: under -P, rows ranked against the
+        // secret would reveal which of them it matches.
+        if !self.lists_rows() {
             self.matches.clear();
             return;
         }

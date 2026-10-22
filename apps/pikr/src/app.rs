@@ -65,8 +65,8 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         (Some(_), Mode::Dmenu) => Some(modes::dmenu::read_stdin_in_background()?),
         _ => None,
     };
-    // -P is a bare password prompt: no rows, and stdin is left unread.
-    let entries: Vec<Arc<modes::Entry>> = if pending.is_some() || cli.password {
+    // -P and --lines 0 are bare prompts: no rows, and stdin is left unread.
+    let entries: Vec<Arc<modes::Entry>> = if pending.is_some() || cli.bare_prompt() {
         Vec::new()
     } else {
         mode.collect()?.into_iter().map(Arc::new).collect()

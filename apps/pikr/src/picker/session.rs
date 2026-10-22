@@ -458,7 +458,8 @@ impl Session {
     fn accept(&mut self) -> Outcome {
         let payloads = self.selected_payloads();
         let query = self.app.picker.query.clone();
-        if self.app.password {
+        if !self.app.lists_rows() {
+            self.push_history(query.trim());
             return Outcome::exit(vec![self.query_payload()], 0);
         }
         if payloads.is_empty() {
@@ -615,6 +616,24 @@ mod tests {
             Outcome::exit(vec![Payload::Stdout("al".into())], 0)
         );
         assert!(!s.usage_dirty && !s.history_dirty);
+    }
+
+    #[test]
+    fn zero_lines_accept_returns_the_input_in_any_mode_and_keeps_history() {
+        for mode in [CliMode::Dmenu, CliMode::Drun, CliMode::Calc] {
+            let mut state = app_state(mode, &["alpha"], false);
+            state.rows = 0;
+            let mut s = Session::new(state, None);
+            // "al" would match the row; there is no row to accept.
+            type_text(&mut s, " al ");
+            assert!(s.app.matches.is_empty(), "{mode:?}");
+            assert_eq!(
+                s.handle_key(&named(NamedKey::Enter), none()),
+                Outcome::exit(vec![Payload::Stdout("al".into())], 0),
+                "{mode:?}"
+            );
+            assert!(s.history_dirty && !s.usage_dirty, "{mode:?}");
+        }
     }
 
     #[test]

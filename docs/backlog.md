@@ -475,14 +475,9 @@ Re-verified against the tree on 2026-10-18.
 
 - Coarse-granularity same-tick cache staleness; non-UTF8 PATH names (skipped by
   `run::scan_dir`). (review pass 2026-08-06; not re-checked individually)
-- `--lines 0` opens with no rows and still selects the first match, so Return
-  accepts a row the user cannot see (Hyprland, 2026-10-22). Needs the user's
-  call: keep that, or make zero lines an input-only prompt that prints the
-  query. Since 2026-10-22 the view builds no list at zero rows
-  (`AppState::rows`), which removed a 1 px scrollbar sliver (the window height
-  rounds up to `ui::run::SIZE_STEP`, leaving the list a pixel). `--width 0` and
-  oversized `--lines` / `--width` are handled by `ui::run::fitted_size` since
-  2026-10-22.
+- `--width 0` and oversized `--lines` / `--width` are handled by
+  `ui::run::fitted_size` since 2026-10-22. `--lines 0` is an input-only prompt
+  (`AppState::lists_rows`, the owner's call on 2026-10-22).
 - No accept path runs a shell on a string pikr builds from untrusted text:
   launches are `Command::new(program).args(args)`. The two script strings are
   clipboard's `copy_script` (`clipboard::unix_impl`, `id` parsed as `u64`, the

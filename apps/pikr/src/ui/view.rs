@@ -237,9 +237,8 @@ impl View {
                 );
             });
 
-            // -P is a bare password prompt: no list under it. Nor is there one
-            // in a window sized for no rows.
-            if app.password || app.rows == 0 {
+            // -P and --lines 0 are bare prompts: no list under them.
+            if !app.lists_rows() {
                 self.list = None;
             } else if let Some(text) = &session.loading {
                 ui.block(".loading", &[], |ui| {
@@ -304,7 +303,7 @@ impl View {
                 };
                 ui.span(".mode-name", mode_name.as_str(), &[]);
                 ui.block(".spacer", &[], |_| {});
-                if app.password {
+                if !app.lists_rows() {
                     return;
                 }
                 let total = app.matches.len();

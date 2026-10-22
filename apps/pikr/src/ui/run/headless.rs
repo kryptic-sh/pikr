@@ -159,10 +159,12 @@ fn stdout(text: &str) -> Vec<Payload> {
 #[test]
 fn a_window_sized_for_no_rows_builds_no_list() {
     let ranked = |rows| {
+        // Ranked before the rows are set, so the view alone is what keeps
+        // the list out: at 0 rows nothing would be ranked.
         let mut state = fruit();
-        state.rows = rows;
         state.rerank();
         assert_eq!(state.matches.len(), 3);
+        state.rows = rows;
         picker(state, "")
     };
     assert!(
@@ -301,6 +303,14 @@ fn password_prompt_prints_what_was_typed() {
     let state = app_state(CliMode::Dmenu, &["a", "b"], true);
     let got = run(picker(state, ""), &[Input::Text("S3cr3t"), key(RETURN)]);
     assert_eq!(got, (stdout("S3cr3t"), 0));
+}
+
+#[test]
+fn zero_lines_prints_what_was_typed() {
+    let mut state = app_state(CliMode::Dmenu, &["alpha"], false);
+    state.rows = 0;
+    let got = run(picker(state, ""), &[Input::Text("al"), key(RETURN)]);
+    assert_eq!(got, (stdout("al"), 0));
 }
 
 #[test]
