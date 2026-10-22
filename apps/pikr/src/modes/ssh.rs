@@ -1274,6 +1274,7 @@ github.com,140.82.121.4 ssh-ed25519 AAAAC3Nza
     }
 
     /// File names `pattern` expands to in `dir`.
+    #[cfg(unix)]
     fn globbed(dir: &Path, pattern: &str) -> Vec<String> {
         glob_paths(&dir.join(pattern))
             .iter()
