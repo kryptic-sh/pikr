@@ -627,7 +627,17 @@ macOS and Windows.
   left pikr running but not in the foreground. Options: close on focus loss as
   rofi and Windows' Run box do (exit code 1, as a cancel), or keep it open and
   bring it back some other way (show it in Alt-Tab, or a second launch
-  refocusing the first). Unix compositors were not checked for the same case.
+  refocusing the first). On unix, read from crcbl-shell 0.8.1 and
+  `create_window`, not run: on a Wayland compositor with layer-shell (Hyprland,
+  sway) pikr is an Overlay layer surface with `keyboard_interactivity`
+  exclusive, and crcbl sets `PANEL_EXCLUSIVE_KEYBOARD` there, so the compositor
+  keeps the keyboard on pikr while it is mapped and a click elsewhere cannot
+  take it; the stuck case should not arise. Without layer-shell (GNOME's Mutter)
+  and on X11, crcbl has no `PANEL`, so pikr opens as an ordinary toplevel: it
+  can lose focus, but it is not kept on top and it is listed in Alt-Tab, so the
+  keyboard can get back to it. Closing on focus loss would change only those
+  toplevel cases on unix. Whether Hyprland's own binds (a workspace switch)
+  still fire over an exclusive layer surface was not checked.
 - Launched from a script, pikr often does not get the foreground: in 24 launches
   on 2026-10-23 (`Process.Start` from PowerShell), the first launch from each
   fresh PowerShell process never became the foreground window within 8 s (10 of
