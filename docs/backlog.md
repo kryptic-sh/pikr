@@ -103,10 +103,15 @@
     during the pre-edit pikr's thread shows a visible `MSCTFIME Composition`
     window (60x18, right after the inline reading), and screenshots
     showed にほんご and, after Space, 日本語 twice. The commit still worked
-    (Enter printed `日本語`). Reported to crcbl with the likely cause: its
-    window procedure still passes `WM_IME_STARTCOMPOSITION` and
-    `WM_IME_COMPOSITION` to `DefWindowProc`, which is what raises the window
-    through the TSF bridge. Re-check on the crcbl release that fixes it. Not
+    (Enter printed `日本語`). crcbl confirmed the cause: its window procedure
+    still passes `WM_IME_STARTCOMPOSITION` and `WM_IME_COMPOSITION` to
+    `DefWindowProc`, which raises the window through the TSF bridge even with
+    the flag cleared. Their fix (not yet in a release) keeps both away from
+    `DefWindowProc` and takes the commit from `GCS_RESULTSTR` instead of
+    `WM_CHAR`; their CI test with the Japanese IME asserts no visible
+    composition window. Re-check on the crcbl release that carries it: no
+    `MSCTFIME Composition` window on pikr's thread, and since the commit path
+    changed, Space then two Enters must still print `日本語` exactly once. Not
     checked: AppKit.
   - `ui::run::headless` drives named keys through `HeadlessShell::key_press`. An
     "events due at pump N" queue, which would let those tests script input
