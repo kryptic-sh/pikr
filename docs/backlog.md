@@ -417,9 +417,11 @@
     Edit whose ValuePattern and TextPattern caret follow typing and Backspace
     (`a` caret 1, `alp` caret 3, Backspace `al` caret 2), under `-P` its value
     is `●●●`; each row's label is one Text (`alpha`); the selected ListItem
-    follows Down (`alpha` to `beta`) and re-ranking. Each ListItem's own Name is
-    still empty, the label being its child — whether Narrator reads the row from
-    the child was not heard. Not checked: Orca or Narrator speaking any of it,
+    follows Down (`alpha` to `beta`) and re-ranking. Each ListItem's own Name
+    was still empty there, the label being its child; since then `result_row`
+    names the list row itself (`Ui::current_key`, its label and
+    `(description)`), which the headless test checks, but no UI Automation
+    client has read it yet. Not checked: Orca or Narrator speaking any of it,
     and the `:` line on Windows. Before the change (2026-10-22, `1712f0b`) no
     row was selected and the query was a Text with no ValuePattern.
 - **Project constraints for the GUI** (from the migration's design, still

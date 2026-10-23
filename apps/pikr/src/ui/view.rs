@@ -508,6 +508,15 @@ fn result_row(
         let (lo, hi) = (a.min(picker.selected), a.max(picker.selected));
         (lo..=hi).contains(&mi)
     });
+    // The list's row node, which a screen reader names a list item by: its
+    // own contents only name the label and description blocks inside it.
+    if let Some(list_row) = ui.current_key() {
+        let name = match &entry.description {
+            Some(desc) => format!("{} ({desc})", entry.label),
+            None => entry.label.clone(),
+        };
+        ui.set_accessible_label(list_row, &name);
+    }
     let class = if mi == picker.selected {
         ".row.selected"
     } else if in_visual_range {

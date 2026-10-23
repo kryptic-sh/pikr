@@ -238,7 +238,12 @@ fn screen_readers_hear_whole_labels_the_selected_row_and_the_query() {
         .map(|(id, _)| *id)
         .collect();
     assert_eq!(selected.len(), 1, "one row is selected");
-    assert_eq!(labels_under(selected[0]), [selected_label]);
+    assert_eq!(
+        labels_under(selected[0]),
+        std::slice::from_ref(&selected_label)
+    );
+    // The list item carries the name itself, as UI Automation reads it.
+    assert_eq!(node(selected[0]).label(), Some(selected_label.as_str()));
 
     let (_, field) = tree
         .nodes

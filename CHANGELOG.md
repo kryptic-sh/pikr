@@ -23,9 +23,9 @@ and this project adheres to
 ### Changed
 
 - Screen readers read a result whose characters matched the query as one name
-  ("gamma", not "ga" then "mma"), hear the row Return accepts as selected, and
-  hear the query as an editable field with its caret. Before, the query read as
-  plain text.
+  ("gamma", not "ga" then "mma"), name each list item by its result, hear the
+  row Return accepts as selected, and hear the query as an editable field with
+  its caret. Before, the query read as plain text.
 - The window's GPU device, swapchain and frame pacing now come from crcbl-app's
   `Presenter` instead of pikr's own setup. Behaviour is the same, with one
   difference: when the best-ranked GPU can only draw pikr opaque, a GPU that can
