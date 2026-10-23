@@ -418,12 +418,15 @@
     (`a` caret 1, `alp` caret 3, Backspace `al` caret 2), under `-P` its value
     is `●●●`; each row's label is one Text (`alpha`); the selected ListItem
     follows Down (`alpha` to `beta`) and re-ranking. Each ListItem's own Name
-    was still empty there, the label being its child; since then `result_row`
-    names the list row itself (`Ui::current_key`, its label and
-    `(description)`), which the headless test checks, but no UI Automation
-    client has read it yet. Not checked: Orca or Narrator speaking any of it,
-    and the `:` line on Windows. Before the change (2026-10-22, `1712f0b`) no
-    row was selected and the query was a Text with no ValuePattern.
+    was still empty there, the label being its child; since `2550ee8`
+    `result_row` names the list row itself (`Ui::current_key`, its label and
+    `(description)`), and the same client read the ListItems as `alpha`, `beta`,
+    `gamma` (2026-10-23). The `:` line opens as a second Edit beside the query,
+    its value including the colon (`:`, then `:ab` with caret 3). Not checked: a
+    row with a description through UI Automation (dmenu rows have none), and
+    Orca or Narrator speaking any of it. Before the change (2026-10-22,
+    `1712f0b`) no row was selected and the query was a Text with no
+    ValuePattern.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
