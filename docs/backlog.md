@@ -101,18 +101,28 @@
     Ctrl+V does) was already up. The window procedure now reads the modifiers
     with each key, button and wheel message; their desktop test of an injected
     `VK_CONTROL` passes on CI, and Windows 11 sets the sided bit for it anyway.
-    The fix is on crcbl main, unreleased. Once pikr takes that release, re-run
-    the paste with a generic `VK_CONTROL`. Needs the Windows test desktop and
-    synthesized keys, so the user's go-ahead.
+    The fix is crcbl main `48bf9d99`, in no tag yet (v0.8.1 is the newest).
+    Baseline on 0.8.1 (2026-10-23, user-approved keys sent only while pikr held
+    the foreground): `beta`, then generic `VK_CONTROL` + U in one `SendInput`,
+    then `gam` and Return printed `betagam` in 4 runs of 4 — the Ctrl-U never
+    cleared the query and no `u` was typed either — while `VK_LCONTROL` + U sent
+    one key per call, 30 ms apart, cleared it and printed `gamma`. Once pikr
+    takes the release, repeat the batched run: it should print `gamma`.
   - IME, checked on Windows 2026-10-20 with the Microsoft Japanese IME (keys
     synthesized while pikr held the foreground): the pre-edit draws inline and
     underlined at the caret, the candidate list opens right below the caret, the
     Enter that commits does not reach pikr, and the commit arrives whole (a
     second Enter printed `日本語`). On crcbl 0.6.0 Windows also drew its own
     composition window beside pikr's inline pre-edit, so the reading showed
-    twice; crcbl 0.7.0 clears `ISC_SHOWUICOMPOSITIONWINDOW`, which pikr now
-    uses, but the IME has not been driven on screen since the bump. Not checked:
-    AppKit.
+    twice. **Still doubled on crcbl 0.8.1** (driven 2026-10-23): crcbl 0.7.0
+    clears `ISC_SHOWUICOMPOSITIONWINDOW` in `WM_IME_SETCONTEXT`, yet during the
+    pre-edit pikr's thread shows a visible `MSCTFIME Composition` window (60x18,
+    right after the inline reading), and screenshots showed にほんご and, after
+    Space, 日本語 twice. The commit still worked (Enter printed `日本語`).
+    Reported to crcbl with the likely cause: its window procedure still passes
+    `WM_IME_STARTCOMPOSITION` and `WM_IME_COMPOSITION` to `DefWindowProc`, which
+    is what raises the window through the TSF bridge. Re-check on the crcbl
+    release that fixes it. Not checked: AppKit.
   - `ui::run::headless` drives named keys through `HeadlessShell::key_press`. An
     "events due at pump N" queue, which would let those tests script input
     across frames, is in crcbl's backlog, unscheduled.
@@ -607,17 +617,23 @@ macOS and Windows.
   style `0x00200088`
   (`WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOOLWINDOW | WS_EX_TOPMOST`), without
   `WS_EX_APPWINDOW`, as at crcbl 0.3.0, when no taskbar button showed in a
-  screenshot. The Alt-Tab switcher itself was not opened (it needs synthesized
-  keys).
-- drun accept on Windows was not driven through the GUI keystroke path; only
-  `drun_windows::launch` was called directly (Notepad from its WindowsApps
-  package and `cmd.exe` from its known-folder id both started). dmenu, emoji and
-  calc accepts WERE driven end-to-end with synthesized keys.
-- History/frecency persistence on Windows is covered by the path tests
-  (`state_file_path_resolves_under_a_pikr_dir`,
-  `default_path_resolves_under_a_pikr_dir`); a real accept writing
-  `%LOCALAPPDATA%\pikr\history.toml` was not observed (the session lost its
-  foreground window before that probe ran).
+  screenshot. The Alt-Tab switcher, opened over pikr with synthesized Alt+Tab
+  (2026-10-23, crcbl 0.8.1), listed 8 windows and none was pikr's.
+- **Decision: what pikr does when it loses the foreground.** pikr ignores a
+  focus loss (`ui::run`'s `ShellEvent::Focus` arm only clears the pre-edit and
+  restarts the blink), and on Windows it is topmost and left out of Alt-Tab. So
+  after Alt-Tab, Win, or a click elsewhere it stays on top, unfocused, and the
+  keyboard cannot get back to it: on 2026-10-23 an Alt+Tab cancelled with Escape
+  left pikr running but not in the foreground. Options: close on focus loss as
+  rofi and Windows' Run box do (exit code 1, as a cancel), or keep it open and
+  bring it back some other way (show it in Alt-Tab, or a second launch
+  refocusing the first). Unix compositors were not checked for the same case.
+- Launched from a script, pikr often does not get the foreground: in 24 launches
+  on 2026-10-23 (`Process.Start` from PowerShell), the first launch from each
+  fresh PowerShell process never became the foreground window within 8 s (10 of
+  10), and every later launch from the same process did (14 of 14). That fits
+  Windows' foreground lock refusing a process that has not had recent input; a
+  launch from a hotkey tool, which owns the last input, was not tried.
 - `--kb-custom KEY=PROMPT` with no matching row now shows the confirm card in
   the empty-state row; its on-screen placement was not looked at. The e2e test
   `kb_custom_confirm_with_no_match_prints_query` covers the behaviour (CI,
@@ -626,7 +642,15 @@ macOS and Windows.
   build): run collected 1044 `PATH` executables in 8 ms and drew them (first
   paint 384 ms; the counter reads 256, `max_results`); ssh listed this host's
   three configured hosts in 5 ms (not screenshotted, the names are private).
-  Accepting a row in either was not driven; it needs synthesized keys.
+  Accepts driven with synthesized keys on 2026-10-23: drun `notepad` + Return
+  started Notepad from its WindowsApps package, run `notepad` + Return started
+  it through `C:\WINDOWS\system32\notepad.exe`, each recorded in `usage.toml`; a
+  dmenu accept wrote `history.toml` newest first and Ctrl-P recalled it. The ssh
+  accept ran with `TERMINAL` pointed at a pwsh probe script (so no connection
+  was made): pikr launched it with `-NoExit -Command "ssh '<host>'"` and the
+  argument parsed back to `ssh` and a host from `known_hosts`, unquoted. Not
+  exercised: this host's default terminal, `wt.exe` (`-- ssh <host>`), and a
+  real connection.
 - Clipboard mode reads Windows' clipboard history through WinRT
   (`clipboard::windows_impl::history_texts`, on a thread of its own in a
   single-threaded apartment, since `Clipboard` refuses activation from an MTA:
