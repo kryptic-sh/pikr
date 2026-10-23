@@ -622,7 +622,14 @@ macOS and Windows.
   ordinary toplevel, which a click elsewhere now closes. If the sway e2e suite
   or the startup gate turns flaky, check whether a focus leave during setup now
   closes pikr. Whether Hyprland's own binds still fire over an exclusive layer
-  surface was not checked.
+  surface was not checked. Also not checked, and the likeliest false close: as a
+  toplevel (X11, Wayland without layer-shell) a transient leave, such as an
+  IME's candidate window or the compositor briefly taking the focus, would now
+  close pikr mid-typing. On Windows the Microsoft IME's candidate list does not:
+  with `7f1f66b` (2026-10-24) pikr stayed open through two Space conversions,
+  the second opening the candidate list, and committed. If it shows up, ignore a
+  leave that a focus regain follows within a short grace period instead of
+  closing at once.
 - Launched from a script, pikr often does not get the foreground: in 33 launches
   on 2026-10-23 (`Process.Start` from PowerShell), the first launch from a fresh
   PowerShell process usually never became the foreground window within 8 s (11
