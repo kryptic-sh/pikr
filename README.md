@@ -165,6 +165,9 @@ Normal mode:
 Insert mode: `<C-v>` or `<S-Insert>` pastes the clipboard's text at the caret,
 line breaks becoming spaces.
 
+Moving the keyboard focus away from pikr (Alt-Tab, a click on another window)
+cancels it as `<Esc>` does, with exit code 1.
+
 ## Config
 
 `$XDG_CONFIG_HOME/pikr/config.toml` (`%APPDATA%\pikr\config.toml` on Windows).

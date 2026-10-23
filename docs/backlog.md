@@ -609,25 +609,20 @@ macOS and Windows.
   `WS_EX_APPWINDOW`, as at crcbl 0.3.0, when no taskbar button showed in a
   screenshot. The Alt-Tab switcher, opened over pikr with synthesized Alt+Tab
   (2026-10-23, crcbl 0.8.1), listed 8 windows and none was pikr's.
-- **Decision: what pikr does when it loses the foreground.** pikr ignores a
-  focus loss (`ui::run`'s `ShellEvent::Focus` arm only clears the pre-edit and
-  restarts the blink), and on Windows it is topmost and left out of Alt-Tab. So
-  after Alt-Tab, Win, or a click elsewhere it stays on top, unfocused, and the
-  keyboard cannot get back to it: on 2026-10-23 an Alt+Tab cancelled with Escape
-  left pikr running but not in the foreground. Options: close on focus loss as
-  rofi and Windows' Run box do (exit code 1, as a cancel), or keep it open and
-  bring it back some other way (show it in Alt-Tab, or a second launch
-  refocusing the first). On unix, read from crcbl-shell 0.8.1 and
-  `create_window`, not run: on a Wayland compositor with layer-shell (Hyprland,
-  sway) pikr is an Overlay layer surface with `keyboard_interactivity`
-  exclusive, and crcbl sets `PANEL_EXCLUSIVE_KEYBOARD` there, so the compositor
-  keeps the keyboard on pikr while it is mapped and a click elsewhere cannot
-  take it; the stuck case should not arise. Without layer-shell (GNOME's Mutter)
-  and on X11, crcbl has no `PANEL`, so pikr opens as an ordinary toplevel: it
-  can lose focus, but it is not kept on top and it is listed in Alt-Tab, so the
-  keyboard can get back to it. Closing on focus loss would change only those
-  toplevel cases on unix. Whether Hyprland's own binds (a workspace switch)
-  still fire over an exclusive layer surface was not checked.
+- Closing on focus loss (decided 2026-10-24): once pikr has had the keyboard
+  focus, `ui::run`'s `ShellEvent::Focus` arm exits 1 when it goes (`had_focus`);
+  a loss before the first focus does not close it. Headless tests cover both
+  halves and each went red on its mutant. On Windows (2026-10-24, release
+  build), opening Alt-Tab over pikr closed it with exit 1 and the log line "pikr
+  lost the keyboard focus; closing". Not run on unix, where only the toplevel
+  cases change (read from crcbl-shell 0.8.1 and `create_window`): with
+  layer-shell (Hyprland, sway) pikr is an Overlay surface with exclusive
+  keyboard (`PANEL_EXCLUSIVE_KEYBOARD`), so a leave should come only from
+  something above it such as a lock screen; GNOME's Mutter and X11 open it as an
+  ordinary toplevel, which a click elsewhere now closes. If the sway e2e suite
+  or the startup gate turns flaky, check whether a focus leave during setup now
+  closes pikr. Whether Hyprland's own binds still fire over an exclusive layer
+  surface was not checked.
 - Launched from a script, pikr often does not get the foreground: in 33 launches
   on 2026-10-23 (`Process.Start` from PowerShell), the first launch from a fresh
   PowerShell process usually never became the foreground window within 8 s (11

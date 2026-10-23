@@ -22,6 +22,11 @@ and this project adheres to
 
 ### Changed
 
+- pikr closes, with exit code 1 as a cancel, when it loses the keyboard focus it
+  had (Alt-Tab, a click on another window). Before, it stayed open and
+  unfocused; on Windows, where it is topmost and left out of Alt-Tab, the
+  keyboard could not get back to it. A focus that is refused or arrives late at
+  startup does not close it.
 - Screen readers read a result whose characters matched the query as one name
   ("gamma", not "ga" then "mma"), name each list item by its result, hear the
   row Return accepts as selected, and hear the query as an editable field with

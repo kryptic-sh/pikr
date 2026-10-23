@@ -27,6 +27,8 @@ enum Input {
     /// numbers reads from 1, and its own answer would arrive only after the
     /// rest of the script.
     Clipboard(&'static str),
+    /// The window system gives (`true`) or takes the keyboard focus.
+    Focus(bool),
 }
 
 const ESCAPE: KeyCode = KeyCode::Escape;
@@ -67,6 +69,7 @@ fn run(content: Content, input: &[Input]) -> (Vec<Payload>, i32) {
                         shell.set_modifiers(ShellModifiers::empty());
                     }
                     Input::Release(code) => shell.key_release(window, code).unwrap(),
+                    Input::Focus(focused) => shell.set_focus(window, focused).unwrap(),
                 }
             }
             shell.request_close(window).unwrap();
@@ -345,6 +348,21 @@ fn message_modal_exits_0_on_one_escape() {
 fn return_accepts_the_matched_row() {
     let got = run(picker(fruit(), "ban"), &[key(RETURN)]);
     assert_eq!(got, (stdout("banana"), 0));
+}
+
+#[test]
+fn losing_the_focus_it_had_closes_pikr_with_exit_1() {
+    // The Return after the loss would accept "banana" if pikr were still open.
+    let input = [Input::Focus(true), Input::Focus(false), key(RETURN)];
+    assert_eq!(run(picker(fruit(), "ban"), &input), (Vec::new(), 1));
+}
+
+#[test]
+fn a_focus_loss_before_the_first_focus_does_not_close_pikr() {
+    let input = [Input::Focus(false), key(RETURN)];
+    assert_eq!(run(picker(fruit(), "ban"), &input), (stdout("banana"), 0));
+    let input = [Input::Focus(false), Input::Focus(true), key(RETURN)];
+    assert_eq!(run(picker(fruit(), "ban"), &input), (stdout("banana"), 0));
 }
 
 #[test]

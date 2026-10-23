@@ -253,7 +253,9 @@ struct Window<'a> {
     mods: crate::picker::input::Modifiers,
     startup_started: Instant,
     painted: bool,
-    focus_logged: bool,
+    /// The keyboard focus has arrived at least once. Losing it after that
+    /// closes pikr; a loss before it (a refused or late focus) does not.
+    had_focus: bool,
 }
 
 impl<'a> Window<'a> {
@@ -315,7 +317,7 @@ impl<'a> Window<'a> {
             mods: Default::default(),
             startup_started,
             painted: false,
-            focus_logged: false,
+            had_focus: false,
         })
     }
 
@@ -504,13 +506,21 @@ impl<'a> Window<'a> {
             }
             ShellEvent::Focus { focused, .. } => {
                 self.focused = focused;
+                // Losing the keyboard after having it is a cancel, as in
+                // rofi and the Windows Run box: on Windows pikr is topmost and
+                // out of Alt-Tab, so an unfocused pikr could not be reached
+                // from the keyboard again.
+                if !focused && self.had_focus {
+                    tracing::debug!("pikr lost the keyboard focus; closing");
+                    return Ok(Step::Exit(Vec::new(), 1));
+                }
                 // A composition does not survive losing the keyboard; a
                 // stale one would keep every key blocked.
                 if !focused {
                     self.view.preedit = Preedit::default();
                 }
-                if focused && !self.focus_logged {
-                    self.focus_logged = true;
+                if focused && !self.had_focus {
+                    self.had_focus = true;
                     tracing::debug!(
                         elapsed_us = self.startup_started.elapsed().as_micros(),
                         "startup first focus received"
