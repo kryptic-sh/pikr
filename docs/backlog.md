@@ -101,13 +101,14 @@
     Ctrl+V does) was already up. The window procedure now reads the modifiers
     with each key, button and wheel message; their desktop test of an injected
     `VK_CONTROL` passes on CI, and Windows 11 sets the sided bit for it anyway.
-    The fix is crcbl main `48bf9d99`, in no tag yet (v0.8.1 is the newest).
-    Baseline on 0.8.1 (2026-10-23, user-approved keys sent only while pikr held
-    the foreground): `beta`, then generic `VK_CONTROL` + U in one `SendInput`,
-    then `gam` and Return printed `betagam` in 4 runs of 4 — the Ctrl-U never
-    cleared the query and no `u` was typed either — while `VK_LCONTROL` + U sent
-    one key per call, 30 ms apart, cleared it and printed `gamma`. Once pikr
-    takes the release, repeat the batched run: it should print `gamma`.
+    The fix is crcbl `48bf9d99`, released in crcbl 0.9.0, which pikr builds on
+    since 2026-10-23. Baseline on 0.8.1 (2026-10-23, user-approved keys sent
+    only while pikr held the foreground): `beta`, then generic `VK_CONTROL` + U
+    in one `SendInput`, then `gam` and Return printed `betagam` in 4 runs of 4 —
+    the Ctrl-U never cleared the query and no `u` was typed either — while
+    `VK_LCONTROL` + U sent one key per call, 30 ms apart, cleared it and printed
+    `gamma`. Once pikr takes the release, repeat the batched run: it should
+    print `gamma`.
   - IME, checked on Windows 2026-10-20 with the Microsoft Japanese IME (keys
     synthesized while pikr held the foreground): the pre-edit draws inline and
     underlined at the caret, the candidate list opens right below the caret, the

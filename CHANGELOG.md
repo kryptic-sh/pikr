@@ -34,6 +34,10 @@ and this project adheres to
 - History, frecency and the drun caches are synced to disk when they are saved:
   the new file before it is renamed into place, and its directory after. A power
   cut right after an accept no longer loses that accept's history.
+- Built on crcbl 0.9.0 (was 0.8.1). On Windows it reads the modifiers with each
+  key rather than after a whole batch of input, so a Ctrl shortcut whose press
+  and release arrive together (as from a tool that injects keys) no longer loses
+  its Ctrl and types nothing.
 
 ## [0.9.2] - 2026-10-22
 
