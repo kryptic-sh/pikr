@@ -411,11 +411,17 @@
     `screen_readers_hear_whole_labels_the_selected_row_and_the_query` reads all
     three from `Ui::accessibility_update`. On AT-SPI, the label and the selected
     state were checked in a patched clone on 2026-10-22 ("gamma" read as one
-    label, `selected`); the text input was not read through AT-SPI. Not checked:
-    Orca speaking it (Orca is not installed), and UI Automation on Windows since
-    the change. Before it, .NET's `System.Windows.Automation` client
-    (2026-10-22, `1712f0b`) found every ListItem's name empty, none selected,
-    and the query a Text with no ValuePattern. Narrator was not run.
+    label, `selected`); the text input was not read through AT-SPI. On Windows,
+    .NET's `System.Windows.Automation` client read `028b1a0` on 2026-10-23
+    (dmenu, keys synthesized while pikr held the foreground): the query is an
+    Edit whose ValuePattern and TextPattern caret follow typing and Backspace
+    (`a` caret 1, `alp` caret 3, Backspace `al` caret 2), under `-P` its value
+    is `●●●`; each row's label is one Text (`alpha`); the selected ListItem
+    follows Down (`alpha` to `beta`) and re-ranking. Each ListItem's own Name is
+    still empty, the label being its child — whether Narrator reads the row from
+    the child was not heard. Not checked: Orca or Narrator speaking any of it,
+    and the `:` line on Windows. Before the change (2026-10-22, `1712f0b`) no
+    row was selected and the query was a Text with no ValuePattern.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
@@ -617,10 +623,10 @@ macOS and Windows.
   keyboard can get back to it. Closing on focus loss would change only those
   toplevel cases on unix. Whether Hyprland's own binds (a workspace switch)
   still fire over an exclusive layer surface was not checked.
-- Launched from a script, pikr often does not get the foreground: in 24 launches
-  on 2026-10-23 (`Process.Start` from PowerShell), the first launch from each
-  fresh PowerShell process never became the foreground window within 8 s (10 of
-  10), and every later launch from the same process did (14 of 14). That fits
+- Launched from a script, pikr often does not get the foreground: in 33 launches
+  on 2026-10-23 (`Process.Start` from PowerShell), the first launch from a fresh
+  PowerShell process usually never became the foreground window within 8 s (11
+  of 12), and every later launch from the same process did (21 of 21). That fits
   Windows' foreground lock refusing a process that has not had recent input; a
   launch from a hotkey tool, which owns the last input, was not tried.
 - `--kb-custom KEY=PROMPT` with no matching row now shows the confirm card in
