@@ -185,6 +185,72 @@ fn a_frame_presents_once_the_window_system_asks_for_it() {
     );
 }
 
+/// What a screen reader is handed: a highlighted label is named whole, the
+/// row Return accepts is selected, and the query is an editable field with
+/// its caret.
+#[test]
+fn screen_readers_hear_whole_labels_the_selected_row_and_the_query() {
+    use crcbl_shell::accesskit::Role;
+    let mut state = fruit();
+    state.picker.query = "a".into();
+    state.picker.query_cursor = 1;
+    state.rerank();
+    state.picker.selected = 1;
+    let selected_label = state.entries[state.matches[1].index].label.clone();
+    let tree = with_window(
+        VISIBLE_ROWS,
+        |_, _| {},
+        |window, _| {
+            let content = Content::Picker {
+                session: Box::new(Session::new(state, None).without_persistence()),
+                pending: None,
+            };
+            window.frame(&content, PointerInput::hovering(Vec2::ZERO))?;
+            Ok(window.ui.accessibility_update())
+        },
+    );
+    let node = |id| &tree.nodes.iter().find(|(n, _)| *n == id).unwrap().1;
+    // crcbl names a Label by its value.
+    let labels_under = |id| {
+        let mut out = Vec::new();
+        let mut stack = vec![id];
+        while let Some(id) = stack.pop() {
+            let n = node(id);
+            if n.role() == Role::Label {
+                out.extend(n.value().map(str::to_owned));
+            }
+            stack.extend(n.children().iter().copied());
+        }
+        out
+    };
+
+    // "banana" is drawn as runs around its matched "a".
+    assert!(
+        tree.nodes
+            .iter()
+            .any(|(_, n)| n.role() == Role::Label && n.value() == Some("banana")),
+        "no label reads banana"
+    );
+    let selected: Vec<_> = tree
+        .nodes
+        .iter()
+        .filter(|(_, n)| n.role() == Role::ListItem && n.is_selected() == Some(true))
+        .map(|(id, _)| *id)
+        .collect();
+    assert_eq!(selected.len(), 1, "one row is selected");
+    assert_eq!(labels_under(selected[0]), [selected_label]);
+
+    let (_, field) = tree
+        .nodes
+        .iter()
+        .find(|(_, n)| n.role() == Role::TextInput)
+        .expect("the query is a text input");
+    let caret = field.text_selection().expect("the query has a caret");
+    assert_eq!(caret.focus.character_index, 1);
+    assert_eq!(caret.anchor.character_index, 1);
+    assert_eq!(node(caret.focus.node).value(), Some("a"));
+}
+
 #[test]
 fn a_window_sized_for_no_rows_builds_no_list() {
     let ranked = |rows| {

@@ -256,13 +256,19 @@ impl View {
                         });
                         return;
                     }
-                    let list =
-                        ui.list("#results", app.matches.len(), ROW_PITCH as f32, |ui, mi| {
+                    // Selected for screen readers: the row Return accepts.
+                    let list = ui.selectable_list(
+                        "#results",
+                        app.matches.len(),
+                        ROW_PITCH as f32,
+                        Some(picker.selected),
+                        |ui, mi| {
                             let row = result_row(ui, session, mi, icons, atlas);
                             if row {
                                 clicked = Some(mi);
                             }
-                        });
+                        },
+                    );
                     self.list = Some(list.key);
                     ui.scrollbar("#results-bar", list.key);
                 });
@@ -361,7 +367,8 @@ impl View {
 /// a block over the character under it in Normal and Visual. The caret hides
 /// on the blink-off phase without moving the text. In Insert mode an input
 /// method's `preedit`, split at its own cursor, is drawn around the caret.
-/// Returns the caret's node.
+/// Returns the caret's node. Screen readers hear an editable field holding
+/// `text`, with the caret at `cursor`.
 ///
 /// The text is one span and the caret is laid over it where crcbl's layout
 /// of the same text puts it, so right-to-left and mixed text, which bidi
@@ -380,7 +387,9 @@ fn query(
     let cursor = cursor.min(chars.len());
     let blink = if blink_on { ".blink-on" } else { "" };
     if mode == VimMode::Insert && preedit.iter().any(|part| !part.is_empty()) {
-        return composing(ui, &chars, cursor, &format!(".caret{blink}"), preedit);
+        let (field, caret) = composing(ui, &chars, cursor, &format!(".caret{blink}"), preedit);
+        accessible_field(ui, field, text, cursor);
+        return caret;
     }
     let shown: String = chars.iter().collect();
     let byte = shown
@@ -392,7 +401,7 @@ fn query(
         .caret(byte)
         .x;
     let mut caret = None;
-    ui.block(".query", &[], |ui| {
+    let field = ui.block(".query", &[], |ui| {
         ui.span(".query-text", shown.as_str(), &[]);
         match mode {
             VimMode::Insert => {
@@ -412,7 +421,19 @@ fn query(
             }
         }
     });
+    accessible_field(ui, field.key, text, cursor);
     caret
+}
+
+/// Marks `field` for screen readers as an editable field holding `text`,
+/// with the caret before char `cursor`. Visual mode selects rows, not text,
+/// so the field never has a selection.
+fn accessible_field(ui: &mut Ui, field: NodeKey, text: &str, cursor: usize) {
+    let at = text
+        .char_indices()
+        .nth(cursor)
+        .map_or(text.len(), |(byte, _)| byte);
+    ui.set_accessible_text_input(field, text, at..at);
 }
 
 /// Inline style placing a caret `x` pixels from the query's left, over its
@@ -427,20 +448,21 @@ fn laid_over(x: f32) -> [Declaration; 2] {
 /// The query while an input method composes: the text split around the
 /// caret, the pre-edit underlined at it. Bidi cannot reorder across the
 /// split, so here a right-to-left query still puts the caret at the split.
+/// Returns the query's node and the caret's.
 fn composing(
     ui: &mut Ui,
     chars: &[char],
     cursor: usize,
     caret_class: &str,
     preedit: &[String; 2],
-) -> Option<NodeKey> {
+) -> (NodeKey, Option<NodeKey>) {
     let preedit = preedit
         .each_ref()
         .map(|part| part.chars().map(uncollapsed).collect::<String>());
     let before: String = chars[..cursor].iter().collect();
     let after: String = chars[cursor..].iter().collect();
     let mut caret = None;
-    ui.block(".query", &[], |ui| {
+    let field = ui.block(".query", &[], |ui| {
         ui.span(".query-text", before.as_str(), &[]);
         ui.span(".preedit", preedit[0].as_str(), &[]);
         // In the row here, not laid over it: taking back its own width keeps
@@ -453,7 +475,7 @@ fn composing(
         ui.span(".preedit", preedit[1].as_str(), &[]);
         ui.span(".query-text", after.as_str(), &[]);
     });
-    caret
+    (field.key, caret)
 }
 
 /// U+00A0, a space crcbl-ui never collapses.
@@ -517,13 +539,15 @@ fn result_row(
 }
 
 /// `text` as a row of runs, the characters at `positions` in the accent.
+/// Named `text` for screen readers, which would otherwise read it run by run.
 fn highlighted(ui: &mut Ui, selector: &str, text: &str, positions: &[u32]) {
-    ui.block(selector, &[], |ui| {
+    let block = ui.block(selector, &[], |ui| {
         for (run, matched) in runs(text, positions) {
             let shown: String = run.chars().map(uncollapsed).collect();
             ui.span(if matched { ".hl" } else { ".tx" }, shown.as_str(), &[]);
         }
     });
+    ui.set_accessible_label(block.key, text);
 }
 
 /// `text` split into maximal runs of matched and unmatched characters.

@@ -402,31 +402,20 @@
     updated as the query was typed. First paint with the feature was 122 to 149
     ms against 120 to 177 ms without (interleaved, load ~7). cargo-deny's three
     zbus "unmaintained" advisories are ignored in `deny.toml`, as crcbl does.
-    Gaps, both needing crcbl API: a row whose label is highlighted reads as its
-    runs (`gamma` matching `ga` gives labels "ga" and "mma"), since each span is
-    its own label and pikr cannot name the row; and the selected row is not
-    marked (`set_selected` is only set for tabs, select options and outliner
-    rows). Asked of crcbl 2026-10-21; crcbl main `d068f15c` (unreleased) added
-    `Ui::set_accessible_label` and `Ui::selectable_list`. Tried from pikr in a
-    patched clone on 2026-10-22: `selectable_list(…, Some(picker.selected), …)`
-    gives the current row AT-SPI's `selected` state; a block named with
-    `set_accessible_label` first came through with an empty name, which crcbl
-    fixed in `acfad914` (a Label's name is its value). Re-checked against that:
-    the matched row reads as one label, "gamma", and is `selected`. pikr's side
-    is two calls in `ui::view` (`highlighted` names its block; the results list
-    becomes `selectable_list`), kept as a patch until a crcbl release carries
-    them. Not checked: Orca speaking it (Orca is not installed). UI Automation
-    on Windows was read with .NET's `System.Windows.Automation` client
-    (2026-10-22, release build at `1712f0b`, drun mode, no input sent): pikr's
-    window holds the prompt and query as Text, a List with one ListItem per
-    visible row (each an Image and a Text with the app's name), the ScrollBar
-    and the status Texts, the same tree as AT-SPI on Linux, with the same two
-    gaps: every ListItem's name is empty and none is selected. The query is a
-    Text with no ValuePattern, so a reader cannot tell it is editable. Only
-    crcbl-ui's own `text_input` widget maps to `Role::TextInput`, and pikr draws
-    its query itself (caret, pre-edit, vim modes); asked crcbl on 2026-10-22 for
-    a way to mark a custom block as a text input with a value. Narrator was not
-    run.
+    Since crcbl 0.9.0 (2026-10-23) `ui::view` names a highlighted label whole
+    (`highlighted` calls `Ui::set_accessible_label`), builds the results with
+    `Ui::selectable_list` so the row Return accepts is selected, and marks the
+    query and the `:` line as text inputs with their caret (`accessible_field`,
+    `Ui::set_accessible_text_input`; under `-P` the value is the bullets drawn).
+    The headless test
+    `screen_readers_hear_whole_labels_the_selected_row_and_the_query` reads all
+    three from `Ui::accessibility_update`. On AT-SPI, the label and the selected
+    state were checked in a patched clone on 2026-10-22 ("gamma" read as one
+    label, `selected`); the text input was not read through AT-SPI. Not checked:
+    Orca speaking it (Orca is not installed), and UI Automation on Windows since
+    the change. Before it, .NET's `System.Windows.Automation` client
+    (2026-10-22, `1712f0b`) found every ListItem's name empty, none selected,
+    and the query a Text with no ValuePattern. Narrator was not run.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
