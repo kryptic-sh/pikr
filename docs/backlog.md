@@ -92,38 +92,22 @@
     around the caret to underline the pre-edit, so right-to-left text being
     composed into is reordered per piece, as the whole query was before
     `TextLayout::caret` (2026-10-21). Not seen with a real RTL input method.
-  - **Confirm injected generic Ctrl on crcbl's next release.** On 0.6.0 an
-    injected generic `VK_CONTROL` + V arrived as a plain v, so pikr's on-screen
-    paste test sent `VK_LCONTROL` (0xA2, scancode 0x1D) instead. crcbl found
-    (2026-10-23) that the cause was not the missing side: its Win32 shell read
-    `GetKeyboardState` when the pump translated each key, after the whole batch
-    had been dispatched, so a Ctrl released in the same batch (as an injected
-    Ctrl+V does) was already up. The window procedure now reads the modifiers
-    with each key, button and wheel message; their desktop test of an injected
-    `VK_CONTROL` passes on CI, and Windows 11 sets the sided bit for it anyway.
-    The fix is crcbl `48bf9d99`, released in crcbl 0.9.0, which pikr builds on
-    since 2026-10-23. Baseline on 0.8.1 (2026-10-23, user-approved keys sent
-    only while pikr held the foreground): `beta`, then generic `VK_CONTROL` + U
-    in one `SendInput`, then `gam` and Return printed `betagam` in 4 runs of 4 —
-    the Ctrl-U never cleared the query and no `u` was typed either — while
-    `VK_LCONTROL` + U sent one key per call, 30 ms apart, cleared it and printed
-    `gamma`. Once pikr takes the release, repeat the batched run: it should
-    print `gamma`.
   - IME, checked on Windows 2026-10-20 with the Microsoft Japanese IME (keys
     synthesized while pikr held the foreground): the pre-edit draws inline and
     underlined at the caret, the candidate list opens right below the caret, the
     Enter that commits does not reach pikr, and the commit arrives whole (a
     second Enter printed `日本語`). On crcbl 0.6.0 Windows also drew its own
     composition window beside pikr's inline pre-edit, so the reading showed
-    twice. **Still doubled on crcbl 0.8.1** (driven 2026-10-23): crcbl 0.7.0
-    clears `ISC_SHOWUICOMPOSITIONWINDOW` in `WM_IME_SETCONTEXT`, yet during the
-    pre-edit pikr's thread shows a visible `MSCTFIME Composition` window (60x18,
-    right after the inline reading), and screenshots showed にほんご and, after
-    Space, 日本語 twice. The commit still worked (Enter printed `日本語`).
-    Reported to crcbl with the likely cause: its window procedure still passes
-    `WM_IME_STARTCOMPOSITION` and `WM_IME_COMPOSITION` to `DefWindowProc`, which
-    is what raises the window through the TSF bridge. Re-check on the crcbl
-    release that fixes it. Not checked: AppKit.
+    twice. **Still doubled on crcbl 0.8.1 and 0.9.0** (driven 2026-10-23): crcbl
+    0.7.0 clears `ISC_SHOWUICOMPOSITIONWINDOW` in `WM_IME_SETCONTEXT`, yet
+    during the pre-edit pikr's thread shows a visible `MSCTFIME Composition`
+    window (60x18, right after the inline reading), and screenshots
+    showed にほんご and, after Space, 日本語 twice. The commit still worked
+    (Enter printed `日本語`). Reported to crcbl with the likely cause: its
+    window procedure still passes `WM_IME_STARTCOMPOSITION` and
+    `WM_IME_COMPOSITION` to `DefWindowProc`, which is what raises the window
+    through the TSF bridge. Re-check on the crcbl release that fixes it. Not
+    checked: AppKit.
   - `ui::run::headless` drives named keys through `HeadlessShell::key_press`. An
     "events due at pump N" queue, which would let those tests script input
     across frames, is in crcbl's backlog, unscheduled.
