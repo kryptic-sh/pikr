@@ -8,6 +8,16 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- pikr opens faster, most of all in drun: the first page of rows' icons is
+  looked up and decoded on a thread while the window and GPU are still opening,
+  instead of while the first frame is built. A theme's first lookup reads its
+  directories, and a name the chosen theme lacks reads those of every theme it
+  falls back to. In a nested Hyprland on a Raptor Lake laptop with Papirus-Dark,
+  drun's first paint fell from about 227 ms to about 149 ms (median of five),
+  and dmenu's and emoji's by about 15 ms each.
+
 ## [0.9.3] - 2026-10-24
 
 ### Added

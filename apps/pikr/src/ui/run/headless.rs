@@ -119,8 +119,17 @@ fn with_window<T>(
         theme: Err("headless test".into()),
         fallbacks: Vec::new(),
     };
-    let outcome = Window::new(&mut shell, window, &spec, fonts, &mut gpu, Instant::now())
-        .and_then(|mut window| drive(&mut window, early));
+    let icons = Icons::new(&spec.icon_themes);
+    let outcome = Window::new(
+        &mut shell,
+        window,
+        &spec,
+        fonts,
+        icons,
+        &mut gpu,
+        Instant::now(),
+    )
+    .and_then(|mut window| drive(&mut window, early));
     gpu.destroy();
     outcome.unwrap()
 }

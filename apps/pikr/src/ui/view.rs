@@ -93,12 +93,26 @@ impl Icons {
         self.used.clear();
     }
 
+    /// Looks up and decodes these `Icon=` values ahead of the first frame,
+    /// which then finds them cached. A theme's first lookup reads its
+    /// directories, the slow part of drawing a row's icon.
+    pub fn warm<'a>(&mut self, icons: impl IntoIterator<Item = Option<&'a str>>) {
+        for icon in icons {
+            self.decoded(icon);
+        }
+    }
+
+    /// The file for an entry's `Icon=` value, and its image at this scale.
+    fn decoded(&mut self, icon: Option<&str>) -> Option<(PathBuf, Arc<Rgba8Image>)> {
+        let path = self.cache.resolve(icon, ICON_SIZE, self.scale)?;
+        let image = self.cache.image(&path, ICON_SIZE * self.scale)?;
+        Some((path, image))
+    }
+
     /// The atlas image for an entry's `Icon=` value, registering it on first
     /// use. When the atlas is full, icons not drawn this frame make room.
     fn get(&mut self, atlas: &mut ImageAtlas, icon: Option<&str>) -> Option<AtlasImage> {
-        let px = ICON_SIZE * self.scale;
-        let path = self.cache.resolve(icon, ICON_SIZE, self.scale)?;
-        let image = self.cache.image(&path, px)?;
+        let (path, image) = self.decoded(icon)?;
         self.used.insert(path.clone());
         if let Some((drawn, registered)) = self.registered.get(&path)
             && Arc::ptr_eq(drawn, &image)
@@ -129,6 +143,21 @@ impl Icons {
         self.registered.insert(path, (image, registered));
         Some(registered)
     }
+}
+
+/// The `Icon=` values of the rows the first frame shows: the top of the
+/// ranked list, or none while `--loading` rows are on their way. A bare
+/// prompt (`-P`, `--lines 0`) ranks or shows no rows, so it has none either.
+pub fn first_page_icons(session: &Session) -> Vec<Option<String>> {
+    let app = &session.app;
+    if session.loading.is_some() {
+        return Vec::new();
+    }
+    app.matches
+        .iter()
+        .take(app.rows)
+        .map(|m| app.entries[m.index].icon.clone())
+        .collect()
 }
 
 // ─── The view ────────────────────────────────────────────────────────────────
@@ -596,6 +625,58 @@ pub fn build_message(ui: &mut Ui, text: &str) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use super::first_page_icons;
+    use crate::cli::Mode;
+    use crate::modes::Entry;
+    use crate::picker::app_state::tests::app_state;
+    use crate::picker::session::Session;
+
+    /// A dmenu session over `labels`, each with an icon named after it,
+    /// showing `rows` rows.
+    fn session_with_icons(labels: &[&str], rows: usize, password: bool) -> Session {
+        let mut app = app_state(Mode::Dmenu, &[], password);
+        app.set_entries(
+            labels
+                .iter()
+                .map(|label| {
+                    Arc::new(Entry {
+                        icon: Some(format!("{label}-icon")),
+                        ..Entry::stdout(*label)
+                    })
+                })
+                .collect(),
+        );
+        app.rows = rows;
+        Session::new(app, None)
+    }
+
+    #[test]
+    fn the_first_page_is_the_top_ranked_rows() {
+        let mut session = session_with_icons(&["apple", "banana", "cherry"], 2, false);
+        assert_eq!(
+            first_page_icons(&session),
+            [
+                Some("apple-icon".to_owned()),
+                Some("banana-icon".to_owned())
+            ]
+        );
+        session.app.picker.query = "ch".to_owned();
+        session.app.rerank();
+        assert_eq!(first_page_icons(&session), [Some("cherry-icon".to_owned())]);
+    }
+
+    #[test]
+    fn no_list_means_no_first_page() {
+        let labels = ["apple", "banana"];
+        assert!(first_page_icons(&session_with_icons(&labels, 0, false)).is_empty());
+        assert!(first_page_icons(&session_with_icons(&labels, 2, true)).is_empty());
+        let mut loading = session_with_icons(&labels, 2, false);
+        loading.loading = Some("Loading".to_owned());
+        assert!(first_page_icons(&loading).is_empty());
+    }
+
     #[test]
     fn query_spaces_are_drawn_as_no_break_spaces() {
         let shown: String = "a  b ".chars().map(super::uncollapsed).collect();

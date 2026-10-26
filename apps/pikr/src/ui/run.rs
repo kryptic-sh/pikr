@@ -24,7 +24,7 @@ use crate::picker::session::{Outcome, Session};
 use crate::picker::state::VimMode;
 use crate::ui::gpu::{Gpu, platform_backend};
 use crate::ui::keyboard::{key_from_commit, key_from_press, modifiers_from_crcbl};
-use crate::ui::view::{Icons, PANEL_RADIUS, Preedit, QueryFont, View};
+use crate::ui::view::{Icons, PANEL_RADIUS, Preedit, QueryFont, View, first_page_icons};
 
 /// The caret's blink half-period: crcbl's own, so pikr's query caret blinks
 /// with every crcbl text field.
@@ -73,6 +73,20 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
         let family = spec.font_family.clone();
         std::thread::spawn(move || load_fonts(&family))
     };
+    // So do the first rows' icon lookups, which read every directory of
+    // each icon theme they reach.
+    let icons = {
+        let themes = spec.icon_themes.clone();
+        let first = match &content {
+            Content::Picker { session, .. } => first_page_icons(session),
+            Content::Message(_) => Vec::new(),
+        };
+        std::thread::spawn(move || {
+            let mut icons = Icons::new(&themes);
+            icons.warm(first.iter().map(Option::as_deref));
+            icons
+        })
+    };
     let mut shell = crcbl_shell::open().context("opening the window system")?;
     let window = create_window(shell.as_mut(), &spec)?;
     let (extent, early) = wait_for_size(shell.as_mut(), window)?;
@@ -81,11 +95,15 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
         theme: Err("the font loader panicked".into()),
         fallbacks: Vec::new(),
     });
+    let icons = icons
+        .join()
+        .unwrap_or_else(|_| Icons::new(&spec.icon_themes));
     let outcome = Window::new(
         shell.as_mut(),
         window,
         &spec,
         fonts,
+        icons,
         &mut gpu,
         startup_started,
     )
@@ -264,6 +282,7 @@ impl<'a> Window<'a> {
         window: WindowId,
         spec: &WindowSpec,
         fonts: Fonts,
+        icons: Icons,
         gpu: &'a mut Gpu,
         startup_started: Instant,
     ) -> Result<Self> {
@@ -301,7 +320,7 @@ impl<'a> Window<'a> {
             atlas: FontAtlas::built_in(),
             list: DrawList::new(),
             view: View::new(query_font),
-            icons: Icons::new(&spec.icon_themes),
+            icons,
             extent: (size.width, size.height),
             scale: 1.0,
             pointer: Vec2::ZERO,
