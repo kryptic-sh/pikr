@@ -76,7 +76,8 @@
     first paint from 113–121 ms to 88–108 ms and left no NVIDIA descriptor.
     **Decided by the owner 2026-10-26: a saved GPU choice, through a new
     app-agnostic crcbl seam** (for lyr and games on crcbl too), not an
-    environment variable. Asked of office-crcbl the same day. The proposal:
+    environment variable. Approved by the owner in crcbl and being built there
+    (2026-10-26), due in the release after 0.11.0. The design:
     - crcbl loads only the saved driver, through
       `VK_LUNARG_direct_driver_loading` in exclusive mode (ash 0.38 has it, and
       loader 1.4.363 here supports it).
@@ -100,11 +101,13 @@
     crcbl 0.10.0 (tagged 2026-10-26, unpublished when checked) indexes each
     theme once and reads a symlinked directory once. A scratch build of pikr on
     it, without the warm-up, took drun from about 226 ms to 157–183 ms, with the
-    first frame's lookups down to about 60 ms. Bump when it is on crates.io,
-    then re-measure; with both, drun should paint as soon as the GPU is up. Not
-    tried: a lookup that stats the candidate paths, or reads GTK's
-    `icon-theme.cache`, instead of listing directories (a Python probe: about 6
-    ms of stats against 145 ms of listings for one miss).
+    first frame's lookups down to about 60 ms. Skip 0.10.0: its crates.io
+    publish stopped after 6 crates. Bump to 0.11.0 once crcbl says it is on
+    crates.io (its breaking `QualityPreset::Potato` and `ssr_resolution` changes
+    touch nothing pikr uses), then re-measure; with both, drun should paint as
+    soon as the GPU is up. Not tried: a lookup that stats the candidate paths,
+    or reads GTK's `icon-theme.cache`, instead of listing directories (a Python
+    probe: about 6 ms of stats against 145 ms of listings for one miss).
   - **Fonts, 60 to 80 ms on their own thread**, hidden behind GPU setup today.
     With the loader restricted they finish only just ahead of it (see the
     loaded-machine entry below for lazily loaded fallbacks).
