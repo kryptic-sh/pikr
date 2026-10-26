@@ -74,10 +74,26 @@
   - **GPU setup, 80 to 110 ms**, mostly the Vulkan loader loading and
     enumerating every ICD. `VK_LOADER_DRIVERS_SELECT='*intel*'` took dmenu's
     first paint from 113–121 ms to 88–108 ms and left no NVIDIA descriptor.
-    crcbl declined to restrict the loader itself (its backlog, 2026-10-21), so
-    the only lever is pikr's environment. It cannot go in the shared
-    `hyprland.lua`: the dotfiles also run on an AMD machine. Needs the owner's
-    call: a per-machine env, or a pikr wrapper on this laptop.
+    **Decided by the owner 2026-10-26: a saved GPU choice, through a new
+    app-agnostic crcbl seam** (for lyr and games on crcbl too), not an
+    environment variable. Asked of office-crcbl the same day. The proposal:
+    - crcbl loads only the saved driver, through
+      `VK_LUNARG_direct_driver_loading` in exclusive mode (ash 0.38 has it, and
+      loader 1.4.363 here supports it).
+    - The probe, matching, validation and fallback all live in crcbl.
+    - crcbl-app hands back an opaque, serialisable choice after a normal open.
+      It takes the choice in `PresenterDesc` (and `SharedGpu`), and reports
+      whether it was used, stale or ignored.
+    - `CRCBL_ADAPTER` and the user's own `VK_*` variables override it.
+
+    pikr's part, once that ships in a release: store the value under
+    `$XDG_STATE_HOME/pikr`, pass it on each open, and replace it when crcbl
+    reports it stale. Rejected: re-executing pikr with
+    `VK_LOADER_DRIVERS_SELECT` set (about 1.5 ms per exec), `set_var` (unsafe
+    under Rust 2024), a vendor-to-driver lookup table (a guess), and a global
+    variable in the shared `hyprland.lua` (the dotfiles also run on an AMD
+    machine).
+
   - **Icon lookup still bounds drun.** With the warm-up, the lookups overlap GPU
     setup but take longer: a name Papirus-Dark lacks reads every directory of
     breeze-dark, breeze, hicolor, Papirus and Adwaita (105 ms on crcbl 0.9.0).
@@ -95,6 +111,7 @@
   - Collection, history and ranking before the window opens: under 3 ms in every
     mode but run (13–19 ms warm, about 100 ms cold, from scanning `$PATH`). Not
     worth moving off the critical path.
+
 - **Unverified from pikr after crcbl 0.6.0.**
   - Regional-indicator flags (🇺🇸) draw as two letters with Segoe UI Emoji, which
     has no flag ligatures; Noto Color Emoji draws them. Not a crcbl bug.
