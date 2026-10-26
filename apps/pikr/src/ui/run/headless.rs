@@ -111,7 +111,7 @@ fn with_window<T>(
     };
     let window = create_window(&mut shell, &spec).unwrap();
     let (extent, early) = wait_for_size(&mut shell, window).unwrap();
-    let mut gpu = Gpu::open(&shell, window, extent, GpuBackend::Null).unwrap();
+    let mut gpu = Gpu::open(&shell, window, extent, GpuBackend::Null, None).unwrap();
     feed(&mut shell, window);
     // No system fonts: text draws in crcbl's built-in face, and nothing here
     // looks at it.

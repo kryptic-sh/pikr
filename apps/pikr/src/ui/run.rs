@@ -23,6 +23,7 @@ use crate::modes::{self, dmenu::LoadedEntries};
 use crate::picker::session::{Outcome, Session};
 use crate::picker::state::VimMode;
 use crate::ui::gpu::{Gpu, platform_backend};
+use crate::ui::gpu_choice;
 use crate::ui::keyboard::{key_from_commit, key_from_press, modifiers_from_crcbl};
 use crate::ui::view::{Icons, PANEL_RADIUS, Preedit, QueryFont, View, first_page_icons};
 
@@ -90,7 +91,14 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
     let mut shell = crcbl_shell::open().context("opening the window system")?;
     let window = create_window(shell.as_mut(), &spec)?;
     let (extent, early) = wait_for_size(shell.as_mut(), window)?;
-    let mut gpu = Gpu::open(shell.as_ref(), window, extent, platform_backend()?)?;
+    let saved = gpu_choice::load();
+    let mut gpu = Gpu::open(
+        shell.as_ref(),
+        window,
+        extent,
+        platform_backend()?,
+        saved.as_ref(),
+    )?;
     let fonts = fonts.join().unwrap_or_else(|_| Fonts {
         theme: Err("the font loader panicked".into()),
         fallbacks: Vec::new(),
@@ -108,6 +116,7 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
         startup_started,
     )
     .and_then(|mut w| w.run(content, early));
+    let choice_to_save = gpu.choice_to_save();
     // The surface goes before the window it was made from.
     gpu.destroy();
     drop(shell);
@@ -116,6 +125,11 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
         if let Err(e) = modes::execute(payload) {
             eprintln!("pikr: execute error: {e}");
         }
+    }
+    // After the chosen program has started, since finding the choice's
+    // driver loads every installed one.
+    if let Some(choice) = choice_to_save {
+        gpu_choice::save(choice);
     }
     std::process::exit(code);
 }

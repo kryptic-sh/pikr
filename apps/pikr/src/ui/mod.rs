@@ -2,6 +2,7 @@
 //! tree: input row, result list, status bar.
 
 pub mod gpu;
+pub mod gpu_choice;
 pub mod keyboard;
 pub mod run;
 pub mod theme_css;

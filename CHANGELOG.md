@@ -8,6 +8,19 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- pikr remembers the GPU it opened on, in `gpu-choice` in its state directory,
+  and later launches open that GPU directly. On Vulkan only that GPU's driver is
+  loaded, so a hybrid laptop no longer loads and initialises its dGPU's driver
+  on every launch: on an Intel + NVIDIA laptop in a nested Hyprland, under load,
+  dmenu's first paint fell from a median 242.5 ms to 172 ms (six launches each)
+  and pikr held no NVIDIA device file. The first launch saves the choice after
+  its window has closed; a saved GPU that is gone is replaced the same way.
+  `CRCBL_ADAPTER` and the loader's `VK_*` driver variables override it for that
+  launch. The README's `VK_LOADER_DRIVERS_SELECT` workaround is no longer
+  needed.
+
 ### Changed
 
 - pikr opens faster, most of all in drun: the first page of rows' icons is
@@ -17,7 +30,7 @@ and this project adheres to
   falls back to. In a nested Hyprland on a Raptor Lake laptop with Papirus-Dark,
   drun's first paint fell from about 227 ms to about 149 ms (median of five),
   and dmenu's and emoji's by about 15 ms each.
-- Built on crcbl 0.11.0 (from 0.9.0). Its icon lookup indexes each theme once,
+- Built on crcbl 0.12.0 (from 0.9.0). Its icon lookup indexes each theme once,
   so a name the chosen theme lacks no longer re-reads every fallback theme's
   directories: in the same setup drun's first paint fell from a median 157 ms to
   103 ms (ten launches each), level with dmenu.

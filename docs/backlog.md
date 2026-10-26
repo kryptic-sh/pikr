@@ -49,58 +49,37 @@
     ms. `CRCBL_ADAPTER=discrete`: the MX550 renders and presents across to the
     Intel-driven output, first paint 512 ms. `cpu`: llvmpipe, 250 ms. All three
     typed, matched and accepted.
-  - **But the dGPU's driver is opened on every launch.** With Intel chosen, pikr
-    still held 12 `/dev/nvidia*` file descriptors and mapped NVIDIA's libraries:
-    the Vulkan loader loads every ICD, and enumerating devices initialises
-    NVIDIA's. That cost GPU setup 215, 121 and 123 ms against 36, 19 and 15 ms
-    with `VK_ICD_FILENAMES` limited to Intel's ICD (first paint 319/196/190
-    against 203/128/105 ms). `VK_LOADER_DRIVERS_SELECT='*intel*'` (loader
-    1.4.363) leaves no NVIDIA descriptor or mapping, and first paint came at 72
-    ms; the README now documents it. Not verified: whether opening the device
-    wakes a runtime-suspended dGPU. It cannot be tested on this machine: the
-    MX550's `power/control` is `on`, NVIDIA's driver reports "Runtime D3 status:
-    Disabled by default" (`/proc/driver/nvidia/gpus/*/power`), and Hyprland,
-    hyprpaper and hyprpolkitagent hold `/dev/nvidia0` open all session, so here
-    the probing costs startup time and no power. It needs a laptop with runtime
-    D3 on and a desktop that leaves the dGPU closed. The fix belongs in crcbl:
-    pick the render device before loading drivers (e.g. from the compositor's
-    linux-dmabuf main device, or the boot VGA DRM node) and load only its ICD
-    unless `CRCBL_ADAPTER` asks otherwise. Reported to crcbl 2026-10-21.
+  - **A saved GPU choice skips the other drivers (crcbl 0.12.0).**
+    `ui::gpu_choice` keeps crcbl-app's `GpuChoice` in the state file
+    `gpu-choice`; `Gpu::open` passes it as `PresenterDesc::gpu_choice`, and
+    `ui::run::run` saves a new one (`Gpu::choice_to_save`) after the chosen
+    program has started, because `GpuChoice::locate_vulkan_driver` loads every
+    driver. A launch someone chose for (`CRCBL_ADAPTER`, or a loader `VK_*`
+    driver variable, checked by `gpu_choice::overridden`, which repeats crcbl's
+    own rule because crcbl does not export it) neither uses nor saves one.
+    Checked 2026-10-26 in a nested Hyprland on the Arch laptop: the first launch
+    saved Intel with `intel_icd.json`; later launches reported `Used` and held
+    no `/dev/nvidia*` descriptor (14 without the file); a choice edited to a
+    missing device reported `Stale` and was replaced; `CRCBL_ADAPTER=discrete`
+    reported `Ignored` and left the file unchanged, and with no file saved
+    nothing. Not verified: the D3D12 path on Windows (compiled by CI only), and
+    whether opening a saved driver still wakes a runtime-suspended dGPU, which
+    this machine cannot test (its MX550 has runtime D3 off and the compositor
+    holds `/dev/nvidia0` open all session).
 - **Startup profile, 2026-10-26** (release build, nested Hyprland on the Arch
   laptop, Papirus-Dark icons, after the first-page icon warm-up in
   `ui::run::run`). Re-checked the GPU: Intel renders, chosen as above, but every
   launch still holds 14 `/dev/nvidia*` descriptors. What remains of first paint
   (about 100 ms for dmenu, emoji and, from crcbl 0.11.0, drun):
-  - **GPU setup, 80 to 110 ms**, mostly the Vulkan loader loading and
-    enumerating every ICD. `VK_LOADER_DRIVERS_SELECT='*intel*'` took dmenu's
-    first paint from 113–121 ms to 88–108 ms and left no NVIDIA descriptor.
-    **Decided by the owner 2026-10-26: a saved GPU choice, through a new
-    app-agnostic crcbl seam** (for lyr and games on crcbl too), not an
-    environment variable. On crcbl main at `8d383ef4` (2026-10-26), due in the
-    release after 0.11.0. The design:
-    - crcbl loads only the saved driver, through
-      `VK_LUNARG_direct_driver_loading` in exclusive mode (ash 0.38 has it, and
-      loader 1.4.363 here supports it).
-    - The probe, matching, validation and fallback all live in crcbl.
-    - `crcbl_app::gpu_choice::GpuChoice` is a text value:
-      `Presenter::gpu_choice` gives the one to save, `PresenterDesc::gpu_choice`
-      takes it back, and `gpu_choice_outcome` reports `Used`, `Stale` or
-      `Ignored`. `GpuChoice::locate_vulkan_driver` is slow; run it once, off the
-      start-up path.
-    - `CRCBL_ADAPTER`, the app's adapter pick and the user's own `VK_*`
-      variables override it.
-    - crcbl measured an instance on Intel's driver alone at 8–9 ms with no
-      NVIDIA library loaded, against 60–77 ms on every driver (its numbers, not
-      re-measured from pikr).
-
-    pikr's part, once that ships in a release: store the value under
-    `$XDG_STATE_HOME/pikr`, pass it on each open, and replace it when crcbl
-    reports it stale. Rejected: re-executing pikr with
-    `VK_LOADER_DRIVERS_SELECT` set (about 1.5 ms per exec), `set_var` (unsafe
-    under Rust 2024), a vendor-to-driver lookup table (a guess), and a global
-    variable in the shared `hyprland.lua` (the dotfiles also run on an AMD
-    machine).
-
+  - **GPU setup** was 80 to 110 ms, mostly the Vulkan loader loading and
+    enumerating every ICD; the saved GPU choice above removes that. Measured
+    2026-10-26 under load (load average about 7 on 12 cores, other sessions
+    building), six dmenu launches each, interleaved: first paint a median 242.5
+    ms (218–253) with no saved choice against 172 ms (134–217) with one.
+    Rejected before crcbl took this on: re-executing pikr with
+    `VK_LOADER_DRIVERS_SELECT` set, `set_var` (unsafe under Rust 2024), a
+    vendor-to-driver lookup table (a guess), and a global variable in the shared
+    `hyprland.lua` (the dotfiles also run on an AMD machine).
   - **Icon lookup no longer bounds drun (crcbl 0.11.0).** crcbl 0.11.0 indexes
     each icon theme once and reads a symlinked directory once; before it, a name
     Papirus-Dark lacks read every directory of breeze-dark, breeze, hicolor,
@@ -111,9 +90,14 @@
     lookup that stats the candidate paths, or reads GTK's `icon-theme.cache`,
     instead of listing directories (a Python probe: about 6 ms of stats against
     145 ms of listings for one miss).
-  - **Fonts, 60 to 80 ms on their own thread**, hidden behind GPU setup today.
-    With the loader restricted they finish only just ahead of it (see the
-    loaded-machine entry below for lazily loaded fallbacks).
+  - **Fonts now bound first paint.** With the saved GPU choice, first paint came
+    8 to 30 ms after `startup fonts loaded` in every launch measured above
+    (fonts 125–187 ms under that load, 66–88 ms on a quieter machine earlier the
+    same day). `ui::run::load_fonts` reads every fallback face whole (see the
+    loaded-machine entry below). Options, in order of gain: fallbacks loaded
+    only when a glyph needs one (a crcbl API), font files mapped instead of read
+    (crcbl), or the faces read in parallel (pikr alone; a probe was faster only
+    with the files evicted, a warm launch was not measured).
   - Collection, history and ranking before the window opens: under 3 ms in every
     mode but run (13–19 ms warm, about 100 ms cold, from scanning `$PATH`). Not
     worth moving off the critical path.
@@ -673,15 +657,22 @@ macOS and Windows.
   something above it such as a lock screen; GNOME's Mutter and X11 open it as an
   ordinary toplevel, which a click elsewhere now closes. If the sway e2e suite
   or the startup gate turns flaky, check whether a focus leave during setup now
-  closes pikr. Whether Hyprland's own binds still fire over an exclusive layer
-  surface was not checked. Also not checked, and the likeliest false close: as a
-  toplevel (X11, Wayland without layer-shell) a transient leave, such as an
-  IME's candidate window or the compositor briefly taking the focus, would now
-  close pikr mid-typing. On Windows the Microsoft IME's candidate list does not:
-  with `7f1f66b` (2026-10-24) pikr stayed open through two Space conversions,
-  the second opening the candidate list, and committed. If it shows up, ignore a
-  leave that a focus regain follows within a short grace period instead of
-  closing at once.
+  closes pikr. **It does (2026-10-26):** the local sway e2e keyboard suite
+  failed 3 times in 31 runs, each a test expecting exit 0 getting exit 1. With
+  `RUST_LOG=pikr=debug` the failing run logged "startup first focus received"
+  and, 17 ms later, "pikr lost the keyboard focus; closing", before any key was
+  sent. Not yet read: why headless sway sends that leave (a second wtype virtual
+  keyboard, or the layer surface's remap) and whether a real sway session does
+  the same; a fix would ignore a leave the focus comes straight back from, or
+  one during startup. Whether Hyprland's own binds still fire over an exclusive
+  layer surface was not checked. Also not checked, and the likeliest false
+  close: as a toplevel (X11, Wayland without layer-shell) a transient leave,
+  such as an IME's candidate window or the compositor briefly taking the focus,
+  would now close pikr mid-typing. On Windows the Microsoft IME's candidate list
+  does not: with `7f1f66b` (2026-10-24) pikr stayed open through two Space
+  conversions, the second opening the candidate list, and committed. If it shows
+  up, ignore a leave that a focus regain follows within a short grace period
+  instead of closing at once.
 - Launched from a script, pikr often does not get the foreground: in 33 launches
   on 2026-10-23 (`Process.Start` from PowerShell), the first launch from a fresh
   PowerShell process usually never became the foreground window within 8 s (11

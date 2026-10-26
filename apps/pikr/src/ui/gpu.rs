@@ -8,6 +8,7 @@
 use anyhow::{Context, Result, anyhow};
 use crcbl_app::adapter::{PowerPreference, pin};
 use crcbl_app::backend::GpuBackend;
+use crcbl_app::gpu_choice::{ChoiceOutcome, GpuChoice};
 use crcbl_app::present::{
     FrameOutcome, Pacing, PresentError, Presenter, PresenterDesc, Transparency,
 };
@@ -18,6 +19,8 @@ use crcbl_shell::{Shell, ShellEvent, WindowId};
 use crcbl_ui::draw_list::DrawList;
 use crcbl_ui::image::ImageAtlas;
 use crcbl_ui::text::FontAtlas;
+
+use crate::ui::gpu_choice;
 
 /// The GPU backend for this platform: Vulkan on Linux and FreeBSD, D3D12 on
 /// Windows (which falls back to the WARP software rasteriser with no GPU, and
@@ -40,6 +43,8 @@ pub struct Gpu {
     presenter: Presenter,
     renderer: UiRenderer,
     pool: TransientPool,
+    /// The choice to save for the next launch; see [`Gpu::choice_to_save`].
+    choice_to_save: Option<GpuChoice>,
 }
 
 impl Gpu {
@@ -51,6 +56,9 @@ impl Gpu {
     /// that cannot present the window is stepped past. A transparent window
     /// no adapter can composite is drawn opaque, with a warning.
     ///
+    /// `saved` is the choice an earlier launch saved, opened again where it
+    /// still holds and nobody chose for this run; see [`crate::ui::gpu_choice`].
+    ///
     /// `window` must outlive the returned `Gpu`, and [`Gpu::destroy`] must
     /// run before it is destroyed: `ui::run` owns both and destroys the
     /// `Gpu` first on every exit path.
@@ -59,6 +67,7 @@ impl Gpu {
         window: WindowId,
         extent: (u32, u32),
         backend: GpuBackend,
+        saved: Option<&GpuChoice>,
     ) -> Result<Self> {
         let pinned = pin();
         let desc = PresenterDesc {
@@ -73,6 +82,7 @@ impl Gpu {
             optional_features: Features::empty(),
             pacing: Pacing::Vsync,
             frames_in_flight: 1,
+            gpu_choice: saved,
             ..PresenterDesc::default()
         };
         let presenter = Presenter::open(shell, window, extent, &desc).map_err(no_gpu)?;
@@ -88,7 +98,16 @@ impl Gpu {
         tracing::debug!(
             adapter = presenter.adapter().map(|a| a.name),
             ?backend,
+            saved_choice = ?presenter.gpu_choice_outcome(),
             "GPU chosen"
+        );
+        if let ChoiceOutcome::Stale(why) = presenter.gpu_choice_outcome() {
+            tracing::info!("the saved GPU choice no longer holds ({why}); saving a new one");
+        }
+        let choice_to_save = gpu_choice::to_save(
+            presenter.gpu_choice_outcome(),
+            presenter.gpu_choice(),
+            gpu_choice::overridden(pinned.is_some(), backend),
         );
         let renderer = UiRenderer::new(presenter.device(), presenter.queue(), presenter.format())
             .context("creating the UI renderer")?;
@@ -96,7 +115,16 @@ impl Gpu {
             presenter,
             renderer,
             pool: TransientPool::new(),
+            choice_to_save,
         })
+    }
+
+    /// The GPU choice for the next launch to open on, when this launch had
+    /// none or its saved one went stale; `None` when there is nothing new to
+    /// save. Saving it ([`gpu_choice::save`]) is slow, so it waits until the
+    /// window is gone.
+    pub fn choice_to_save(&self) -> Option<GpuChoice> {
+        self.choice_to_save.clone()
     }
 
     /// The image atlas icons are registered in.

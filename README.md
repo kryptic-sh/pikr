@@ -209,18 +209,15 @@ hl.layer_rule({ name = "pikr-dim", match = { namespace = "^pikr$" }, dim_around 
 ```
 
 pikr draws on the integrated GPU when the display is not driven by a discrete
-one; `CRCBL_ADAPTER=integrated|discrete|cpu` picks one instead. On a hybrid
-laptop (an iGPU plus an NVIDIA dGPU), the Vulkan loader still loads every
-installed driver while pikr picks, so each launch opens the dGPU's device and
-pays for initialising its driver. Limiting the loader to the iGPU's driver in
-the command your launcher binding runs avoids both:
-
-```sh
-VK_LOADER_DRIVERS_SELECT='*intel*' pikr
-```
-
-Use the pattern that matches your iGPU's ICD file in `/usr/share/vulkan/icd.d/`
-(`*radeon*` for AMD).
+one; `CRCBL_ADAPTER=integrated|discrete|cpu` picks one instead. pikr saves the
+GPU it opened on in `$XDG_STATE_HOME/pikr/gpu-choice` (`%LOCALAPPDATA%\pikr` on
+Windows), and later launches open that GPU directly: on Vulkan through its
+driver alone, so a hybrid laptop's dGPU driver is no longer loaded and
+initialised on every launch. The first launch, and one after the saved GPU goes
+away, picks as above and saves the new choice once its window has closed.
+`CRCBL_ADAPTER` and the Vulkan loader's own driver variables
+(`VK_LOADER_DRIVERS_SELECT` and the like) override the saved choice for that
+launch without replacing it. Delete the file to make pikr pick again.
 
 ## Architecture
 
