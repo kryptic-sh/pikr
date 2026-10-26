@@ -17,6 +17,10 @@ and this project adheres to
   falls back to. In a nested Hyprland on a Raptor Lake laptop with Papirus-Dark,
   drun's first paint fell from about 227 ms to about 149 ms (median of five),
   and dmenu's and emoji's by about 15 ms each.
+- Built on crcbl 0.11.0 (from 0.9.0). Its icon lookup indexes each theme once,
+  so a name the chosen theme lacks no longer re-reads every fallback theme's
+  directories: in the same setup drun's first paint fell from a median 157 ms to
+  103 ms (ten launches each), level with dmenu.
 
 ## [0.9.3] - 2026-10-24
 
