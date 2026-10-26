@@ -66,6 +66,35 @@
     pick the render device before loading drivers (e.g. from the compositor's
     linux-dmabuf main device, or the boot VGA DRM node) and load only its ICD
     unless `CRCBL_ADAPTER` asks otherwise. Reported to crcbl 2026-10-21.
+- **Startup profile, 2026-10-26** (release build, nested Hyprland on the Arch
+  laptop, Papirus-Dark icons, after the first-page icon warm-up in
+  `ui::run::run`). Re-checked the GPU: Intel renders, chosen as above, but every
+  launch still holds 14 `/dev/nvidia*` descriptors. What remains of first paint
+  (about 100 ms for dmenu and emoji, about 150 ms for drun):
+  - **GPU setup, 80 to 110 ms**, mostly the Vulkan loader loading and
+    enumerating every ICD. `VK_LOADER_DRIVERS_SELECT='*intel*'` took dmenu's
+    first paint from 113–121 ms to 88–108 ms and left no NVIDIA descriptor.
+    crcbl declined to restrict the loader itself (its backlog, 2026-10-21), so
+    the only lever is pikr's environment. It cannot go in the shared
+    `hyprland.lua`: the dotfiles also run on an AMD machine. Needs the owner's
+    call: a per-machine env, or a pikr wrapper on this laptop.
+  - **Icon lookup still bounds drun.** With the warm-up, the lookups overlap GPU
+    setup but take longer: a name Papirus-Dark lacks reads every directory of
+    breeze-dark, breeze, hicolor, Papirus and Adwaita (105 ms on crcbl 0.9.0).
+    crcbl 0.10.0 (tagged 2026-10-26, unpublished when checked) indexes each
+    theme once and reads a symlinked directory once. A scratch build of pikr on
+    it, without the warm-up, took drun from about 226 ms to 157–183 ms, with the
+    first frame's lookups down to about 60 ms. Bump when it is on crates.io,
+    then re-measure; with both, drun should paint as soon as the GPU is up. Not
+    tried: a lookup that stats the candidate paths, or reads GTK's
+    `icon-theme.cache`, instead of listing directories (a Python probe: about 6
+    ms of stats against 145 ms of listings for one miss).
+  - **Fonts, 60 to 80 ms on their own thread**, hidden behind GPU setup today.
+    With the loader restricted they finish only just ahead of it (see the
+    loaded-machine entry below for lazily loaded fallbacks).
+  - Collection, history and ranking before the window opens: under 3 ms in every
+    mode but run (13–19 ms warm, about 100 ms cold, from scanning `$PATH`). Not
+    worth moving off the critical path.
 - **Unverified from pikr after crcbl 0.6.0.**
   - Regional-indicator flags (🇺🇸) draw as two letters with Segoe UI Emoji, which
     has no flag ligatures; Noto Color Emoji draws them. Not a crcbl bug.
