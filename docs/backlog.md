@@ -56,16 +56,19 @@
     program has started, because `GpuChoice::locate_vulkan_driver` loads every
     driver. A launch someone chose for (`CRCBL_ADAPTER`, or a loader `VK_*`
     driver variable, checked by `gpu_choice::overridden`, which repeats crcbl's
-    own rule because crcbl does not export it) neither uses nor saves one.
-    Checked 2026-10-26 in a nested Hyprland on the Arch laptop: the first launch
-    saved Intel with `intel_icd.json`; later launches reported `Used` and held
-    no `/dev/nvidia*` descriptor (14 without the file); a choice edited to a
-    missing device reported `Stale` and was replaced; `CRCBL_ADAPTER=discrete`
-    reported `Ignored` and left the file unchanged, and with no file saved
-    nothing. Not verified: the D3D12 path on Windows (compiled by CI only), and
-    whether opening a saved driver still wakes a runtime-suspended dGPU, which
-    this machine cannot test (its MX550 has runtime D3 off and the compositor
-    holds `/dev/nvidia0` open all session).
+    own rule because crcbl 0.12.0 does not export it) neither uses nor saves
+    one. crcbl main `b76abe21` adds `Presenter::gpu_choice_overridden()`
+    (unreleased on 2026-10-26): once pikr is on a release with it, delete
+    `gpu_choice::overridden` and pass that instead. Checked 2026-10-26 in a
+    nested Hyprland on the Arch laptop: the first launch saved Intel with
+    `intel_icd.json`; later launches reported `Used` and held no `/dev/nvidia*`
+    descriptor (14 without the file); a choice edited to a missing device
+    reported `Stale` and was replaced; `CRCBL_ADAPTER=discrete` reported
+    `Ignored` and left the file unchanged, and with no file saved nothing. Not
+    verified: the D3D12 path on Windows (compiled by CI only), and whether
+    opening a saved driver still wakes a runtime-suspended dGPU, which this
+    machine cannot test (its MX550 has runtime D3 off and the compositor holds
+    `/dev/nvidia0` open all session).
 - **Startup profile, 2026-10-26** (release build, nested Hyprland on the Arch
   laptop, Papirus-Dark icons, after the first-page icon warm-up in
   `ui::run::run`). Re-checked the GPU: Intel renders, chosen as above, but every
