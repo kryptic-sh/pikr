@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-10-26
+
 ### Added
 
 - pikr remembers the GPU it opened on, in `gpu-choice` in its state directory,
@@ -1435,7 +1437,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.3...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.4...main
+[0.9.4]: https://github.com/kryptic-sh/pikr/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/kryptic-sh/pikr/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/kryptic-sh/pikr/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/kryptic-sh/pikr/compare/v0.9.0...v0.9.1
