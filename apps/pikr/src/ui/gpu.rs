@@ -107,7 +107,7 @@ impl Gpu {
         let choice_to_save = gpu_choice::to_save(
             presenter.gpu_choice_outcome(),
             presenter.gpu_choice(),
-            gpu_choice::overridden(pinned.is_some(), backend),
+            presenter.gpu_choice_overridden().is_some(),
         );
         let renderer = UiRenderer::new(presenter.device(), presenter.queue(), presenter.format())
             .context("creating the UI renderer")?;

@@ -781,7 +781,8 @@ enum Step {
     Exit(Vec<modes::Payload>, i32),
 }
 
-/// The system fonts the picker draws in, each found, read and parsed.
+/// The system fonts the picker draws in: the theme's face read and parsed
+/// now, the fallbacks only once a glyph needs one.
 struct Fonts {
     /// The face the theme names, or the system's sans-serif when the theme's
     /// family is not installed.
@@ -808,14 +809,8 @@ fn load_fonts(family: &str) -> Fonts {
         .and_then(|face| Font::from_system(&face).map_err(|e| e.to_string()));
     let fallbacks = system
         .fallbacks(&query)
-        .iter()
-        .filter_map(|face| {
-            Font::from_system(face)
-                .inspect_err(
-                    |e| tracing::debug!(path = %face.path.display(), "fallback font skipped: {e}"),
-                )
-                .ok()
-        })
+        .into_iter()
+        .map(Font::from_system_lazy)
         .collect::<Vec<_>>();
     tracing::debug!(
         elapsed_us = started.elapsed().as_micros(),

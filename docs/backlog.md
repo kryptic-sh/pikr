@@ -49,26 +49,25 @@
     ms. `CRCBL_ADAPTER=discrete`: the MX550 renders and presents across to the
     Intel-driven output, first paint 512 ms. `cpu`: llvmpipe, 250 ms. All three
     typed, matched and accepted.
-  - **A saved GPU choice skips the other drivers (crcbl 0.12.0).**
+  - **A saved GPU choice skips the other drivers (crcbl 0.12.x).**
     `ui::gpu_choice` keeps crcbl-app's `GpuChoice` in the state file
     `gpu-choice`; `Gpu::open` passes it as `PresenterDesc::gpu_choice`, and
     `ui::run::run` saves a new one (`Gpu::choice_to_save`) after the chosen
     program has started, because `GpuChoice::locate_vulkan_driver` loads every
     driver. A launch someone chose for (`CRCBL_ADAPTER`, or a loader `VK_*`
-    driver variable, checked by `gpu_choice::overridden`, which repeats crcbl's
-    own rule because crcbl 0.12.0 does not export it) neither uses nor saves
-    one. crcbl main `b76abe21` adds `Presenter::gpu_choice_overridden()`
-    (unreleased on 2026-10-26): once pikr is on a release with it, delete
-    `gpu_choice::overridden` and pass that instead. Checked 2026-10-26 in a
-    nested Hyprland on the Arch laptop: the first launch saved Intel with
-    `intel_icd.json`; later launches reported `Used` and held no `/dev/nvidia*`
-    descriptor (14 without the file); a choice edited to a missing device
-    reported `Stale` and was replaced; `CRCBL_ADAPTER=discrete` reported
-    `Ignored` and left the file unchanged, and with no file saved nothing. Not
-    verified: the D3D12 path on Windows (compiled by CI only), and whether
-    opening a saved driver still wakes a runtime-suspended dGPU, which this
-    machine cannot test (its MX550 has runtime D3 off and the compositor holds
-    `/dev/nvidia0` open all session).
+    driver variable, as `Presenter::gpu_choice_overridden` reports from crcbl
+    0.12.1) neither uses nor saves one. Re-checked 2026-10-27 on crcbl 0.12.1
+    with no saved file: `CRCBL_ADAPTER=integrated` and
+    `VK_LOADER_DRIVERS_SELECT` each saved nothing, and a plain launch saved the
+    same choice as before. Checked 2026-10-26 in a nested Hyprland on the Arch
+    laptop: the first launch saved Intel with `intel_icd.json`; later launches
+    reported `Used` and held no `/dev/nvidia*` descriptor (14 without the file);
+    a choice edited to a missing device reported `Stale` and was replaced;
+    `CRCBL_ADAPTER=discrete` reported `Ignored` and left the file unchanged, and
+    with no file saved nothing. Not verified: the D3D12 path on Windows
+    (compiled by CI only), and whether opening a saved driver still wakes a
+    runtime-suspended dGPU, which this machine cannot test (its MX550 has
+    runtime D3 off and the compositor holds `/dev/nvidia0` open all session).
 - **Startup profile, 2026-10-26** (release build, nested Hyprland on the Arch
   laptop, Papirus-Dark icons, after the first-page icon warm-up in
   `ui::run::run`). Re-checked the GPU: Intel renders, chosen as above, but every
@@ -93,33 +92,20 @@
     lookup that stats the candidate paths, or reads GTK's `icon-theme.cache`,
     instead of listing directories (a Python probe: about 6 ms of stats against
     145 ms of listings for one miss).
-  - **Fonts now bound first paint.** With the saved GPU choice, first paint came
-    8 to 30 ms after `startup fonts loaded` in every launch measured above
-    (fonts 125–187 ms under that load, 66–88 ms on a quieter machine earlier the
-    same day). `ui::run::load_fonts` reads every fallback face whole (see the
-    loaded-machine entry below). Options, in order of gain: fallbacks loaded
-    only when a glyph needs one (a crcbl API), font files mapped instead of read
-    (crcbl), or the faces read in parallel (pikr alone; a probe was faster only
-    with the files evicted, a warm launch was not measured). Lazy fallbacks are
-    on crcbl main (`ee2f614b`, unreleased). Tried through a local `[patch]` on
-    2026-10-27 (`Font::from_system_lazy` in `ui::run::load_fonts`): dmenu's
-    resident size fell from 112 to 44 MB and drun's from 122 to 48 MB, the font
-    thread finished at 17–38 ms, no fallback face was read for Latin rows, and
-    a 日本語 row read 3 of 20 and drew correctly. First paint barely moved,
-    because the icon thread then bounds it: its first lookup builds
-    crcbl-image's `IconThemes` index in 80–105 ms (load average about 4), in
-    dmenu too, since an iconless row draws the generic fallback icon. Asked
-    crcbl for a lookup that stats candidate paths, or an index cached on disk.
-    crcbl `3a80d84d` (unreleased) reads GTK's own `icon-theme.cache` instead.
-    With both, tried the same way (five launches each, interleaved with 0.9.4,
-    load average 3–6): first paint fell from a median 86 ms (75–188) to 34 ms
-    (30–43) in dmenu and from 127 ms (91–210) to 44 ms (33–51) in drun; the icon
-    warm-up took 1 ms in dmenu and 13–26 ms in drun; resident size was 32 MB in
-    dmenu and 33 MB in drun. The GPU now bounds first paint (presenter ready at
-    24–40 ms, paint 3–10 ms later). Adopt both once a crcbl release carries
-    them: `Font::from_system_lazy` in `ui::run::load_fonts`; the icon change
-    needs no pikr code.
-  - **Baseline for that, 2026-10-27** (pikr 0.9.4, crcbl 0.12.0, saved choice
+  - **The GPU bounds first paint (crcbl 0.12.1).** pikr loads its fallback faces
+    only when a glyph needs one (`Font::from_system_lazy` in
+    `ui::run::load_fonts`), and crcbl-image reads GTK's `icon-theme.cache`
+    instead of listing icon directories. Before that, reading every fallback
+    face whole bounded first paint, and then building the `IconThemes` index
+    (80–105 ms) did. Measured 2026-10-27 on the release build (nested Hyprland,
+    saved choice `Used`, load average 0.4–1.9, five launches each): the GPU was
+    chosen at 14–18 ms, fonts loaded at 14–28 ms, and first paint came at 29–33
+    ms in dmenu and 29–44 ms in drun; resident size was 32 MB in dmenu and 33–34
+    MB in drun. A 日本語 row reading 3 of 20 faces and drawing correctly was
+    checked on the `[patch]` trial of the same crcbl code, not on 0.12.1. Not
+    pursued, since fonts no longer bound paint: font files mapped instead of
+    read, and faces read in parallel.
+  - **Baseline before that, 2026-10-27** (pikr 0.9.4, crcbl 0.12.0, saved choice
     `Used`, load average 0.1, three launches each): the GPU's presenter was
     ready at 15–19 ms, fonts loaded at 66–80 ms, and first paint came at 74–85
     ms in dmenu and 86–87 ms in drun. Resident size was 112 MB in dmenu and 122

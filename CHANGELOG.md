@@ -8,6 +8,19 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- pikr opens faster and uses about a quarter of the memory: it reads a fallback
+  font only once a row needs one of its glyphs, instead of every fallback face
+  before the first frame, and crcbl 0.12.1 finds icons through GTK's
+  `icon-theme.cache` instead of listing each theme's directories. On an Intel +
+  NVIDIA laptop in a nested Hyprland, first paint came at 29–33 ms in dmenu and
+  29–44 ms in drun (74–85 and 86–87 ms on 0.9.4), and resident size fell from
+  112 to 32 MB in dmenu and from 122 to 33 MB in drun.
+- Built on crcbl 0.12.1. Whether `CRCBL_ADAPTER` or a `VK_*` driver variable
+  chose the GPU for a launch, so that its choice is not saved, now comes from
+  crcbl rather than pikr's own copy of the rule.
+
 ## [0.9.4] - 2026-10-26
 
 ### Added

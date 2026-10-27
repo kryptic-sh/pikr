@@ -22,12 +22,12 @@ anyhow = "1"
 # the presenter, which opens the platform's GPU backend (Vulkan, D3D12 or
 # Metal), chooses the adapter and paces presents. Every crcbl crate must
 # name the same version.
-crcbl-app = "0.12.0"
-crcbl-frame = { version = "0.12.0", features = ["parsed-font"] }
-crcbl-hal = "0.12.0"
-crcbl-image = { version = "0.12.0", features = ["png", "jpeg", "svg", "webp", "ico", "xpm", "svg-text", "theme"] }
-crcbl-shell = "0.12.0"
-crcbl-ui = { version = "0.12.0", features = ["system-fonts"] }
+crcbl-app = "0.12.1"
+crcbl-frame = { version = "0.12.1", features = ["parsed-font"] }
+crcbl-hal = "0.12.1"
+crcbl-image = { version = "0.12.1", features = ["png", "jpeg", "svg", "webp", "ico", "xpm", "svg-text", "theme"] }
+crcbl-shell = "0.12.1"
+crcbl-ui = { version = "0.12.1", features = ["system-fonts"] }
 # crcbl-ui and crcbl-frame take glam vectors and do not re-export glam.
 glam = "0.34"
 clap = { version = "4", features = ["derive"] }

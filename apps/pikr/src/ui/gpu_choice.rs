@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use crcbl_app::backend::GpuBackend;
-use crcbl_app::gpu_choice::{ChoiceOutcome, GpuChoice, VULKAN_DRIVER_ENV_VARS};
+use crcbl_app::gpu_choice::{ChoiceOutcome, GpuChoice};
 
 /// The state file, in crcbl's own text form for a choice.
 const FILE: &str = "gpu-choice";
@@ -36,22 +36,11 @@ fn load_from(path: &Path) -> Option<GpuChoice> {
         .ok()
 }
 
-/// Whether someone chose the GPU for this run: `CRCBL_ADAPTER` (`pinned`),
-/// or on Vulkan one of the loader's own driver variables. crcbl-app ignores
-/// a saved choice for the same reasons; pikr also checks them itself so a
-/// run with none saved does not save a choice meant for that run alone.
-pub fn overridden(pinned: bool, backend: GpuBackend) -> bool {
-    pinned
-        || (backend == GpuBackend::Vulkan
-            && VULKAN_DRIVER_ENV_VARS
-                .into_iter()
-                .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty())))
-}
-
 /// What to save after an open whose saved choice came to `outcome`: the
 /// open's own `choice` when none was saved or the saved one went stale, on a
-/// backend that opens by one, and when nobody chose for this run. Nothing
-/// when the saved one was used or ignored.
+/// backend that opens by one, and when nobody chose for this run
+/// (`Presenter::gpu_choice_overridden`). Nothing when the saved one was used
+/// or ignored.
 pub fn to_save(outcome: &ChoiceOutcome, choice: &GpuChoice, overridden: bool) -> Option<GpuChoice> {
     let fresh = matches!(outcome, ChoiceOutcome::NotGiven | ChoiceOutcome::Stale(_));
     let opens_by_one = matches!(choice.backend(), GpuBackend::Vulkan | GpuBackend::Dx12);
@@ -133,7 +122,6 @@ mod tests {
     fn a_run_someone_chose_for_saves_nothing() {
         let vk = choice(GpuBackend::Vulkan);
         assert_eq!(to_save(&ChoiceOutcome::NotGiven, &vk, true), None);
-        assert!(overridden(true, GpuBackend::Dx12));
     }
 
     /// Metal and the test backend do not open by a choice, so there is
