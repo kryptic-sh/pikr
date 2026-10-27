@@ -188,7 +188,13 @@
   space** (`ui::view::query`): a span holding only a plain space collapses to
   nothing in crcbl-ui (it supports `white-space: normal | nowrap` only), and the
   caret did not draw at all. Seen on Windows with and without the old
-  block-wrapped caret.
+  block-wrapped caret. crcbl main `8ab4c02e` (after the 0.12.1 tag, so in the
+  release after it) keeps a `white-space: nowrap` span's trailing spaces, as CSS
+  `pre` does; `normal` text still lets them hang. Once pikr is on that release,
+  the caret span can hold a plain space if it is `nowrap`. Whether
+  `ui::view::uncollapsed` can go too depends on the query and row spans being
+  `nowrap`: check each before dropping it, and re-run the `--filter "a  b  "`
+  and "client for" cases from its doc comment.
 - **Named keys must come from the keysym, not `ShellEvent::Key`'s `key_code`**
   (`ui::keyboard::named_from_keysym`). `key_code` is the physical key from the
   evdev code, and wtype uploads its own keymap that hands out key codes from the
