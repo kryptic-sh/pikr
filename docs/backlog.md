@@ -110,7 +110,15 @@
     crcbl-image's `IconThemes` index in 80–105 ms (load average about 4), in
     dmenu too, since an iconless row draws the generic fallback icon. Asked
     crcbl for a lookup that stats candidate paths, or an index cached on disk.
-    Adopt both when released, then re-measure.
+    crcbl `3a80d84d` (unreleased) reads GTK's own `icon-theme.cache` instead.
+    With both, tried the same way (five launches each, interleaved with 0.9.4,
+    load average 3–6): first paint fell from a median 86 ms (75–188) to 34 ms
+    (30–43) in dmenu and from 127 ms (91–210) to 44 ms (33–51) in drun; the icon
+    warm-up took 1 ms in dmenu and 13–26 ms in drun; resident size was 32 MB in
+    dmenu and 33 MB in drun. The GPU now bounds first paint (presenter ready at
+    24–40 ms, paint 3–10 ms later). Adopt both once a crcbl release carries
+    them: `Font::from_system_lazy` in `ui::run::load_fonts`; the icon change
+    needs no pikr code.
   - **Baseline for that, 2026-10-27** (pikr 0.9.4, crcbl 0.12.0, saved choice
     `Used`, load average 0.1, three launches each): the GPU's presenter was
     ready at 15–19 ms, fonts loaded at 66–80 ms, and first paint came at 74–85
@@ -375,13 +383,13 @@
     which puts no frame on a screen and no key through a real keymap. The sway
     suite in `tests/e2e` keeps only what needs the binary: stdin and
     `--loading`, the config file, state files, and keys arriving through
-    Wayland. crcbl's `HeadlessShell` gives named keys (Enter, Escape, arrows) no
-    keysym, so those tests inject raw `ShellEvent::Key`s with X11 keysyms. The
-    loop handles every scripted event in its first pump, so these runs end
-    before a frame is drawn: layout, presenting and the swapchain's out-of-date
-    retry (`ui::run`, which now waits `PRESENT_RETRY` before redrawing rather
-    than spinning) are not exercised by them. Scripting input across frames
-    would need a hook in the loop. What one frame builds can be checked through
+    Wayland. Named keys go through `HeadlessShell::key_press`, which has given
+    them the real backends' keysyms since crcbl 0.6.0. The loop handles every
+    scripted event in its first pump, so these runs end before a frame is drawn:
+    layout, presenting and the swapchain's out-of-date retry (`ui::run`, which
+    now waits `PRESENT_RETRY` before redrawing rather than spinning) are not
+    exercised by them. Scripting input across frames would need a hook in the
+    loop. What one frame builds can be checked through
     `headless::builds_a_list`, which calls `Window::frame` directly.
   - While CI was stalled org-wide (2026-10-19 to 2026-10-20; it ran again from
     run 39368692698, green), the Linux suite was run locally in WSL (Ubuntu
