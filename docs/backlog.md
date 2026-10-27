@@ -101,7 +101,16 @@
     only when a glyph needs one (a crcbl API), font files mapped instead of read
     (crcbl), or the faces read in parallel (pikr alone; a probe was faster only
     with the files evicted, a warm launch was not measured). Lazy fallbacks are
-    being built in crcbl (asked 2026-10-27).
+    on crcbl main (`ee2f614b`, unreleased). Tried through a local `[patch]` on
+    2026-10-27 (`Font::from_system_lazy` in `ui::run::load_fonts`): dmenu's
+    resident size fell from 112 to 44 MB and drun's from 122 to 48 MB, the font
+    thread finished at 17–38 ms, no fallback face was read for Latin rows, and
+    a 日本語 row read 3 of 20 and drew correctly. First paint barely moved,
+    because the icon thread then bounds it: its first lookup builds
+    crcbl-image's `IconThemes` index in 80–105 ms (load average about 4), in
+    dmenu too, since an iconless row draws the generic fallback icon. Asked
+    crcbl for a lookup that stats candidate paths, or an index cached on disk.
+    Adopt both when released, then re-measure.
   - **Baseline for that, 2026-10-27** (pikr 0.9.4, crcbl 0.12.0, saved choice
     `Used`, load average 0.1, three launches each): the GPU's presenter was
     ready at 15–19 ms, fonts loaded at 66–80 ms, and first paint came at 74–85
