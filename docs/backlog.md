@@ -143,27 +143,21 @@
     around the caret to underline the pre-edit, so right-to-left text being
     composed into is reordered per piece, as the whole query was before
     `TextLayout::caret` (2026-10-21). Not seen with a real RTL input method.
-  - IME, checked on Windows 2026-10-20 with the Microsoft Japanese IME (keys
-    synthesized while pikr held the foreground): the pre-edit draws inline and
-    underlined at the caret, the candidate list opens right below the caret, the
-    Enter that commits does not reach pikr, and the commit arrives whole (a
-    second Enter printed `日本語`). On crcbl 0.6.0 Windows also drew its own
-    composition window beside pikr's inline pre-edit, so the reading showed
-    twice. **Still doubled on crcbl 0.8.1 and 0.9.0** (driven 2026-10-23): crcbl
-    0.7.0 clears `ISC_SHOWUICOMPOSITIONWINDOW` in `WM_IME_SETCONTEXT`, yet
-    during the pre-edit pikr's thread shows a visible `MSCTFIME Composition`
-    window (60x18, right after the inline reading), and screenshots
-    showed にほんご and, after Space, 日本語 twice. The commit still worked
-    (Enter printed `日本語`). crcbl confirmed the cause: its window procedure
-    still passes `WM_IME_STARTCOMPOSITION` and `WM_IME_COMPOSITION` to
-    `DefWindowProc`, which raises the window through the TSF bridge even with
-    the flag cleared. Their fix (not yet in a release) keeps both away from
-    `DefWindowProc` and takes the commit from `GCS_RESULTSTR` instead of
-    `WM_CHAR`; their CI test with the Japanese IME asserts no visible
-    composition window. Re-check on the crcbl release that carries it: no
-    `MSCTFIME Composition` window on pikr's thread, and since the commit path
-    changed, Space then two Enters must still print `日本語` exactly once. Not
-    checked: AppKit.
+  - IME on Windows, Microsoft Japanese IME, keys synthesized while pikr held the
+    foreground. Last checked 2026-10-27 on pikr 0.9.4 with crcbl 0.12.1, which
+    carries crcbl's fix (`f9d6261d`, first released in 0.10.0) keeping
+    `WM_IME_STARTCOMPOSITION` and `WM_IME_COMPOSITION` away from
+    `DefWindowProc`: in 4 runs no `MSCTFIME Composition` window appeared on
+    pikr's thread while composing, and screenshots showed the reading once,
+    inline and underlined at the caret (before 0.10.0 Windows drew its own copy
+    beside it). The candidate list opens below the caret, the Enter that commits
+    does not reach pikr, and the commit arrives whole and once: the second Enter
+    printed one `日本語` or one `にほんご`, never doubled. During conversion
+    pikr draws the caret at the start of the pre-edit, where the IME reports it.
+    Surprise, not a bug: this desktop's IME has learned `にほんご` as the first
+    conversion of "nihongo" from earlier test commits, so one Space now commits
+    the kana and a second Space reaches `日本語`; a test expecting kanji must
+    press Space twice or run on a fresh IME profile. Not checked: AppKit.
   - `ui::run::headless` drives named keys through `HeadlessShell::key_press`. An
     "events due at pump N" queue, which would let those tests script input
     across frames, is in crcbl's backlog, unscheduled.
