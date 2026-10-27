@@ -100,7 +100,16 @@
     loaded-machine entry below). Options, in order of gain: fallbacks loaded
     only when a glyph needs one (a crcbl API), font files mapped instead of read
     (crcbl), or the faces read in parallel (pikr alone; a probe was faster only
-    with the files evicted, a warm launch was not measured).
+    with the files evicted, a warm launch was not measured). Lazy fallbacks are
+    being built in crcbl (asked 2026-10-27).
+  - **Baseline for that, 2026-10-27** (pikr 0.9.4, crcbl 0.12.0, saved choice
+    `Used`, load average 0.1, three launches each): the GPU's presenter was
+    ready at 15–19 ms, fonts loaded at 66–80 ms, and first paint came at 74–85
+    ms in dmenu and 86–87 ms in drun. Resident size was 112 MB in dmenu and 122
+    MB in drun, of it 91–101 MB anonymous, mostly the fallback faces; a first
+    launch that loads every driver peaked at 177 MB. While shown and idle pikr
+    made about 8 voluntary context switches a second (the caret blink) and used
+    0–1 CPU tick per 5 s.
   - Collection, history and ranking before the window opens: under 3 ms in every
     mode but run (13–19 ms warm, about 100 ms cold, from scanning `$PATH`). Not
     worth moving off the critical path.
