@@ -95,16 +95,37 @@
   - **The GPU bounds first paint (crcbl 0.12.1).** pikr loads its fallback faces
     only when a glyph needs one (`Font::from_system_lazy` in
     `ui::run::load_fonts`), and crcbl-image reads GTK's `icon-theme.cache`
-    instead of listing icon directories. Before that, reading every fallback
-    face whole bounded first paint, and then building the `IconThemes` index
-    (80–105 ms) did. Measured 2026-10-27 on the release build (nested Hyprland,
-    saved choice `Used`, load average 0.4–1.9, five launches each): the GPU was
-    chosen at 14–18 ms, fonts loaded at 14–28 ms, and first paint came at 29–33
-    ms in dmenu and 29–44 ms in drun; resident size was 32 MB in dmenu and 33–34
-    MB in drun. A 日本語 row reading 3 of 20 faces and drawing correctly was
-    checked on the `[patch]` trial of the same crcbl code, not on 0.12.1. Not
-    pursued, since fonts no longer bound paint: font files mapped instead of
-    read, and faces read in parallel.
+    instead of listing icon directories. Measured 2026-10-27 on the release
+    build (nested Hyprland, saved choice `Used`, load average 0.4–1.9, five
+    launches each): first paint at 29–33 ms in dmenu and 29–44 ms in drun;
+    resident size 32 MB in dmenu and 33–34 MB in drun. A 日本語 row reading 3 of
+    20 faces and drawing correctly was checked on the `[patch]` trial of the
+    same crcbl code, not on 0.12.1.
+  - **Where the GPU path goes, 2026-10-29** (dmenu, same setup, temporary timing
+    logs, load average 7–12): shell open 1.9 ms, window sized 5.4 ms (about 3.5
+    ms waiting for the compositor's configure), Vulkan driver loaded and
+    instance created 13.0 ms, device and swapchain 17.7 ms, then crcbl-frame's
+    `UiRenderer::new` 12.3–12.5 ms, frame build 1–4 ms and the first present 4–7
+    ms. Timed inside `UiRenderer::build` through a `[patch]` copy: the built-in
+    glyph atlas upload took 7–8 ms, the cleared image page, glyph pages and
+    blank texture 4, 3–5 and 1.2–1.7 ms, and the pipelines about 0.5 ms (Mesa's
+    shader cache hits). crcbl logs "no timeline semaphores; retiring command
+    buffers with wait_idle" on ANV, so each upload presumably waits for the
+    device. Asked crcbl on 2026-10-29 to record the initial uploads in one
+    submission without waiting, to check why ANV shows no timeline semaphores,
+    and for a presenter that opens the instance and device while the window
+    waits for its configure. Nothing for pikr to do until crcbl answers.
+  - **The font lookup is kept (`ui::font_lookup`).** fontconfig's first lookup
+    (`FcInitLoadConfigAndFonts`) took 13–16 ms, more than the GPU path on a
+    quiet machine. pikr keeps the answer in `fonts.toml` and asks again in the
+    background, rewriting the file only when the answer changed; `ui::run::run`
+    joins that thread before exiting, so a temporary file is never left behind.
+    Measured 2026-10-29, six dmenu launches each, interleaved, load average
+    about 15: fonts ready at 1.7–2.1 ms against 15–24 ms; first paint 26–34 ms
+    against 31–37 ms. Not measured: Windows (DirectWrite) and macOS (CoreText)
+    lookup costs, where the same cache applies; the Windows session was asked to
+    profile on 2026-10-29. Not pursued: mapping font files instead of reading
+    them, and reading faces in parallel.
   - **Baseline before that, 2026-10-27** (pikr 0.9.4, crcbl 0.12.0, saved choice
     `Used`, load average 0.1, three launches each): the GPU's presenter was
     ready at 15–19 ms, fonts loaded at 66–80 ms, and first paint came at 74–85

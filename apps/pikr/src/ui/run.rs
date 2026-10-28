@@ -1,6 +1,7 @@
 //! The window and its event loop: a crcbl panel, its GPU swapchain, and the
 //! picker (or `--message` modal) drawn into it whenever something changed.
 
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -13,7 +14,6 @@ use crcbl_shell::{
 };
 use crcbl_ui::draw_list::DrawList;
 use crcbl_ui::font::Font;
-use crcbl_ui::font::system::crcbl_font::{FontQuery, SystemFonts};
 use crcbl_ui::text::FontAtlas;
 use crcbl_ui::tree::{AvailableSpace, Ui};
 use crcbl_ui::widget::PointerInput;
@@ -22,6 +22,7 @@ use glam::Vec2;
 use crate::modes::{self, dmenu::LoadedEntries};
 use crate::picker::session::{Outcome, Session};
 use crate::picker::state::VimMode;
+use crate::ui::font_lookup::{self, Lookup};
 use crate::ui::gpu::{Gpu, platform_backend};
 use crate::ui::gpu_choice;
 use crate::ui::keyboard::{key_from_commit, key_from_press, modifiers_from_crcbl};
@@ -69,10 +70,13 @@ pub struct WindowSpec {
 /// runs what it chose and exits the process.
 pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Result<()> {
     // Finding and reading the fonts overlaps opening the window and the
-    // GPU, the slow part of startup.
-    let fonts = {
+    // GPU, the slow part of startup. The thread may go on asking the system
+    // after it has answered; see `load_fonts`.
+    let (fonts, font_lookup) = {
         let family = spec.font_family.clone();
-        std::thread::spawn(move || load_fonts(&family))
+        let (ready, fonts) = mpsc::channel();
+        let lookup = std::thread::spawn(move || load_fonts(&family, font_lookup::path(), &ready));
+        (fonts, lookup)
     };
     // So do the first rows' icon lookups, which read every directory of
     // each icon theme they reach.
@@ -99,7 +103,7 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
         platform_backend()?,
         saved.as_ref(),
     )?;
-    let fonts = fonts.join().unwrap_or_else(|_| Fonts {
+    let fonts = fonts.recv().unwrap_or_else(|_| Fonts {
         theme: Err("the font loader panicked".into()),
         fallbacks: Vec::new(),
     });
@@ -131,6 +135,9 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
     if let Some(choice) = choice_to_save {
         gpu_choice::save(choice);
     }
+    // Long done in all but a launch that closes at once; exiting under it
+    // would leave its temporary state file behind.
+    let _ = font_lookup.join();
     std::process::exit(code);
 }
 
@@ -792,32 +799,69 @@ struct Fonts {
     fallbacks: Vec<Font>,
 }
 
-fn load_fonts(family: &str) -> Fonts {
+/// Sends the fonts to `ready`, from the lookup kept at `kept` when there is
+/// one and its theme face still reads, else from asking the system. Then,
+/// when it answered from the kept lookup, asks the system anyway and keeps
+/// the answer if it changed, for the next launch.
+fn load_fonts(family: &str, kept: Option<PathBuf>, ready: &mpsc::Sender<Fonts>) {
     let started = Instant::now();
-    let system = SystemFonts::new();
-    let query = FontQuery::new(family);
-    let theme = system
-        .find(&query)
-        .or_else(|| {
-            tracing::warn!(
-                family,
-                "theme font not installed; using the system sans-serif"
-            );
-            system.find(&FontQuery::new("sans-serif"))
+    let saved = kept
+        .as_deref()
+        .and_then(|path| font_lookup::load(path, family));
+    let theme = saved.as_ref().map(|saved| {
+        Font::from_system(&saved.theme).inspect_err(|e| {
+            tracing::debug!(path = %saved.theme.path.display(), "kept theme face unreadable: {e}");
         })
-        .ok_or_else(|| "no sans-serif font installed either".to_string())
-        .and_then(|face| Font::from_system(&face).map_err(|e| e.to_string()));
-    let fallbacks = system
-        .fallbacks(&query)
-        .into_iter()
-        .map(Font::from_system_lazy)
-        .collect::<Vec<_>>();
+    });
+    let (fonts, saved) = match (saved, theme) {
+        (Some(saved), Some(Ok(theme))) => (fonts_of(Ok(theme), &saved), Some(saved)),
+        _ => match font_lookup::find(family) {
+            Ok(found) => {
+                let theme = Font::from_system(&found.theme).map_err(|e| e.to_string());
+                let fonts = fonts_of(theme, &found);
+                if fonts.theme.is_ok()
+                    && let Some(path) = &kept
+                {
+                    font_lookup::save(path, family, &found);
+                }
+                (fonts, None)
+            }
+            Err(e) => (
+                Fonts {
+                    theme: Err(e),
+                    fallbacks: Vec::new(),
+                },
+                None,
+            ),
+        },
+    };
     tracing::debug!(
         elapsed_us = started.elapsed().as_micros(),
-        fallbacks = fallbacks.len(),
+        fallbacks = fonts.fallbacks.len(),
+        kept = saved.is_some(),
         "startup fonts loaded"
     );
-    Fonts { theme, fallbacks }
+    // A closed channel means the window gave up waiting; nothing is lost.
+    let _ = ready.send(fonts);
+    if let (Some(saved), Some(path)) = (saved, kept)
+        && let Ok(found) = font_lookup::find(family)
+        && found != saved
+    {
+        font_lookup::save(&path, family, &found);
+    }
+}
+
+/// `lookup`'s fallbacks, each read once a glyph needs it, beside `theme`.
+fn fonts_of(theme: Result<Font, String>, lookup: &Lookup) -> Fonts {
+    Fonts {
+        theme,
+        fallbacks: lookup
+            .fallbacks
+            .iter()
+            .cloned()
+            .map(Font::from_system_lazy)
+            .collect(),
+    }
 }
 
 /// What the input method should compose for: the query while it takes text
@@ -873,7 +917,9 @@ mod tests {
     fn fallback_faces_are_read_only_when_a_glyph_needs_one() {
         use crcbl_ui::font::fallback::cluster_face;
 
-        let fonts = load_fonts("sans-serif");
+        let (ready, fonts) = mpsc::channel();
+        load_fonts("sans-serif", None, &ready);
+        let fonts = fonts.recv().unwrap();
         let font = fonts
             .theme
             .expect("a sans-serif font")
@@ -893,6 +939,62 @@ mod tests {
             after.iter().all(|f| !f.is_loaded()),
             "a face after the one that draws 日 was read"
         );
+    }
+
+    fn fonts_from(kept: &std::path::Path) -> Fonts {
+        let (ready, fonts) = mpsc::channel();
+        load_fonts("sans-serif", Some(kept.to_owned()), &ready);
+        fonts.recv().unwrap()
+    }
+
+    fn gone(dir: &std::path::Path) -> crcbl_ui::font::system::crcbl_font::FontMatch {
+        crcbl_ui::font::system::crcbl_font::FontMatch {
+            path: dir.join("gone.ttf"),
+            index: 0,
+            family: "Gone".to_owned(),
+            weight: 400,
+            style: Default::default(),
+        }
+    }
+
+    /// A first launch keeps what the system found; a later one draws with
+    /// the kept lookup, then keeps the system's answer when it changed.
+    #[test]
+    fn a_kept_font_lookup_is_used_then_refreshed() {
+        let found = font_lookup::find("sans-serif").expect("a sans-serif font");
+        let dir = tempfile::tempdir().unwrap();
+        let kept = dir.path().join("fonts.toml");
+
+        assert!(fonts_from(&kept).theme.is_ok());
+        assert_eq!(font_lookup::load(&kept, "sans-serif"), Some(found.clone()));
+
+        let stale = Lookup {
+            theme: found.theme.clone(),
+            fallbacks: vec![gone(dir.path())],
+        };
+        font_lookup::save(&kept, "sans-serif", &stale);
+        let fonts = fonts_from(&kept);
+        assert!(fonts.theme.is_ok());
+        assert_eq!(fonts.fallbacks.len(), 1, "the kept lookup was not used");
+        assert_eq!(font_lookup::load(&kept, "sans-serif"), Some(found));
+    }
+
+    /// A kept theme face that no longer reads is passed over for the
+    /// system's answer, which replaces it.
+    #[test]
+    fn a_kept_theme_face_that_is_gone_is_looked_up_again() {
+        let found = font_lookup::find("sans-serif").expect("a sans-serif font");
+        let dir = tempfile::tempdir().unwrap();
+        let kept = dir.path().join("fonts.toml");
+        let stale = Lookup {
+            theme: gone(dir.path()),
+            fallbacks: Vec::new(),
+        };
+        font_lookup::save(&kept, "sans-serif", &stale);
+        let fonts = fonts_from(&kept);
+        assert!(fonts.theme.is_ok());
+        assert_eq!(fonts.fallbacks.len(), found.fallbacks.len());
+        assert_eq!(font_lookup::load(&kept, "sans-serif"), Some(found));
     }
 
     #[test]

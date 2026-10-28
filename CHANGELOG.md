@@ -8,6 +8,17 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- pikr keeps the system fonts it found for the theme's family in `fonts.toml` in
+  its state directory, and later launches read the theme face straight from its
+  file instead of asking the system first. On Linux that skips fontconfig's
+  start-up, which loads its whole configuration and font cache: fonts were ready
+  at 1.7–2.1 ms instead of 15–24 ms on an Intel laptop under load. pikr still
+  asks the system in the background and replaces the file when the answer
+  changed, so a font installed or removed shows from the launch after. First
+  paint gains little for now, since opening the GPU is the slower path.
+
 ## [0.9.5] - 2026-10-28
 
 ### Changed
