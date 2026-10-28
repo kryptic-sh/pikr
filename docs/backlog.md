@@ -111,15 +111,15 @@
     blank texture 4, 3–5 and 1.2–1.7 ms, and the pipelines about 0.5 ms (Mesa's
     shader cache hits). crcbl logs "no timeline semaphores; retiring command
     buffers with wait_idle" on ANV, so each upload presumably waits for the
-    device. crcbl answered on 2026-10-29 with two commits on its main.
-    `d08f09aa` has the presenter always ask for timeline semaphores and stays
-    for crcbl's next release. `676c1418` recorded the four start-up textures in
-    one submission with one wait (warm `UiRenderer::new` from a median 11.70 to
-    8.96 ms in crcbl's debug-build A/B), but was reverted the same day as
-    `1857671a`: with both commits, crcbl's macOS Metal e2e job aborted in
-    Apple's paravirtual driver. crcbl brings the batch back once a Metal fix for
-    the timeline side passes a Metal run, and will say when. They were missing
-    because crcbl never asked, not because of ANV. Asking for
+    device. crcbl answered on 2026-10-29; both fixes are on crcbl main for its
+    next release. `d08f09aa` has the presenter always ask for timeline
+    semaphores, which were missing because crcbl never asked, not because of
+    ANV. `e91420d1` records the four start-up textures in one submission with
+    one wait (warm `UiRenderer::new` from a median 11.70 to 8.96 ms in crcbl's
+    debug-build A/B). Its first landing, `676c1418`, was reverted because,
+    together with the timeline fix, it aborted crcbl's macOS Metal e2e job in
+    Apple's paravirtual driver; it relanded with the crcbl-mtl fix `0d2e343e`
+    after all three Metal CI jobs passed. Asking for
     `Features::TIMELINE_SEMAPHORE` in pikr's `PresenterDesc` on 0.12.1 was tried
     the same day: it took effect, but first paint did not move (seven
     interleaved dmenu launches, medians about 31.7 and 32.0 ms), so pikr waits
