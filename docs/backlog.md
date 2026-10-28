@@ -111,10 +111,19 @@
     blank texture 4, 3–5 and 1.2–1.7 ms, and the pipelines about 0.5 ms (Mesa's
     shader cache hits). crcbl logs "no timeline semaphores; retiring command
     buffers with wait_idle" on ANV, so each upload presumably waits for the
-    device. Asked crcbl on 2026-10-29 to record the initial uploads in one
-    submission without waiting, to check why ANV shows no timeline semaphores,
-    and for a presenter that opens the instance and device while the window
-    waits for its configure. Nothing for pikr to do until crcbl answers.
+    device. crcbl answered on 2026-10-29, both on crcbl main for its next
+    release: `676c1418` records the four start-up textures in one submission
+    with one wait (warm `UiRenderer::new` from a median 11.70 to 8.96 ms in
+    crcbl's debug-build A/B), and `d08f09aa` has the presenter always ask for
+    timeline semaphores. They were missing because crcbl never asked, not
+    because of ANV. Asking for `Features::TIMELINE_SEMAPHORE` in pikr's
+    `PresenterDesc` on 0.12.1 was tried the same day: it took effect, but first
+    paint did not move (seven interleaved dmenu launches, medians about 31.7 and
+    32.0 ms), so pikr waits for the release. Left in crcbl's backlog: not
+    waiting on the upload at all, ANV's 7–10 ms first submission on a fresh
+    device (driver warm-up), and opening the instance before the window's first
+    configure, which needs the open split around surface creation. When crcbl
+    releases, bump it and measure `UiRenderer::new` and first paint again.
   - **Windows: D3D12 device creation is about 300 ms of every launch (decision
     needed).** Measured 2026-10-29 by the Windows session (pikr 0.9.5, crcbl
     0.12.1, Windows 11, AMD RX 7900 XTX driving the display plus a Ryzen iGPU,
