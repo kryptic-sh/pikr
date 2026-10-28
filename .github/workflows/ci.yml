@@ -37,6 +37,20 @@ jobs:
       - run: rustup update --no-self-update stable
       - run: cargo fmt --all --check
 
+  prettier:
+    name: prettier (markdown, workflows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Pinned exactly: prettier's output moves between releases, and an
+      # unpinned one would fail a commit that changed nothing. Tracked files
+      # only, so a local `target/` is never walked. `default.css` is left out:
+      # it is a template whose `{accent}` placeholders prettier cannot parse.
+      - name: check formatting
+        run: >-
+          git ls-files -z '*.md' '*.yml' '*.yaml' | xargs -0 npx --yes
+          prettier@3.8.3 --check
+
   clippy:
     name: clippy ${{ matrix.os }}
     strategy:
@@ -237,11 +251,12 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     # Every quality gate must be green before packaging and publishing:
-    # test, fmt, clippy (all OSes), deny, machete, smoke (all OSes), the
+    # test, fmt, prettier, clippy (all OSes), deny, machete, smoke (all OSes), the
     # keyboard e2e suite, and the startup time gate. A failure anywhere
     # skips this job, which cascades to nfpm → publish-github-release →
     # aur/brew/scoop, so deploy fails closed.
-    needs: [test, fmt, clippy, deny, machete, smoke, e2e, startup-gate]
+    needs:
+      [test, fmt, prettier, clippy, deny, machete, smoke, e2e, startup-gate]
     # Skipped on PRs only — runs on every main push + tag + manual
     # dispatch so packaging-code bugs surface BEFORE a release is cut.
     if: github.event_name != 'pull_request'
@@ -388,7 +403,8 @@ jobs:
   # packages the tarball it uploads.
   build-musl:
     name: Build x86_64-unknown-linux-musl (Alpine)
-    needs: [test, fmt, clippy, deny, machete, smoke, e2e, startup-gate]
+    needs:
+      [test, fmt, prettier, clippy, deny, machete, smoke, e2e, startup-gate]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     container: alpine:latest
