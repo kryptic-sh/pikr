@@ -34,7 +34,7 @@ pub fn icon_for_app(item: &IShellItem, app_id: &str) -> Option<PathBuf> {
         return Some(cache_path);
     }
     if let Some(bytes) = extract_item_icon_png(item) {
-        write_atomically(&cache_path, &bytes).ok()?;
+        write_icon(&cache_path, &bytes).ok()?;
         return Some(cache_path);
     }
     // Extraction failed. Fall back to the generic-app icon so the picker row
@@ -49,12 +49,13 @@ fn cache_dir() -> Option<PathBuf> {
     Some(dir)
 }
 
-/// Derive the on-disk path for `key`'s cached PNG.
+/// Derive the on-disk path for `key`'s cached PNG: where [`icon_for_app`]
+/// writes the icon of the app whose id is `key`, whether or not it has yet.
 ///
 /// The filename is the lower-hex SHA-256 of `key`, which keeps filenames
 /// short, filesystem-safe, and deterministic — app ids contain `\`, `!` and
 /// `://`.
-fn icon_cache_path(key: &str) -> Option<PathBuf> {
+pub fn icon_cache_path(key: &str) -> Option<PathBuf> {
     use sha2::{Digest, Sha256};
     let hash = Sha256::digest(key.as_bytes());
     let hash_hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
@@ -72,17 +73,66 @@ fn fallback_icon_path() -> Option<PathBuf> {
         return Some(fallback);
     }
     let bytes = extract_generic_app_icon_png()?;
-    write_atomically(&fallback, &bytes).ok()?;
+    write_icon(&fallback, &bytes).ok()?;
     Some(fallback)
+}
+
+/// Write an icon's PNG `bytes` to `path` through `<path>.tmp`, renamed into
+/// place once complete.
+///
+/// Unlike [`write_atomically`]'s, the temporary name is fixed: icons are
+/// extracted in the background and pikr exits without waiting, so a write
+/// can be cut off, and the next write of the same icon then replaces the
+/// `.tmp` it left instead of adding another. The file is opened sharing only
+/// deletion, so a second pikr writing the same icon fails to open it rather
+/// than mixing its bytes in, and it is renamed while still open, so nobody
+/// can reopen it between the last byte and the rename.
+fn write_icon(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let tmp = icon_temp_path(path);
+    let mut file = open_icon_temp(&tmp)?;
+    let written = file
+        .write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .and_then(|()| std::fs::rename(&tmp, path));
+    if let Err(e) = written {
+        // The error being returned is the one worth reporting; the `.tmp`
+        // is still open to this handle alone, and removing it only tidies.
+        let _ = std::fs::remove_file(&tmp);
+        // Losing the race to another writer of the same icon is fine, as in
+        // `write_atomically`.
+        return if path.exists() { Ok(()) } else { Err(e) };
+    }
+    Ok(())
+}
+
+/// `<path>.tmp`, where [`write_icon`] writes `path` before renaming it.
+fn icon_temp_path(path: &Path) -> PathBuf {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    PathBuf::from(tmp)
+}
+
+/// Opens `tmp` empty, for [`write_icon`] alone: shared only for deletion, so
+/// no other writer can open it until this handle is closed.
+fn open_icon_temp(tmp: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows::Win32::Storage::FileSystem::FILE_SHARE_DELETE;
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .share_mode(FILE_SHARE_DELETE.0)
+        .open(tmp)
 }
 
 /// Write `bytes` to a uniquely named sibling temp file, then rename it over
 /// `path`.
 ///
-/// Several entries can share one cache file (every miss shares
-/// `__fallback__.png`), and several pikr processes can fill the caches at
-/// once — including the drun app-list cache, whose background refresh can be
-/// cut off by pikr exiting. [`crate::picker::write_private_state`] renames
+/// Several pikr processes can write the drun app-list cache at once, and its
+/// background refresh can be cut off by pikr exiting. [`crate::picker::write_private_state`] renames
 /// a complete file into place, so readers only ever see the old file or the
 /// new one.
 pub(super) fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -310,6 +360,33 @@ mod tests {
         let a = icon_cache_path("Microsoft.WindowsNotepad_8wekyb3d8bbwe!App");
         let b = icon_cache_path("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App");
         assert_ne!(a, b, "different keys must hash to different cache paths");
+    }
+
+    /// A write cut off by pikr exiting leaves `<icon>.tmp`; the next write
+    /// of that icon takes it over rather than adding a file beside it.
+    #[test]
+    fn write_icon_replaces_a_temporary_file_left_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("icon.png");
+        std::fs::write(dir.path().join("icon.png.tmp"), b"cut off").unwrap();
+        write_icon(&path, b"whole").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"whole");
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["icon.png"]);
+    }
+
+    /// While another writer has `<icon>.tmp` open, a second one is refused
+    /// instead of writing into it.
+    #[test]
+    fn write_icon_is_refused_while_another_writer_holds_the_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("icon.png");
+        let _other = open_icon_temp(&icon_temp_path(&path)).unwrap();
+        assert!(write_icon(&path, b"whole").is_err());
+        assert!(!path.exists());
     }
 
     /// `fallback_icon_path` must return a path and the file must be a valid

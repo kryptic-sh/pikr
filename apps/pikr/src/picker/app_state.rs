@@ -278,7 +278,7 @@ impl AppState {
             CliMode::Clipboard => Some(Box::new(crate::modes::clipboard::Clipboard)),
             CliMode::Dmenu => Some(Box::new(crate::modes::dmenu::Dmenu)),
             #[cfg(unix)]
-            CliMode::Drun => Some(Box::new(crate::modes::drun::Drun)),
+            CliMode::Drun => Some(Box::new(crate::modes::drun::Drun::default())),
             #[cfg(not(unix))]
             CliMode::Drun => None,
             CliMode::Emoji => Some(Box::new(crate::modes::emoji::Emoji)),

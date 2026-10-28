@@ -142,6 +142,13 @@ pub enum Payload {
 
 pub trait Mode {
     fn collect(&mut self) -> Result<Vec<Entry>>;
+
+    /// After [`collect`](Self::collect): a message each time a file the
+    /// collected rows draw from (an icon) lands on disk, so the rows are
+    /// drawn again; `None` when nothing is still on its way.
+    fn redraws(&mut self) -> Option<std::sync::mpsc::Receiver<()>> {
+        None
+    }
 }
 
 /// Execute a selected entry's payload. The runtime calls this once after the

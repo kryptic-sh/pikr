@@ -136,6 +136,28 @@
     frame cost not yet measured), keep a resident pikr process that holds the
     device, or accept it. The Windows session was asked to measure WARP's first
     paint and frame time.
+  - **Windows: cold drun icons are extracted in the background.** With no
+    `drun-apps.toml`, `drun_windows::collect_cached` lists the apps with
+    `Icons::Deferred`, each pointing at its `icon_cache_path`. The refresh
+    thread then extracts them and sends `Mode::redraws` a message per icon, and
+    `ui::run` coalesces them into one frame per drain. Measured 2026-10-29 with
+    old and new builds alternating, four cold launches each: first paint at
+    1904–4755 ms before and 500–739 ms after, and the last icon at 1526–3141 ms
+    before (all before the first paint) and 1322–2162 ms after. Left as is:
+    - Icons land in the shell's enumeration order, not the first page's, so a
+      visible row can wait until the end. Extracting the first page first would
+      need the `IShellItem`s again by id (`SHCreateItemFromParsingName`).
+    - Until its file lands a row shows the empty `.icon-slot`, not Windows'
+      generic icon: extracting that one is itself a shell call. An app whose
+      extraction fails keeps the empty slot for that launch; the cached list
+      gives it `__fallback__.png` from the next launch.
+    - A runtime `:drun` gets no redraws, but that is no gap today:
+      `AppState::switch_mode` builds no drun list on Windows at all, and unix
+      drun defers nothing.
+    - Surprise, not attributed: launching and closing cold drun several times a
+      second apart while the crcbl session ran heavy test suites on the same
+      machine, one deferred enumeration took 24.9 s and one `D3D12CreateDevice`
+      took 14.6 s. Neither came back once the runs were spaced out.
   - **The font lookup is kept (`ui::font_lookup`).** fontconfig's first lookup
     (`FcInitLoadConfigAndFonts`) took 13–16 ms, more than the GPU path on a
     quiet machine. pikr keeps the answer in `fonts.toml` and asks again in the

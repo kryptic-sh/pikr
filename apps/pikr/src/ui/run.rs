@@ -50,6 +50,9 @@ pub enum Content {
         session: Box<Session>,
         /// `--loading` rows still being read from stdin.
         pending: Option<mpsc::Receiver<LoadedEntries>>,
+        /// A message each time a file the rows draw from lands; see
+        /// [`modes::Mode::redraws`].
+        redraws: Option<mpsc::Receiver<()>>,
     },
     /// `--message`: text, dismissed with Escape.
     Message(String),
@@ -370,14 +373,29 @@ impl<'a> Window<'a> {
     ) -> Result<(Vec<modes::Payload>, i32)> {
         self.sync_text_input(&content)?;
         self.update_input_region()?;
-        // `--loading` rows, and whether their arrival wakes the loop.
-        let mut arrived = match &mut content {
-            Content::Picker { pending, .. } => pending.take().map(|rx| self.forward(rx)),
-            Content::Message(_) => None,
+        // `--loading` rows and files landing, and whether their arrival wakes
+        // the loop.
+        let (mut arrived, mut landing) = match &mut content {
+            Content::Picker {
+                pending, redraws, ..
+            } => (
+                pending.take().map(|rx| self.forward(rx)),
+                redraws.take().map(|rx| self.forward(rx)),
+            ),
+            Content::Message(_) => (None, None),
         };
 
         let mut dirty = true;
         loop {
+            if let Some((rx, _)) = &landing {
+                // However many files landed, one frame draws them all; the
+                // frame itself still waits for the GPU's pacing.
+                let (landed, done) = drain(rx);
+                dirty |= landed;
+                if done {
+                    landing = None;
+                }
+            }
             if let (Some((rx, _)), Content::Picker { session, .. }) = (&arrived, &mut content)
                 && let Ok(loaded) = rx.try_recv()
             {
@@ -432,7 +450,7 @@ impl<'a> Window<'a> {
             let mut timeout = self
                 .focused
                 .then(|| self.blink_at.saturating_duration_since(Instant::now()));
-            if matches!(arrived, Some((_, false))) {
+            if matches!(arrived, Some((_, false))) || matches!(landing, Some((_, false))) {
                 timeout = Some(timeout.map_or(LOADING_POLL, |t| t.min(LOADING_POLL)));
             }
             self.shell.wait_events(timeout);
@@ -490,23 +508,23 @@ impl<'a> Window<'a> {
         Ok(())
     }
 
-    /// Relays `--loading` rows from the reader thread, waking the loop when
-    /// they arrive. The flag says whether it can: without a waker the loop
-    /// has to poll for them.
-    fn forward(
-        &mut self,
-        rx: mpsc::Receiver<LoadedEntries>,
-    ) -> (mpsc::Receiver<LoadedEntries>, bool) {
+    /// Relays messages from another thread (`--loading` rows, files landing),
+    /// waking the loop as each arrives. The flag says whether it can: without
+    /// a waker the loop has to poll for them.
+    fn forward<T: Send + 'static>(&mut self, rx: mpsc::Receiver<T>) -> (mpsc::Receiver<T>, bool) {
         let (tx, forwarded) = mpsc::channel();
         let waker = self.shell.waker();
         let wakes = waker.is_some();
         if !wakes {
-            tracing::warn!("the window system cannot wake pikr; polling for --loading rows");
+            tracing::warn!("the window system cannot wake pikr; polling for background work");
         }
         std::thread::spawn(move || {
-            if let Ok(loaded) = rx.recv() {
-                let _ = tx.send(loaded);
-                if let Some(waker) = waker {
+            while let Ok(message) = rx.recv() {
+                // The loop has dropped its end and wants no more.
+                if tx.send(message).is_err() {
+                    break;
+                }
+                if let Some(waker) = &waker {
                     waker.wake();
                 }
             }
@@ -864,6 +882,19 @@ fn fonts_of(theme: Result<Font, String>, lookup: &Lookup) -> Fonts {
     }
 }
 
+/// Takes every message waiting on `rx`: whether there was any, and whether
+/// its sender has hung up, so that no more will come.
+fn drain(rx: &mpsc::Receiver<()>) -> (bool, bool) {
+    let mut any = false;
+    loop {
+        match rx.try_recv() {
+            Ok(()) => any = true,
+            Err(mpsc::TryRecvError::Empty) => return (any, false),
+            Err(mpsc::TryRecvError::Disconnected) => return (any, true),
+        }
+    }
+}
+
 /// What the input method should compose for: the query while it takes text
 /// (Insert mode, or the `:` prompt), kept from learning under `-P`. In Normal
 /// and Visual mode keys are commands, which an input method in its native
@@ -1009,6 +1040,7 @@ mod tests {
                 None,
             )),
             pending: None,
+            redraws: None,
         };
         let press = |content: &mut Content, key: Key| {
             if let Content::Picker { session, .. } = content {

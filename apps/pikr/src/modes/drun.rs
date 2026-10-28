@@ -25,16 +25,28 @@ pub use windows_impl::launch;
 pub(crate) use windows_impl::ComApartment;
 
 #[derive(Default)]
-pub struct Drun;
+pub struct Drun {
+    /// Icons still being extracted landing, on Windows after a collect with
+    /// no app cache.
+    redraws: Option<std::sync::mpsc::Receiver<()>>,
+}
 
 impl Mode for Drun {
     fn collect(&mut self) -> Result<Vec<Entry>> {
         #[cfg(unix)]
         return unix_impl::collect();
         #[cfg(windows)]
-        return windows_impl::collect();
+        {
+            let (entries, redraws) = windows_impl::collect()?;
+            self.redraws = redraws;
+            Ok(entries)
+        }
         #[cfg(not(any(unix, windows)))]
         return Ok(Vec::new());
+    }
+
+    fn redraws(&mut self) -> Option<std::sync::mpsc::Receiver<()>> {
+        self.redraws.take()
     }
 }
 

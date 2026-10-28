@@ -19,6 +19,11 @@
 //! previous launch's list from `%LOCALAPPDATA%\pikr\drun-apps.toml` and
 //! re-enumerates on a background thread, rewriting the cache only when the list
 //! changed: an app installed or removed since shows up one launch later.
+//!
+//! Extracting the icons is far slower still, seconds for a full Start menu. So
+//! with no cache, [`collect`] lists the apps without extracting, each pointing
+//! at the file its icon will be cached in, and the background enumeration
+//! extracts them. A row draws its icon once the file lands.
 #![allow(unsafe_code)]
 
 use super::icons_windows;
@@ -26,6 +31,8 @@ use crate::modes::{Entry, Payload};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver};
+use std::thread::JoinHandle;
 use windows::Win32::System::Com::{
     COINIT_APARTMENTTHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize,
 };
@@ -58,21 +65,73 @@ struct CachedApps {
     apps: Vec<App>,
 }
 
-pub fn collect() -> Result<Vec<Entry>> {
+/// How [`enumerate`] fills in each app's icon.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Icons {
+    /// Extract any icon not cached yet, as the list is walked.
+    Extract,
+    /// Point at the file the icon is cached in, whether or not it is there
+    /// yet; a later [`Icons::Extract`] walk writes it.
+    Deferred,
+}
+
+/// The apps to list, and, when their icons are still being extracted, a
+/// message for each icon file as it lands.
+pub fn collect() -> Result<(Vec<Entry>, Option<Receiver<()>>)> {
     let _span = tracing::debug_span!("drun_collect_windows").entered();
     let Some(cache) = cache_path() else {
-        return Ok(to_entries(enumerate()?));
+        return Ok((to_entries(enumerate(Icons::Extract, &|| {})?), None));
     };
+    let collected = collect_cached(cache, enumerate)?;
+    // Never waited for: pikr exits as soon as the user picks, and a refresh
+    // cut off there leaves every icon it wrote in place for the next launch.
+    drop(collected.refresh);
+    Ok((to_entries(collected.shown), collected.landed))
+}
+
+/// What [`collect_cached`] lists now, and what it leaves running.
+struct Collected {
+    shown: Vec<App>,
+    /// A message for each icon file the refresh puts in place, when the
+    /// icons of `shown` were deferred.
+    landed: Option<Receiver<()>>,
+    /// The enumeration with icons extracted.
+    refresh: JoinHandle<()>,
+}
+
+/// The list to show now, from `cache` or else from `enumerate` with its icons
+/// deferred, and the thread that enumerates again with icons extracted and
+/// rewrites `cache` when the list differs from the one shown.
+fn collect_cached(
+    cache: PathBuf,
+    enumerate: impl Fn(Icons, &dyn Fn()) -> Result<Vec<App>> + Send + 'static,
+) -> Result<Collected> {
     if let Some(apps) = load_cache(&cache) {
         let previous = apps.clone();
-        std::thread::spawn(move || refresh_cache(&cache, &previous));
-        return Ok(to_entries(apps));
+        let refresh =
+            std::thread::spawn(move || refresh_cache(&cache, &previous, enumerate, &|| {}));
+        return Ok(Collected {
+            shown: apps,
+            landed: None,
+            refresh,
+        });
     }
-    let apps = enumerate()?;
-    if let Err(e) = write_cache(&cache, &apps) {
-        tracing::warn!("drun app cache write failed: {e}");
-    }
-    Ok(to_entries(apps))
+    let shown = enumerate(Icons::Deferred, &|| {})?;
+    let (tx, landed) = mpsc::channel();
+    let refresh = std::thread::spawn(move || {
+        // Nothing was cached, so the refresh writes what it finds even when
+        // it matches the list shown. A send fails only once the window has
+        // dropped the receiver, when there is nothing left to draw.
+        let landed = || {
+            let _ = tx.send(());
+        };
+        refresh_cache(&cache, &[], enumerate, &landed);
+    });
+    Ok(Collected {
+        shown,
+        landed: Some(landed),
+        refresh,
+    })
 }
 
 /// Activate the AppsFolder item `app_id` through the shell, as Start does.
@@ -110,8 +169,9 @@ fn to_entries(apps: Vec<App>) -> Vec<Entry> {
 }
 
 /// Walk `shell:AppsFolder` and return its launchable items sorted by label,
-/// extracting (or reusing cached) icons along the way.
-fn enumerate() -> Result<Vec<App>> {
+/// with their icons as `icons` says, calling `landed` once each extracted
+/// icon's file is in place.
+fn enumerate(icons: Icons, landed: &dyn Fn()) -> Result<Vec<App>> {
     let _span = tracing::debug_span!("drun_apps_folder_enumerate").entered();
     let _com = ComApartment::enter();
 
@@ -137,8 +197,11 @@ fn enumerate() -> Result<Vec<App>> {
         if !is_launchable(&label, &id) {
             continue;
         }
-        let icon =
-            icons_windows::icon_for_app(&item, &id).map(|path| path.to_string_lossy().into_owned());
+        let icon = match icons {
+            Icons::Extract => icons_windows::icon_for_app(&item, &id).inspect(|_| landed()),
+            Icons::Deferred => icons_windows::icon_cache_path(&id),
+        };
+        let icon = icon.map(|path| path.to_string_lossy().into_owned());
         apps.push(App { label, id, icon });
     }
 
@@ -147,11 +210,16 @@ fn enumerate() -> Result<Vec<App>> {
     Ok(apps)
 }
 
-/// Re-enumerate and rewrite the cache if the list differs from `previous`,
-/// the list this launch is showing. Runs on its own thread, so it joins its
-/// own COM apartment inside `enumerate`.
-fn refresh_cache(cache: &Path, previous: &[App]) {
-    match enumerate() {
+/// Re-enumerate with icons extracted, calling `landed` for each, and rewrite
+/// the cache if the list differs from `previous`. Runs on its own thread, so
+/// it joins its own COM apartment inside `enumerate`.
+fn refresh_cache(
+    cache: &Path,
+    previous: &[App],
+    enumerate: impl Fn(Icons, &dyn Fn()) -> Result<Vec<App>>,
+    landed: &dyn Fn(),
+) {
+    match enumerate(Icons::Extract, landed) {
         Ok(apps) if apps != previous => {
             if let Err(e) = write_cache(cache, &apps) {
                 tracing::warn!("drun app cache write failed: {e}");
@@ -353,12 +421,87 @@ mod tests {
         ));
     }
 
+    /// Stands in for the shell's list: deferred icons under `C:\deferred`,
+    /// extracted ones under `C:\extracted`, each reported as it lands.
+    fn two_apps(icons: Icons, landed: &dyn Fn()) -> Result<Vec<App>> {
+        let dir = match icons {
+            Icons::Deferred => "deferred",
+            Icons::Extract => "extracted",
+        };
+        Ok(["Notepad", "Paint"]
+            .map(|label| {
+                if icons == Icons::Extract {
+                    landed();
+                }
+                App {
+                    label: label.into(),
+                    id: label.into(),
+                    icon: Some(format!(r"C:\{dir}\{label}.png")),
+                }
+            })
+            .into())
+    }
+
+    #[test]
+    fn a_cold_collect_shows_deferred_icons_and_the_refresh_extracts_and_caches_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("drun-apps.toml");
+        let collected = collect_cached(cache.clone(), two_apps).unwrap();
+        assert_eq!(collected.shown, two_apps(Icons::Deferred, &|| {}).unwrap());
+        collected.refresh.join().unwrap();
+        let landed = collected
+            .landed
+            .expect("a cold collect reports its icons landing");
+        assert_eq!(landed.try_iter().count(), 2, "one message per icon");
+        assert_eq!(
+            load_cache(&cache),
+            Some(two_apps(Icons::Extract, &|| {}).unwrap())
+        );
+    }
+
+    #[test]
+    fn a_cold_collect_caches_a_list_that_matches_the_one_shown() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("drun-apps.toml");
+        let same = |_: Icons, _: &dyn Fn()| Ok(vec![app("Notepad", "notepad")]);
+        let collected = collect_cached(cache.clone(), same).unwrap();
+        collected.refresh.join().unwrap();
+        assert_eq!(load_cache(&cache), Some(vec![app("Notepad", "notepad")]));
+    }
+
+    #[test]
+    fn a_warm_collect_shows_the_cache_and_defers_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("drun-apps.toml");
+        write_cache(&cache, &[app("Notepad", "notepad")]).unwrap();
+        let extract_only = |icons: Icons, landed: &dyn Fn()| {
+            assert_eq!(icons, Icons::Extract, "a warm collect never defers");
+            two_apps(icons, landed)
+        };
+        let collected = collect_cached(cache.clone(), extract_only).unwrap();
+        assert_eq!(collected.shown, vec![app("Notepad", "notepad")]);
+        assert!(collected.landed.is_none(), "nothing is on its way");
+        collected.refresh.join().expect("the refresh extracts");
+        assert_eq!(
+            load_cache(&cache),
+            Some(two_apps(Icons::Extract, &|| {}).unwrap()),
+            "a changed list is cached"
+        );
+    }
+
     /// The enumeration must see what the `.lnk` walker could not: Command
     /// Prompt's shortcut stores its target as an IDList plus `%windir%`
     /// environment block, with no LinkInfo, so the walker dropped it.
     #[test]
     fn enumerate_lists_system_tools_with_icons() {
-        let apps = enumerate().expect("shell:AppsFolder must enumerate");
+        let landed = std::cell::Cell::new(0);
+        let apps = enumerate(Icons::Extract, &|| landed.set(landed.get() + 1))
+            .expect("shell:AppsFolder must enumerate");
+        assert_eq!(
+            landed.get(),
+            apps.iter().filter(|app| app.icon.is_some()).count(),
+            "each icon in place is reported"
+        );
         assert!(
             apps.iter()
                 .any(|app| app.id.to_ascii_lowercase().ends_with(r"\cmd.exe")),

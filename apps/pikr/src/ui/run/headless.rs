@@ -14,6 +14,8 @@ use crate::picker::keyspec::KbCustom;
 use crate::ui::view::{VISIBLE_ROWS, window_height};
 use crcbl_app::backend::GpuBackend;
 use crcbl_shell::{HeadlessShell, KeyCode, Modifiers as ShellModifiers};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// One scripted input.
 enum Input {
@@ -141,6 +143,7 @@ fn picker(mut state: AppState, filter: &str) -> Content {
     Content::Picker {
         session: Box::new(Session::new(state, None).without_persistence()),
         pending: None,
+        redraws: None,
     }
 }
 
@@ -216,6 +219,7 @@ fn screen_readers_hear_whole_labels_the_selected_row_and_the_query() {
             let content = Content::Picker {
                 session: Box::new(Session::new(state, None).without_persistence()),
                 pending: None,
+                redraws: None,
             };
             window.frame(&content, PointerInput::hovering(Vec2::ZERO))?;
             Ok(window.ui.accessibility_update())
@@ -351,6 +355,127 @@ fn message_modal_exits_0_on_one_escape() {
         run(content, &[Input::Text("a"), key(ESCAPE)]),
         (Vec::new(), 0)
     );
+}
+
+/// Pumps [`Watch`] waits for a frame that may never come: at a millisecond
+/// each, far longer than relaying a message to the loop takes.
+const WATCH_PUMPS: u32 = 200;
+/// Rounds of files landing [`draws_again`] waits out: more than one, so a
+/// relay that passed on only the first message would fail it.
+const WATCH_ROUNDS: u32 = 2;
+
+/// A script run at every pump of a [`draws_again`] run.
+struct Watch {
+    window: WindowId,
+    /// The sending end of the rows' redraws; a message goes out once the
+    /// first frame is done when `redraw` is set.
+    tx: mpsc::Sender<()>,
+    redraw: bool,
+    /// Rounds of messages still to send, each to be drawn before the next.
+    rounds: u32,
+    stage: WatchStage,
+    drew: Arc<AtomicBool>,
+}
+
+enum WatchStage {
+    /// Until the first frame asks for the next one.
+    FirstFrame,
+    /// Until the window system has answered it, so the loop is idle.
+    Answered,
+    /// Pumps left for a frame to be asked for again.
+    Waiting(u32),
+}
+
+impl Watch {
+    fn pump(mut self, shell: &mut HeadlessShell) {
+        let requested = shell.frame_requested(self.window).unwrap();
+        match self.stage {
+            WatchStage::FirstFrame if requested => self.stage = WatchStage::Answered,
+            WatchStage::Answered if !requested => {
+                if self.redraw {
+                    // Several files landing at once: still one frame.
+                    for _ in 0..3 {
+                        self.tx.send(()).unwrap();
+                    }
+                }
+                self.stage = WatchStage::Waiting(WATCH_PUMPS);
+            }
+            WatchStage::Waiting(_) if requested => {
+                self.rounds -= 1;
+                if self.rounds == 0 {
+                    self.drew.store(true, Ordering::SeqCst);
+                    shell.request_close(self.window).unwrap();
+                    return;
+                }
+                self.stage = WatchStage::Answered;
+            }
+            WatchStage::Waiting(0) => {
+                shell.request_close(self.window).unwrap();
+                return;
+            }
+            WatchStage::Waiting(left) => {
+                std::thread::sleep(Duration::from_millis(1));
+                self.stage = WatchStage::Waiting(left - 1);
+            }
+            WatchStage::FirstFrame | WatchStage::Answered => {}
+        }
+        shell.schedule(0, move |shell| self.pump(shell));
+    }
+}
+
+/// Whether pikr draws again, with no input, once its first frame is done,
+/// for each of [`WATCH_ROUNDS`] rounds: with `redraw`, after messages say
+/// files the rows draw from have landed.
+fn draws_again(redraw: bool) -> bool {
+    let (tx, rx) = mpsc::channel();
+    let Content::Picker {
+        session, pending, ..
+    } = picker(fruit(), "")
+    else {
+        unreachable!("picker builds a picker");
+    };
+    let content = Content::Picker {
+        session,
+        pending,
+        redraws: Some(rx),
+    };
+    let drew = Arc::new(AtomicBool::new(false));
+    let seen = Arc::clone(&drew);
+    with_window(
+        VISIBLE_ROWS,
+        move |shell, window| {
+            let watch = Watch {
+                window,
+                tx,
+                redraw,
+                rounds: WATCH_ROUNDS,
+                stage: WatchStage::FirstFrame,
+                drew: seen,
+            };
+            shell.schedule(0, move |shell| watch.pump(shell));
+        },
+        |window, early| window.run(content, early),
+    );
+    drew.load(Ordering::SeqCst)
+}
+
+#[test]
+fn a_file_landing_draws_the_rows_again() {
+    assert!(!draws_again(false), "an idle loop draws nothing");
+    assert!(draws_again(true), "the landed file is never drawn");
+}
+
+#[test]
+fn draining_redraws_takes_them_all_and_sees_the_sender_go() {
+    let (tx, rx) = mpsc::channel();
+    assert_eq!(drain(&rx), (false, false));
+    for _ in 0..3 {
+        tx.send(()).unwrap();
+    }
+    assert_eq!(drain(&rx), (true, false), "three messages, one redraw");
+    assert_eq!(drain(&rx), (false, false), "all three were taken");
+    drop(tx);
+    assert_eq!(drain(&rx), (false, true));
 }
 
 #[test]

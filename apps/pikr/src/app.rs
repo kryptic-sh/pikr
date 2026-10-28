@@ -52,7 +52,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         Mode::Calc => Box::new(modes::calc::Calc),
         Mode::Clipboard => Box::new(modes::clipboard::Clipboard),
         Mode::Dmenu => Box::new(modes::dmenu::Dmenu),
-        Mode::Drun => Box::new(modes::drun::Drun),
+        Mode::Drun => Box::new(modes::drun::Drun::default()),
         Mode::Emoji => Box::new(modes::emoji::Emoji),
         Mode::Run => Box::new(modes::run::Run),
         Mode::Ssh => Box::new(modes::ssh::Ssh),
@@ -71,6 +71,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
     } else {
         mode.collect()?.into_iter().map(Arc::new).collect()
     };
+    let redraws = mode.redraws();
     tracing::debug!(
         phase_us = phase_started.elapsed().as_micros(),
         elapsed_us = startup_started.elapsed().as_micros(),
@@ -125,6 +126,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         Content::Picker {
             session: Box::new(session),
             pending,
+            redraws,
         },
         startup_started,
     )

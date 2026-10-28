@@ -18,6 +18,13 @@ and this project adheres to
   asks the system in the background and replaces the file when the answer
   changed, so a font installed or removed shows from the launch after. First
   paint gains little for now, since opening the GPU is the slower path.
+- On Windows, drun no longer extracts app icons before it opens. With no app
+  cache (the first launch, or after `%LOCALAPPDATA%\pikr\drun-apps.toml` is
+  deleted), pikr lists the apps at once and extracts their icons in the
+  background, and each row draws its icon as soon as the file lands. On a
+  138-app Start menu, first paint came at 500–739 ms instead of 1.9–4.8 s, and
+  the last icon landed at 1.3–2.2 s. Closing pikr before extraction finishes
+  keeps the icons already written, and the next launch extracts only the rest.
 
 ## [0.9.5] - 2026-10-28
 
