@@ -115,6 +115,18 @@
     submission without waiting, to check why ANV shows no timeline semaphores,
     and for a presenter that opens the instance and device while the window
     waits for its configure. Nothing for pikr to do until crcbl answers.
+  - **Windows: D3D12 device creation is about 300 ms of every launch (decision
+    needed).** Measured 2026-10-29 by the Windows session (pikr 0.9.5, crcbl
+    0.12.1, Windows 11, AMD RX 7900 XTX driving the display plus a Ryzen iGPU,
+    saved choice `Used`, six launches each): first paint at 337–352 ms in dmenu
+    and 356–439 ms in drun, of which `D3D12CreateDevice` alone took 293–308 ms.
+    A bare windows-rs probe gave the same, outside crcbl: 283–378 ms on the 7900
+    XTX, 349–506 ms on the iGPU, and 9.7–10.6 ms on WARP. It is the AMD driver's
+    start-up, not crcbl's. Fonts take 3–5 ms on DirectWrite and do not matter
+    there. The options are the user's: render with WARP (CPU rendering; its
+    frame cost not yet measured), keep a resident pikr process that holds the
+    device, or accept it. The Windows session was asked to measure WARP's first
+    paint and frame time.
   - **The font lookup is kept (`ui::font_lookup`).** fontconfig's first lookup
     (`FcInitLoadConfigAndFonts`) took 13–16 ms, more than the GPU path on a
     quiet machine. pikr keeps the answer in `fonts.toml` and asks again in the
