@@ -132,10 +132,38 @@
     A bare windows-rs probe gave the same, outside crcbl: 283–378 ms on the 7900
     XTX, 349–506 ms on the iGPU, and 9.7–10.6 ms on WARP. It is the AMD driver's
     start-up, not crcbl's. Fonts take 3–5 ms on DirectWrite and do not matter
-    there. The options are the user's: render with WARP (CPU rendering; its
-    frame cost not yet measured), keep a resident pikr process that holds the
-    device, or accept it. The Windows session was asked to measure WARP's first
-    paint and frame time.
+    there. The options are the user's: render with WARP, keep a resident pikr
+    process that holds the device, or accept it. Switching to Vulkan is not one
+    of them; see below.
+    - **WARP and Vulkan, measured 2026-10-29** with every other session on the
+      machine paused (about a third of one core busy). A scratch build added
+      timing logs, a Vulkan override and simulated typing: `a` and Backspace by
+      turns every 150 ms, 40 keys. Five dmenu and five drun launches each:
+
+      | Backend                    | `Presenter::open` | `UiRenderer::new` | First paint  |
+      | -------------------------- | ----------------- | ----------------- | ------------ |
+      | D3D12, 7900 XTX            | 303–368 ms        | 11.3–14.6 ms      | 326–410 ms   |
+      | WARP (`CRCBL_ADAPTER=cpu`) | 19.2–22.4 ms      | 4.6–5.2 ms        | 39.0–43.1 ms |
+      | Vulkan, 7900 XTX           | 384–411 ms        | 7.6–8.5 ms        | 406–435 ms   |
+
+    - While typing, a frame cost the same on all three. Building the frame took
+      0.27–0.33 ms median in dmenu and 0.96–1.04 ms in drun. `present` took
+      2.29–2.53 ms on D3D12, 1.81–2.20 ms on WARP and 1.66–1.77 ms on Vulkan.
+      The next frame was due 5.2–5.4 ms after each present on all three, which
+      is the scratch loop's 5 ms poll, not the GPU.
+    - Not measured: WARP's CPU use while drawing, and how its frames hold up on
+      a slower CPU or a larger window.
+    - **Vulkan pays the same ~300 ms in the swapchain.** A bare ash probe gave
+      `vkCreateInstance` 68–122 ms (the loader and its layers) and
+      `vkCreateDevice` 7.6–11.3 ms, ray tracing and mesh-shader extensions
+      included. But `vkCreateSwapchainKHR` on a 720×448 window took 290–297 ms,
+      and 615 ms on its first run. The first device creation of each Vulkan
+      driver took 159–462 ms once, then dropped.
+    - Vulkan also cannot draw pikr transparent on Windows: crcbl refuses a
+      transparent Win32 window on Vulkan, so the scratch build opened it opaque.
+      Two Vulkan drivers list each AMD adapter, and pikr then logs "no Vulkan
+      driver alone shows the adapter; saving it without one", so the saved
+      choice still enumerates all four. Its second launch did say `Used`.
   - **Windows: cold drun icons are extracted in the background.** With no
     `drun-apps.toml`, `drun_windows::collect_cached` lists the apps with
     `Icons::Deferred`, each pointing at its `icon_cache_path`. The refresh
