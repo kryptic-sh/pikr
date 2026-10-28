@@ -14,10 +14,11 @@ and this project adheres to
   its state directory, and later launches read the theme face straight from its
   file instead of asking the system first. On Linux that skips fontconfig's
   start-up, which loads its whole configuration and font cache: fonts were ready
-  at 1.7–2.1 ms instead of 15–24 ms on an Intel laptop under load. pikr still
-  asks the system in the background and replaces the file when the answer
-  changed, so a font installed or removed shows from the launch after. First
-  paint gains little for now, since opening the GPU is the slower path.
+  at a median 1.9 ms instead of 17–19 ms on an Intel laptop, with first paint
+  unchanged. pikr still asks the system in the background and replaces the file
+  when the answer changed, so a font installed or removed shows from the launch
+  after. Opening the GPU is the slower path, so first paint will gain once it is
+  faster.
 - On Windows, drun no longer extracts app icons before it opens. With no app
   cache (the first launch, or after `%LOCALAPPDATA%\pikr\drun-apps.toml` is
   deleted), pikr lists the apps at once and extracts their icons in the

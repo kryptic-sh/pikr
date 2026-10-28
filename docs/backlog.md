@@ -164,6 +164,7 @@
       Two Vulkan drivers list each AMD adapter, and pikr then logs "no Vulkan
       driver alone shows the adapter; saving it without one", so the saved
       choice still enumerates all four. Its second launch did say `Used`.
+
   - **Windows: cold drun icons are extracted in the background.** With no
     `drun-apps.toml`, `drun_windows::collect_cached` lists the apps with
     `Icons::Deferred`, each pointing at its `icon_cache_path`. The refresh
@@ -191,12 +192,14 @@
     quiet machine. pikr keeps the answer in `fonts.toml` and asks again in the
     background, rewriting the file only when the answer changed; `ui::run::run`
     joins that thread before exiting, so a temporary file is never left behind.
-    Measured 2026-10-29, six dmenu launches each, interleaved, load average
-    about 15: fonts ready at 1.7–2.1 ms against 15–24 ms; first paint 26–34 ms
-    against 31–37 ms. Not measured: Windows (DirectWrite) and macOS (CoreText)
-    lookup costs, where the same cache applies; the Windows session was asked to
-    profile on 2026-10-29. Not pursued: mapping font files instead of reading
-    them, and reading faces in parallel.
+    Measured 2026-10-29 in a quiet window (every local session paused, load
+    average 1.2–2.0), seven launches each, interleaved with the commit before
+    it: fonts ready at a median 1.9 ms (1.1–2.8) against 18.6 ms in dmenu and
+    17.1 ms in drun (14.5–27.5); first paint unchanged within noise, a median
+    29.7 against 30.9 ms in dmenu and 36.9 against 34.5 ms in drun. DirectWrite
+    takes 3–5 ms in all on Windows, so the cache does little there. Not
+    measured: macOS (CoreText). Not pursued: mapping font files instead of
+    reading them, and reading faces in parallel.
   - **Baseline before that, 2026-10-27** (pikr 0.9.4, crcbl 0.12.0, saved choice
     `Used`, load average 0.1, three launches each): the GPU's presenter was
     ready at 15–19 ms, fonts loaded at 66–80 ms, and first paint came at 74–85
