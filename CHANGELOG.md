@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-10-28
+
 ### Changed
 
 - pikr opens faster and uses about a quarter of the memory: it reads a fallback
@@ -1450,7 +1452,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.4...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.5...main
+[0.9.5]: https://github.com/kryptic-sh/pikr/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/kryptic-sh/pikr/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/kryptic-sh/pikr/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/kryptic-sh/pikr/compare/v0.9.1...v0.9.2
