@@ -866,6 +866,35 @@ mod headless;
 mod tests {
     use super::*;
 
+    /// A launch reads no fallback face for text its theme face draws, and
+    /// for a char it lacks only the faces up to the first that has it. Needs
+    /// a system font with CJK glyphs; CI installs one on Linux.
+    #[test]
+    fn fallback_faces_are_read_only_when_a_glyph_needs_one() {
+        use crcbl_ui::font::fallback::cluster_face;
+
+        let fonts = load_fonts("sans-serif");
+        let font = fonts
+            .theme
+            .expect("a sans-serif font")
+            .with_fallback(&fonts.fallbacks);
+        let read = |font: &Font| font.fallback().iter().filter(|f| f.is_loaded()).count();
+        assert!(!font.fallback().is_empty(), "no system fallback fonts");
+        assert_eq!(read(&font), 0, "a fallback face was read before any text");
+
+        assert_eq!(cluster_face(&font, "a"), 0);
+        assert_eq!(read(&font), 0, "Latin text read a fallback face");
+
+        let face = cluster_face(&font, "日");
+        assert_ne!(face, 0, "no fallback face draws 日");
+        assert!(font.face(face).is_loaded());
+        let after = &font.fallback()[usize::from(face)..];
+        assert!(
+            after.iter().all(|f| !f.is_loaded()),
+            "a face after the one that draws 日 was read"
+        );
+    }
+
     #[test]
     fn the_input_method_composes_only_while_the_query_takes_text() {
         use crate::cli::Mode as CliMode;

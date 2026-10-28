@@ -241,3 +241,61 @@ fn loading_rows_arrive_and_accept() {
     assert_eq!(out.exit_code, Some(0), "stderr:\n{}", out.stderr);
     assert_eq!(out.stdout.trim(), "banana");
 }
+
+/// The GPU choice in the state file: a launch someone chose the GPU for
+/// (`CRCBL_ADAPTER`, a loader driver variable) saves none, a plain launch
+/// saves one after its window closes, the next launch uses it, and a saved
+/// device that is gone is replaced.
+#[test]
+fn gpu_choice_is_saved_once_and_never_for_a_chosen_launch() {
+    if !require_tools() {
+        return;
+    }
+    let sway = Sway::headless();
+    let saved = sway.state_dir.join("pikr").join("gpu-choice");
+    let cancel = |env: &[(&str, &str)]| {
+        let env = [&[("RUST_LOG", "pikr=debug"), ("NO_COLOR", "1")], env].concat();
+        let pikr = Pikr::spawn_with_env(&sway, &["--dmenu"], Some("apple\n"), &env).unwrap();
+        let out = pikr
+            .wait_with_retry(Duration::from_secs(15), Duration::from_millis(100), || {
+                let _ = Wtype::new(&sway).keys(&[Key::Escape, Key::Escape]).send();
+            })
+            .unwrap();
+        assert_eq!(out.exit_code, Some(1), "stderr:\n{}", out.stderr);
+        out.stderr
+    };
+
+    cancel(&[("CRCBL_ADAPTER", "cpu")]);
+    assert!(!saved.exists(), "a pinned launch saved its pin");
+    cancel(&[("VK_LOADER_DRIVERS_SELECT", "*")]);
+    assert!(
+        !saved.exists(),
+        "a launch the loader variable chose for saved"
+    );
+
+    let stderr = cancel(&[]);
+    assert!(
+        stderr.contains("saved_choice=NotGiven"),
+        "stderr:\n{stderr}"
+    );
+    let choice = std::fs::read_to_string(&saved).expect("a plain launch saved no choice");
+    assert!(choice.starts_with("crcbl-gpu-choice 1\n"), "{choice}");
+    assert!(choice.contains("\nbackend vk\n"), "{choice}");
+
+    let stderr = cancel(&[]);
+    assert!(stderr.contains("saved_choice=Used"), "stderr:\n{stderr}");
+    assert_eq!(std::fs::read_to_string(&saved).unwrap(), choice);
+
+    let gone: String = choice
+        .lines()
+        .map(|line| match line.strip_prefix("device ") {
+            Some(_) => "device 0xfffe\n".to_owned(),
+            None => format!("{line}\n"),
+        })
+        .collect();
+    assert_ne!(gone, choice, "the saved choice names no device");
+    std::fs::write(&saved, &gone).unwrap();
+    let stderr = cancel(&[]);
+    assert!(stderr.contains("saved_choice=Stale"), "stderr:\n{stderr}");
+    assert_eq!(std::fs::read_to_string(&saved).unwrap(), choice);
+}

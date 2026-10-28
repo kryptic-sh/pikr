@@ -157,7 +157,10 @@
     Surprise, not a bug: this desktop's IME has learned `にほんご` as the first
     conversion of "nihongo" from earlier test commits, so one Space now commits
     the kana and a second Space reaches `日本語`; a test expecting kanji must
-    press Space twice or run on a fresh IME profile. Not checked: AppKit.
+    press Space twice or run on a fresh IME profile. Not checked: AppKit. Not in
+    CI: these checks are manual only. Windows runners have no Japanese IME
+    installed, and driving one needs a real TSF session; the fix's own tests
+    live in crcbl.
   - `ui::run::headless` drives named keys through `HeadlessShell::key_press`. An
     "events due at pump N" queue, which would let those tests script input
     across frames, is in crcbl's backlog, unscheduled.
