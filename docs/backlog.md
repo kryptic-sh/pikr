@@ -136,9 +136,12 @@
     A bare windows-rs probe gave the same, outside crcbl: 283–378 ms on the 7900
     XTX, 349–506 ms on the iGPU, and 9.7–10.6 ms on WARP. It is the AMD driver's
     start-up, not crcbl's. Fonts take 3–5 ms on DirectWrite and do not matter
-    there. The options are the user's: render with WARP, keep a resident pikr
-    process that holds the device, or accept it. Switching to Vulkan is not one
-    of them; see below.
+    there. crcbl's DRED settings are not part of it either: the crcbl session
+    timed `D3D12CreateDevice` on the same card on 2026-10-29, 20 mirrored pairs
+    at 2–10% CPU, and got medians of 287.6 ms plain and 284.4 ms with DRED. The
+    options are the user's: render with WARP, keep a resident pikr process that
+    holds the device, or accept it. Switching to Vulkan is not one of them; see
+    below.
     - **WARP and Vulkan, measured 2026-10-29** with every other session on the
       machine paused (about a third of one core busy). A scratch build added
       timing logs, a Vulkan override and simulated typing: `a` and Backspace by
