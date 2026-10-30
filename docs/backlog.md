@@ -126,8 +126,11 @@
     for the release. Left in crcbl's backlog: not waiting on the upload at all,
     ANV's 7–10 ms first submission on a fresh device (driver warm-up), and
     opening the instance before the window's first configure, which needs the
-    open split around surface creation. When crcbl releases, bump it and measure
-    `UiRenderer::new` and first paint again.
+    open split around surface creation. crcbl 0.13.0 (tag `227fdc4a`) shipped
+    both fixes on 2026-10-29; the office-pikr session is bumping pikr to it
+    (0.13.0 changes `FollowDistances` and `PassTiming` fields). After the bump,
+    measure `UiRenderer::new` and first paint again, on Linux and on Windows,
+    each in a quiet window.
   - **Windows: D3D12 device creation is about 300 ms of every launch (decision
     needed).** Measured 2026-10-29 by the Windows session (pikr 0.9.5, crcbl
     0.12.1, Windows 11, AMD RX 7900 XTX driving the display plus a Ryzen iGPU,
