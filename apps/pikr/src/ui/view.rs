@@ -412,7 +412,7 @@ fn query(
     blink_on: bool,
     preedit: &[String; 2],
 ) -> Option<NodeKey> {
-    let chars: Vec<char> = text.chars().map(uncollapsed).collect();
+    let chars: Vec<char> = text.chars().collect();
     let cursor = cursor.min(chars.len());
     let blink = if blink_on { ".blink-on" } else { "" };
     if mode == VimMode::Insert && preedit.iter().any(|part| !part.is_empty()) {
@@ -438,8 +438,8 @@ fn query(
                 caret = Some(ui.block(&format!(".caret{blink}"), &at, |_| {}).key);
             }
             VimMode::Normal | VimMode::Visual => {
-                // Past the end the block sits on a no-break space.
-                let under = chars.get(cursor).copied().unwrap_or(NBSP).to_string();
+                // Past the end the block sits on a space.
+                let under = chars.get(cursor).copied().unwrap_or(' ').to_string();
                 let glyph = TextLayout::new(&font.font, &under, font.size, line_height, None);
                 // A right-to-left char's caret stands at its right edge.
                 let width = glyph.width();
@@ -485,9 +485,6 @@ fn composing(
     caret_class: &str,
     preedit: &[String; 2],
 ) -> (NodeKey, Option<NodeKey>) {
-    let preedit = preedit
-        .each_ref()
-        .map(|part| part.chars().map(uncollapsed).collect::<String>());
     let before: String = chars[..cursor].iter().collect();
     let after: String = chars[cursor..].iter().collect();
     let mut caret = None;
@@ -505,20 +502,6 @@ fn composing(
         ui.span(".query-text", after.as_str(), &[]);
     });
     (field.key, caret)
-}
-
-/// U+00A0, a space crcbl-ui never collapses.
-const NBSP: char = '\u{A0}';
-
-/// `c` as the query and the result rows draw it. crcbl-ui drops plain spaces
-/// at the end of a span (it has no `white-space: pre`), so a query ending in
-/// spaces drew the caret left of where typing goes (seen on Windows with
-/// `--filter "a  b  "`), and a space next to a highlighted run vanished
-/// ("client for" drew as "clientfor"). A no-break space is drawn the same
-/// width and keeps the character count, so the caret's char index still
-/// lines up.
-fn uncollapsed(c: char) -> char {
-    if c == ' ' { NBSP } else { c }
 }
 
 /// Result row `mi`. Returns whether it was clicked.
@@ -581,8 +564,7 @@ fn result_row(
 fn highlighted(ui: &mut Ui, selector: &str, text: &str, positions: &[u32]) {
     let block = ui.block(selector, &[], |ui| {
         for (run, matched) in runs(text, positions) {
-            let shown: String = run.chars().map(uncollapsed).collect();
-            ui.span(if matched { ".hl" } else { ".tx" }, shown.as_str(), &[]);
+            ui.span(if matched { ".hl" } else { ".tx" }, run, &[]);
         }
     });
     ui.set_accessible_label(block.key, text);
@@ -675,13 +657,6 @@ mod tests {
         let mut loading = session_with_icons(&labels, 2, false);
         loading.loading = Some("Loading".to_owned());
         assert!(first_page_icons(&loading).is_empty());
-    }
-
-    #[test]
-    fn query_spaces_are_drawn_as_no_break_spaces() {
-        let shown: String = "a  b ".chars().map(super::uncollapsed).collect();
-        assert_eq!(shown, "a\u{A0}\u{A0}b\u{A0}");
-        assert_eq!(shown.chars().count(), "a  b ".chars().count());
     }
 
     use super::runs;

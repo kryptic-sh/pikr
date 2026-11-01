@@ -11,6 +11,7 @@ use crate::modes::Payload;
 use crate::picker::app_state::AppState;
 use crate::picker::app_state::tests::app_state;
 use crate::picker::keyspec::KbCustom;
+use crate::picker::state::VimMode;
 use crate::ui::view::{VISIBLE_ROWS, window_height};
 use crcbl_app::backend::GpuBackend;
 use crcbl_shell::{HeadlessShell, KeyCode, Modifiers as ShellModifiers};
@@ -198,6 +199,37 @@ fn a_frame_presents_once_the_window_system_asks_for_it() {
             Ok(())
         },
     );
+}
+
+/// The caret's left edge and width, laid out by one frame of the picker with
+/// `query` typed and the caret at its end, in `mode`.
+fn caret_at_end(query: &str, mode: VimMode) -> (f32, f32) {
+    let mut state = fruit();
+    state.picker.vim_mode = mode;
+    let content = picker(state, query);
+    with_window(
+        VISIBLE_ROWS,
+        |_, _| {},
+        |window, _| {
+            window.frame(&content, PointerInput::hovering(Vec2::ZERO))?;
+            let (min, max) = window.view.caret_rect(&window.ui).expect("a caret");
+            Ok((min.x, max.x - min.x))
+        },
+    )
+}
+
+/// Spaces at the end of the query take their width, so the caret sits
+/// where the next character goes, and Normal mode's block past the end is a
+/// space wide.
+#[test]
+fn trailing_spaces_move_the_caret() {
+    let (bare, _) = caret_at_end("a", VimMode::Insert);
+    let (one, _) = caret_at_end("a ", VimMode::Insert);
+    let (two, _) = caret_at_end("a  ", VimMode::Insert);
+    assert!(bare < one && one < two, "{bare} {one} {two}");
+    let (block, width) = caret_at_end("a  ", VimMode::Normal);
+    assert!((block - two).abs() < 0.5, "block at {block}, bar at {two}");
+    assert!(width > 0.0, "the block past the end has no width");
 }
 
 /// What a screen reader is handed: a highlighted label is named whole, the
