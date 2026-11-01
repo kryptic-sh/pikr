@@ -31,6 +31,14 @@ and this project adheres to
   the last icon landed at 1.3–2.2 s. Closing pikr before extraction finishes
   keeps the icons already written, and the next launch extracts only the rest.
 
+### Fixed
+
+- On sway 1.9, pikr no longer closes when the first key comes from a different
+  keyboard than the last one used (a laptop's own keyboard and a plugged-in one,
+  for example). sway briefly takes the keyboard focus away and gives it back in
+  that case, and pikr took the loss as a cancel. pikr now closes only when the
+  focus stays gone.
+
 ## [0.9.5] - 2026-10-28
 
 ### Changed

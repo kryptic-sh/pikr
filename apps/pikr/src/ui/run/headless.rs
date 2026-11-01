@@ -516,11 +516,47 @@ fn return_accepts_the_matched_row() {
     assert_eq!(got, (stdout("banana"), 0));
 }
 
+/// No close request follows the loss, so only the grace running out can end
+/// the run. A waker handed out makes the headless shell's waits block as a
+/// real window system's do; it rings once, long after the grace, so a loop
+/// that did not wake itself for the grace is late instead of hung.
 #[test]
 fn losing_the_focus_it_had_closes_pikr_with_exit_1() {
-    // The Return after the loss would accept "banana" if pikr were still open.
-    let input = [Input::Focus(true), Input::Focus(false), key(RETURN)];
-    assert_eq!(run(picker(fruit(), "ban"), &input), (Vec::new(), 1));
+    const FALLBACK_RING: Duration = Duration::from_secs(5);
+    let started = Instant::now();
+    let got = with_window(
+        VISIBLE_ROWS,
+        |shell, window| {
+            let waker = shell.waker().expect("a headless waker");
+            std::thread::spawn(move || {
+                std::thread::sleep(FALLBACK_RING);
+                waker.wake();
+            });
+            shell.set_focus(window, true).unwrap();
+            shell.set_focus(window, false).unwrap();
+        },
+        |window, early| window.run(picker(fruit(), "ban"), early),
+    );
+    let elapsed = started.elapsed();
+    assert_eq!(got, (Vec::new(), 1));
+    assert!(elapsed >= FOCUS_GRACE, "closed before the grace ran out");
+    assert!(
+        elapsed < FALLBACK_RING,
+        "closed only when woken from outside"
+    );
+}
+
+/// A focus taken away and handed straight back, as sway 1.9 does on the
+/// first key from another keyboard, leaves pikr open.
+#[test]
+fn a_focus_that_comes_back_keeps_pikr_open() {
+    let input = [
+        Input::Focus(true),
+        Input::Focus(false),
+        Input::Focus(true),
+        key(RETURN),
+    ];
+    assert_eq!(run(picker(fruit(), "ban"), &input), (stdout("banana"), 0));
 }
 
 #[test]

@@ -767,27 +767,28 @@ macOS and Windows.
   layer-shell (Hyprland, sway) pikr is an Overlay surface with exclusive
   keyboard (`PANEL_EXCLUSIVE_KEYBOARD`), so a leave should come only from
   something above it such as a lock screen; GNOME's Mutter and X11 open it as an
-  ordinary toplevel, which a click elsewhere now closes. The sway e2e suite went
-  flaky from it, and the cause is the harness, not a transient leave (found
-  2026-11-01): headless sway has no keyboard of its own, so the seat's only
-  keyboard was each test's short-lived wtype. pikr got the focus when that wtype
-  connected and lost it when it exited, and a wtype that typed before pikr
-  mapped closed pikr before the retry could type again (18 failed runs in 20 on
-  the Arch laptop). The sway fixture now holds a sleeping wtype's keyboard for
-  the whole session (`hold_keyboard` in `tests/e2e/support/sway.rs`), and
-  `Pikr::wait_with_retry` sends no key until pikr logs its first-focus marker: 0
-  failed runs in 40. On headless sway with the keyboard held, a second pikr
-  taking the keyboard closed the first with exit 1, as intended. **Considered
-  and declined (2026-11-01): a grace period** that ignores a leave the focus
-  comes back from. It was built and tested, but the sway leave never came back
-  (the keyboard was gone), so it fixed nothing seen; re-propose it only with a
-  real transient leave in hand. Not checked: whether Hyprland's own binds still
-  fire over an exclusive layer surface, and, the likeliest false close, a
-  transient leave of a toplevel (X11, Wayland without layer-shell) such as an
-  IME's candidate window or the compositor briefly taking the focus. On Windows
-  the Microsoft IME's candidate list does not cause one: with `7f1f66b`
-  (2026-10-24) pikr stayed open through two Space conversions, the second
-  opening the candidate list, and committed.
+  ordinary toplevel, which a click elsewhere now closes. Two causes were found
+  2026-11-01, one in the harness and one in pikr. Harness: headless sway has no
+  keyboard of its own, so the seat's only keyboard was each test's short-lived
+  wtype; pikr got the focus when it connected and lost it when it exited, so a
+  wtype that typed before pikr mapped closed it before the retry (18 failed runs
+  in 20). The sway fixture now holds a sleeping wtype's keyboard
+  (`hold_keyboard` in `tests/e2e/support/sway.rs`) and `Pikr::wait_with_retry`
+  sends no key before pikr's first-focus marker. pikr: sway 1.9 (Ubuntu 24.04,
+  CI's runner) sends a `wl_keyboard.leave` and `enter` in the same batch as the
+  first key from a keyboard other than the last one used (seen with
+  `WAYLAND_DEBUG=1`), so pikr closed on a keyboard switch; a user typing on a
+  second keyboard would hit it. pikr now closes only once the focus has stayed
+  gone for `FOCUS_GRACE` (`ui::run`). Checked in an Ubuntu 24.04 container with
+  a bookworm-built binary: 10 of 10 launches accepted after the leave, where
+  v0.9.5 failed 9 of 10; locally (sway 1.11) the e2e suite passed 20 of 20 and
+  the startup gate 10 of 10. A second pikr taking the keyboard still closes the
+  first with exit 1. Not checked: whether Hyprland's own binds still fire over
+  an exclusive layer surface, and a toplevel (X11, Wayland without layer-shell)
+  whose transient leave lasts longer than the grace, such as an IME's candidate
+  window. On Windows the Microsoft IME's candidate list causes no leave: with
+  `7f1f66b` (2026-10-24) pikr stayed open through two Space conversions, the
+  second opening the candidate list, and committed.
 - Launched from a script, pikr often does not get the foreground: in 33 launches
   on 2026-10-23 (`Process.Start` from PowerShell), the first launch from a fresh
   PowerShell process usually never became the foreground window within 8 s (11

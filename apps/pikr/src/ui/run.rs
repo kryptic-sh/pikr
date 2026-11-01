@@ -41,6 +41,11 @@ const LOADING_POLL: Duration = Duration::from_millis(50);
 /// How long to wait for the window system after an out-of-date swapchain
 /// before drawing again: a new size is usually on its way.
 const PRESENT_RETRY: Duration = Duration::from_millis(16);
+/// How long the keyboard focus may be gone before pikr takes the loss as a
+/// cancel. A window system can take the focus away and hand it straight back:
+/// sway 1.9 sends a leave and an enter, in the same batch as the key, when
+/// the first key arrives from a keyboard other than the last one used.
+const FOCUS_GRACE: Duration = Duration::from_millis(150);
 /// The `--message` modal's height.
 pub const MESSAGE_HEIGHT: f64 = 120.0;
 
@@ -298,6 +303,9 @@ struct Window<'a> {
     /// The keyboard focus has arrived at least once. Losing it after that
     /// closes pikr; a loss before it (a refused or late focus) does not.
     had_focus: bool,
+    /// When pikr closes for having lost the focus, unless it comes back
+    /// first.
+    close_at: Option<Instant>,
 }
 
 impl<'a> Window<'a> {
@@ -361,6 +369,7 @@ impl<'a> Window<'a> {
             startup_started,
             painted: false,
             had_focus: false,
+            close_at: None,
         })
     }
 
@@ -410,17 +419,26 @@ impl<'a> Window<'a> {
 
             let mut events = std::mem::take(&mut early);
             self.shell.pump(&mut |event| events.push(event));
+            let mut exit = None;
             for event in events {
                 self.gpu.observe(&event);
                 match self.handle(event, &mut content)? {
                     Step::Continue(changed) => dirty |= changed,
                     Step::Exit(payloads, code) => {
-                        if let Content::Picker { session, .. } = &content {
-                            session.save();
-                        }
-                        return Ok((payloads, code));
+                        exit = Some((payloads, code));
+                        break;
                     }
                 }
+            }
+            if exit.is_none() && self.close_at.is_some_and(|at| Instant::now() >= at) {
+                tracing::debug!("the keyboard focus did not come back; closing");
+                exit = Some((Vec::new(), 1));
+            }
+            if let Some(exit) = exit {
+                if let Content::Picker { session, .. } = &content {
+                    session.save();
+                }
+                return Ok(exit);
             }
 
             self.sync_text_input(&content)?;
@@ -452,6 +470,10 @@ impl<'a> Window<'a> {
                 .then(|| self.blink_at.saturating_duration_since(Instant::now()));
             if matches!(arrived, Some((_, false))) || matches!(landing, Some((_, false))) {
                 timeout = Some(timeout.map_or(LOADING_POLL, |t| t.min(LOADING_POLL)));
+            }
+            if let Some(at) = self.close_at {
+                let left = at.saturating_duration_since(Instant::now());
+                timeout = Some(timeout.map_or(left, |t| t.min(left)));
             }
             self.shell.wait_events(timeout);
         }
@@ -567,10 +589,14 @@ impl<'a> Window<'a> {
                 // Losing the keyboard after having it is a cancel, as in
                 // rofi and the Windows Run box: on Windows pikr is topmost and
                 // out of Alt-Tab, so an unfocused pikr could not be reached
-                // from the keyboard again.
+                // from the keyboard again. A focus that comes back within
+                // `FOCUS_GRACE` was never really lost.
                 if !focused && self.had_focus {
-                    tracing::debug!("pikr lost the keyboard focus; closing");
-                    return Ok(Step::Exit(Vec::new(), 1));
+                    tracing::debug!("pikr lost the keyboard focus");
+                    self.close_at = Some(Instant::now() + FOCUS_GRACE);
+                }
+                if focused && self.close_at.take().is_some() {
+                    tracing::debug!("the keyboard focus came back; staying open");
                 }
                 // A composition does not survive losing the keyboard; a
                 // stale one would keep every key blocked.
