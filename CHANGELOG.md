@@ -10,6 +10,10 @@ and this project adheres to
 
 ### Changed
 
+- pikr builds on crcbl 0.15.0 (from 0.12.1). From crcbl 0.13.0 the presenter
+  asks the GPU for timeline semaphores, and the UI's start-up textures are
+  uploaded in one submission with one wait instead of a wait on the device after
+  each.
 - pikr keeps the system fonts it found for the theme's family in `fonts.toml` in
   its state directory, and later launches read the theme face straight from its
   file instead of asking the system first. On Linux that skips fontconfig's
