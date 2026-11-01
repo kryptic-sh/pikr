@@ -1,11 +1,16 @@
 //! pikr process fixture.
 
 use super::sway::Sway;
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
+/// What pikr logs at debug level once the window system has given it the
+/// keyboard: keys sent before it go nowhere.
+const FOCUS_MARKER: &str = "startup first focus received";
 
 /// Outcome of a pikr run.
 pub struct Outcome {
@@ -17,6 +22,10 @@ pub struct Outcome {
 /// A running pikr process.
 pub struct Pikr {
     child: Child,
+    /// Everything pikr has written to stderr so far.
+    stderr: Arc<Mutex<String>>,
+    /// The thread copying pikr's stderr into `stderr`; it ends at EOF.
+    stderr_reader: Option<JoinHandle<()>>,
 }
 
 impl Pikr {
@@ -33,8 +42,9 @@ impl Pikr {
     /// Every pikr runs with isolated `XDG_CONFIG_HOME`/`XDG_STATE_HOME`
     /// pointing into the sway fixture's tempdir, so tests never read the
     /// developer's real `~/.config/pikr/config.toml` nor write their real
-    /// `~/.local/state/pikr/history.toml`/`usage.toml`. Env vars in `env`
-    /// override these defaults.
+    /// `~/.local/state/pikr/history.toml`/`usage.toml`. It also logs at
+    /// debug level without colour, so [`Pikr::wait_with_retry`] can see
+    /// [`FOCUS_MARKER`]. Env vars in `env` override these defaults.
     pub fn spawn_with_env(
         sway: &Sway,
         args: &[&str],
@@ -47,6 +57,8 @@ impl Pikr {
             .envs(sway.env_vars())
             .env("XDG_CONFIG_HOME", sway.config_dir.to_str().unwrap())
             .env("XDG_STATE_HOME", sway.state_dir.to_str().unwrap())
+            .env("RUST_LOG", "pikr=debug")
+            .env("NO_COLOR", "1")
             .envs(env.iter().copied())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -69,11 +81,41 @@ impl Pikr {
             // stdin is dropped here → EOF sent.
         }
 
-        Ok(Pikr { child })
+        let stderr = Arc::new(Mutex::new(String::new()));
+        let mut pipe = child.stderr.take().expect("stderr piped");
+        let sink = Arc::clone(&stderr);
+        let stderr_reader = std::thread::spawn(move || {
+            let mut chunk = [0u8; 4096];
+            while let Ok(n @ 1..) = pipe.read(&mut chunk) {
+                sink.lock()
+                    .unwrap()
+                    .push_str(&String::from_utf8_lossy(&chunk[..n]));
+            }
+        });
+
+        Ok(Pikr {
+            child,
+            stderr,
+            stderr_reader: Some(stderr_reader),
+        })
+    }
+
+    /// Whether pikr has logged that it has the keyboard focus.
+    fn has_focus(&self) -> bool {
+        self.stderr.lock().unwrap().contains(FOCUS_MARKER)
+    }
+
+    /// All of pikr's stderr, once it has exited and the pipe is drained.
+    fn collected_stderr(&mut self) -> String {
+        if let Some(reader) = self.stderr_reader.take() {
+            let _ = reader.join();
+        }
+        std::mem::take(&mut *self.stderr.lock().unwrap())
     }
 
     /// Wait for the process to exit (up to `timeout`), invoking
-    /// `send_keys` on every `retry_every` interval until then.
+    /// `send_keys` on every `retry_every` interval until then, starting once
+    /// pikr reports the keyboard focus.
     ///
     /// Designed for tests that act on a single keystroke: CI's pixman +
     /// zink-fallback render path can drop the first input event if the
@@ -96,7 +138,7 @@ impl Pikr {
             .unwrap_or_else(Instant::now);
 
         loop {
-            if last_send.elapsed() >= retry_every {
+            if last_send.elapsed() >= retry_every && self.has_focus() {
                 send_keys();
                 last_send = Instant::now();
             }
@@ -106,30 +148,21 @@ impl Pikr {
                 .map_err(|e| format!("try_wait: {e}"))?
             {
                 Some(status) => {
-                    use std::io::Read;
                     let mut stdout = String::new();
-                    let mut stderr = String::new();
                     if let Some(mut r) = self.child.stdout.take() {
                         let _ = r.read_to_string(&mut stdout);
-                    }
-                    if let Some(mut r) = self.child.stderr.take() {
-                        let _ = r.read_to_string(&mut stderr);
                     }
                     return Ok(Outcome {
                         exit_code: status.code(),
                         stdout,
-                        stderr,
+                        stderr: self.collected_stderr(),
                     });
                 }
                 None => {
                     if Instant::now() >= deadline {
                         let _ = self.child.kill();
                         let _ = self.child.wait();
-                        use std::io::Read;
-                        let mut stderr = String::new();
-                        if let Some(mut r) = self.child.stderr.take() {
-                            let _ = r.read_to_string(&mut stderr);
-                        }
+                        let stderr = self.collected_stderr();
                         return Err(format!(
                             "pikr did not exit within {timeout:?}; stderr:\n{stderr}"
                         ));

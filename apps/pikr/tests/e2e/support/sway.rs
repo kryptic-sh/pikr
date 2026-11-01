@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 /// The session is terminated on `Drop`.
 pub struct Sway {
     child: Child,
+    /// A virtual keyboard held for the whole session; see [`hold_keyboard`].
+    keyboard: Child,
     /// `XDG_RUNTIME_DIR` for this session (a per-test tempdir).
     pub runtime_dir: PathBuf,
     /// `XDG_CONFIG_HOME` for pikr under test (isolated from the developer's
@@ -51,9 +53,11 @@ impl Sway {
         // Sway creates `<XDG_RUNTIME_DIR>/wayland-1` (or wayland-N) once the
         // compositor is ready. Poll for it.
         let display = wait_for_socket(&runtime_dir);
+        let keyboard = hold_keyboard(&runtime_dir, &display);
 
         Sway {
             child,
+            keyboard,
             runtime_dir,
             config_dir,
             state_dir,
@@ -75,6 +79,8 @@ impl Sway {
 
 impl Drop for Sway {
     fn drop(&mut self) {
+        let _ = self.keyboard.kill();
+        let _ = self.keyboard.wait();
         // SIGTERM first, escalate to SIGKILL if the process doesn't exit in 2 s.
         let pid = self.child.id();
         unsafe {
@@ -126,6 +132,27 @@ fn write_config(runtime_dir: &Path) -> PathBuf {
     )
     .expect("write sway config");
     cfg
+}
+
+/// How long the held keyboard's wtype sleeps: longer than any test runs.
+const KEYBOARD_HOLD_MS: &str = "3600000";
+
+/// Starts a wtype that only sleeps, so its virtual keyboard stays on the
+/// seat until the session ends. Headless sway has no keyboard of its own:
+/// without this the seat's only keyboard is each test's short-lived wtype,
+/// and pikr gets the focus when one connects and loses it when that wtype
+/// exits, which pikr takes as a cancel (exit 1). A wtype that typed before
+/// pikr mapped thus closed pikr before the retry could type again.
+/// Releasing shift after the sleep presses nothing.
+fn hold_keyboard(runtime_dir: &Path, display: &str) -> Child {
+    Command::new("wtype")
+        .args(["-s", KEYBOARD_HOLD_MS, "-m", "shift"])
+        .env("XDG_RUNTIME_DIR", runtime_dir)
+        .env("WAYLAND_DISPLAY", display)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed to spawn wtype — is wtype installed?")
 }
 
 fn wait_for_socket(runtime_dir: &Path) -> String {
