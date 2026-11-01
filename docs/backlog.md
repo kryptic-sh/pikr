@@ -597,8 +597,7 @@
   - A general toolkit from scratch, or a browser/WebView frontend: scope and
     startup cost out of proportion for a transient launcher.
   - wayr: Wayland-only by design, so pikr would still need separate Windows and
-    macOS paths. wayr's own `README.md` still lists pikr as a consumer; that
-    needs fixing in the wayr repo (no session was available to do it).
+    macOS paths.
 
 ## Dependencies
 
@@ -614,10 +613,17 @@
 
 - Package runtime dependencies (`pkg/nfpm/nfpm.yaml.in`, `pkg/aur/`,
   `pkg/alpine/`) were taken from the libraries crcbl 0.6.0 `dlopen`s
-  (crcbl-shell, crcbl-vk, crcbl-font sources) and the package names from memory
-  of each distribution; no package was installed on a clean system to prove the
-  list complete or the names right. CI builds the `.deb` and `.rpm` but does not
-  install them.
+  (crcbl-shell, crcbl-vk, crcbl-font sources). CI builds the `.deb`, `.rpm` and
+  `.apk` but does not install them. Checked 2026-11-01 in podman: every name in
+  the deb, rpm and Alpine lists exists in Debian stable, Ubuntu 24.04, Fedora
+  and Alpine (a made-up name reported missing on each, so the lookup can fail).
+  The v0.9.5 `.deb` (Debian stable, Ubuntu 24.04) and `.rpm` (Fedora) install on
+  a clean image with only their hard dependencies, run `--version`, and leave
+  every library crcbl dlopens on the loader path. With their recommends (and
+  `mesa-vulkan-swrast` on Alpine) the `.deb`, `.rpm` and `.apk` each drew a
+  dmenu window in a headless sway inside the container, on llvmpipe, and typing
+  `gam` + Return printed `gamma`. Not checked: the X11 fallback from a package,
+  and a real GPU driver.
   - Arch, checked 2026-10-20: every name in `PKGBUILD-bin.in`'s `depends` and
     `optdepends` exists in the repos (`vulkan-driver` as a virtual provide of
     vulkan-intel, vulkan-radeon and nvidia-utils). A crcbl 0.7.0 release build
@@ -631,9 +637,9 @@
     as optional (themed cursors) and which was missing: it is now an
     `optdepends` (xcb-util-cursor, which pulls in xcb-util, -image and
     -renderutil) and a deb (`libxcb-cursor0`) and rpm (`xcb-util-cursor`)
-    recommends; those two names are from memory, not checked against the
-    distributions. The Alpine `APKBUILD.in` lists no X11 packages at all. Not
-    checked: installing the package on a clean system.
+    recommends. The Alpine `APKBUILD.in` lists no X11 packages: apk has no
+    optional dependencies, so listing them would install X11 libraries on every
+    Wayland system (a call for the owner).
 - **The Alpine `.apk` publishes from v0.9.1.** v0.9.0's `alpine` job, its first
   run, failed in `abuild -r` because `apk add --no-cache` left no package index;
   `ci.yml` now runs `apk update` first, and v0.9.1 (cut for this) shipped
@@ -641,8 +647,6 @@
   `-C target-feature=-crt-static` (a static musl binary cannot `dlopen`
   libvulkan) and `GETTEXT_SYSTEM=1`. A podman `alpine:latest` run of the job's
   steps installed the package with its dependencies and ran `pikr --version`.
-  Not checked: the package drawing a window on a real Alpine system against
-  Mesa.
 - **macOS runners sometimes never start.** Twice on 2026-10-21 a macOS job (an
   aarch64 build, then `smoke macos-latest` on the v0.9.1 tag) sat assigned for
   17 to 26 minutes and was cancelled with no step run, which skips every publish
