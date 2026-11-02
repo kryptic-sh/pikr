@@ -360,8 +360,15 @@
     Measured with a GUI-subsystem probe on Windows 11: `pwsh -NoExit` and
     `cmd /K` given NUL handles closed within 4 s, with or without an attached
     parent console; spawned that way they stayed open, and the probe
-    re-attached. Not checked: typing into the opened shell, and that pikr's own
-    output after the spawn still reaches the launching terminal.
+    re-attached. pikr's own output after the spawn still reaches the launching
+    terminal: checked 2026-11-02 (release build of `49cbe1c`) by running
+    `pikr --show run` from a fresh pwsh console with `RUST_LOG=pikr=debug` and
+    no `gpu-choice` file, accepting `notepad` with keys sent while pikr held the
+    foreground, and reading the console buffer back: Notepad started, and "GPU
+    choice saved", which `ui::run::run` logs after the payloads run, was there.
+    A scratch build that skipped `without_console`'s re-attach saved the file
+    but its line never reached the console. Not checked: typing into the opened
+    shell.
   - Cleared 2026-10-19: the review's guess that
     `drun::icons_windows::hbitmap_to_png` should treat `IShellItemImageFactory`
     bitmaps as premultiplied. The 139 icons in this Windows 11 host's cache,
