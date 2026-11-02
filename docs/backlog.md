@@ -850,10 +850,16 @@ macOS and Windows.
   of 12), and every later launch from the same process did (21 of 21). That fits
   Windows' foreground lock refusing a process that has not had recent input; a
   launch from a hotkey tool, which owns the last input, was not tried.
-- `--kb-custom KEY=PROMPT` with no matching row now shows the confirm card in
-  the empty-state row; its on-screen placement was not looked at. The e2e test
-  `kb_custom_confirm_with_no_match_prints_query` covers the behaviour (CI,
-  Linux).
+- `--kb-custom KEY=PROMPT` with no matching row shows the confirm card in the
+  empty-state row (`ui::view`'s `.empty-row`); the headless test
+  `kb_custom_confirm_card` covers the behaviour on every OS. Looked at on
+  Windows on 2026-11-02 (dmenu, `Right=Forget?`, keys sent while pikr held the
+  foreground): the card draws at the right of the row, vertically centred on the
+  "No results" text, and Enter printed `zzz` with exit 10; on a matched row
+  `ban` + Right + Enter printed `banana`, exit 10. Not a defect, just something
+  seen: the empty row spans the whole results area while a list row stops short
+  of the scrollbar column, so the no-match card's right edge sits about 9 px
+  further right than a matched row's.
 - run and ssh modes on Windows were launched and listed (2026-10-22, release
   build): run collected 1044 `PATH` executables in 8 ms and drew them (first
   paint 384 ms; the counter reads 256, `max_results`); ssh listed this host's
