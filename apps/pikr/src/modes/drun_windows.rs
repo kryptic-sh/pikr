@@ -181,7 +181,7 @@ fn enumerate(icons: Icons, landed: &dyn Fn()) -> Result<Vec<App>> {
     let items: IEnumShellItems = unsafe { folder.BindToHandler(None, &BHID_EnumItems) }
         .context("enumerate shell:AppsFolder")?;
 
-    let mut apps = Vec::new();
+    let mut listed = Vec::new();
     loop {
         let mut slot = [None];
         // `Next` reports the end of the list as S_FALSE, which windows-rs
@@ -194,18 +194,26 @@ fn enumerate(icons: Icons, landed: &dyn Fn()) -> Result<Vec<App>> {
         ) else {
             continue;
         };
-        if !is_launchable(&label, &id) {
-            continue;
+        if is_launchable(&label, &id) {
+            listed.push((label, id, item));
         }
-        let icon = match icons {
-            Icons::Extract => icons_windows::icon_for_app(&item, &id).inspect(|_| landed()),
-            Icons::Deferred => icons_windows::icon_cache_path(&id),
-        };
-        let icon = icon.map(|path| path.to_string_lossy().into_owned());
-        apps.push(App { label, id, icon });
     }
 
-    apps.sort_by_key(|app| app.label.to_lowercase());
+    // Sorted before any icon is extracted, so a cold launch's icons land in
+    // the order its rows are listed, the first page first, rather than in the
+    // shell's enumeration order.
+    listed.sort_by_key(|(label, ..)| label.to_lowercase());
+    let apps: Vec<App> = listed
+        .into_iter()
+        .map(|(label, id, item)| {
+            let icon = match icons {
+                Icons::Extract => icons_windows::icon_for_app(&item, &id).inspect(|_| landed()),
+                Icons::Deferred => icons_windows::icon_cache_path(&id),
+            };
+            let icon = icon.map(|path| path.to_string_lossy().into_owned());
+            App { label, id, icon }
+        })
+        .collect();
     tracing::debug!(apps = apps.len(), "drun apps folder enumerated");
     Ok(apps)
 }

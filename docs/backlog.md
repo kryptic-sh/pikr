@@ -219,10 +219,12 @@
     `ui::run` coalesces them into one frame per drain. Measured 2026-10-29 with
     old and new builds alternating, four cold launches each: first paint at
     1904–4755 ms before and 500–739 ms after, and the last icon at 1526–3141 ms
-    before (all before the first paint) and 1322–2162 ms after. Left as is:
-    - Icons land in the shell's enumeration order, not the first page's, so a
-      visible row can wait until the end. Extracting the first page first would
-      need the `IShellItem`s again by id (`SHCreateItemFromParsingName`).
+    before (all before the first paint) and 1322–2162 ms after. The refresh
+    lists every item before extracting any icon and extracts them in label
+    order, the order the rows show with an empty query (frecency can still lift
+    a used app above it). Checked 2026-11-02 with the icon files' write times
+    over 138 apps on a cold launch: 62 of 137 adjacent pairs out of order
+    before, 0 after. Left as is:
     - Until its file lands a row shows the empty `.icon-slot`, not Windows'
       generic icon: extracting that one is itself a shell call. An app whose
       extraction fails keeps the empty slot for that launch; the cached list

@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- Windows: on a launch of drun with no app list cached yet, the icons are
+  extracted in the order the apps are listed, so the rows on the first page get
+  theirs first. Before, they were extracted in the shell's enumeration order,
+  and a visible row could wait for the last of them.
+
 ## [0.9.7] - 2026-11-02
 
 ### Changed
