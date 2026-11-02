@@ -127,17 +127,25 @@
     ANV's 7–10 ms first submission on a fresh device (driver warm-up), and
     opening the instance before the window's first configure, which needs the
     open split around surface creation. crcbl 0.13.0 (tag `227fdc4a`) shipped
-    both fixes on 2026-10-29, and pikr moved straight from 0.12.1 to 0.15.0 on
-    2026-11-01 with no source changes, and v0.9.6 shipped on 0.15.0. **Still
-    owed:** measure `UiRenderer::new` and first paint against 0.12.1 (v0.9.5),
-    on Linux and on Windows, each in a quiet window; nothing has been timed on
-    0.15.0 yet.
-  - **crcbl 0.16.0 is not adopted yet.** It reached crates.io on 2026-11-01 at
-    13:52 UTC, about an hour after the bump to 0.15.0, and is a minor (possibly
-    breaking) release. Its changes have not been read and nothing has been built
-    against it. Bump every crcbl crate together with
-    `cargo upgrade --incompatible allow`, then run the full gate and the e2e
-    suite before the next release.
+    both fixes on 2026-10-29. pikr moved from 0.12.1 to 0.15.0 on 2026-11-01
+    (v0.9.6), then to 0.16.0 on 2026-11-02, both with no source changes; 0.15.0
+    and 0.16.0 are the same source in every crate pikr uses.
+  - **crcbl 0.12.1 against 0.16.0 on the AMD desktop, 2026-11-02.** Release
+    builds of the same pikr source (HEAD with crcbl pinned back to 0.12.1, and
+    HEAD on 0.16.0) plus v0.9.5, with a temporary timing log around
+    `Presenter::open` and `UiRenderer::new` in `ui::gpu` (not committed). Run in
+    headless sway (gles2 renderer on `renderD128`) on the Arch desktop: RX 7900
+    XTX on RADV, saved choice in place, every local session paused, load average
+    1.4–1.7, 12 interleaved launches each. `UiRenderer::new` fell from a median
+    1.19 ms (1.14–1.65) to 0.77 ms (0.67–1.26) in dmenu, and from 1.20 to 0.77
+    ms in drun, with no 0.16.0 launch slower than a 0.12.1 median.
+    `Presenter::open` stayed about 14 ms. First paint did not move beyond the
+    noise: dmenu 20.28 against 19.69 ms, drun 23.35 against 22.30 ms, with
+    v0.9.5 at 19.84 and 23.18 ms. Resident size was about 116 MB on all three
+    (RADV; the Intel laptop showed 32 MB). On RADV the upload costs about 1 ms,
+    so the gain is small here. **Not measured:** the Intel laptop (ANV), where
+    the 12 ms `UiRenderer::new` was found, and Windows. Both are still owed,
+    each in a quiet window.
   - **Windows: D3D12 device creation is about 300 ms of every launch (decision
     needed).** Measured 2026-10-29 by the Windows session (pikr 0.9.5, crcbl
     0.12.1, Windows 11, AMD RX 7900 XTX driving the display plus a Ryzen iGPU,
