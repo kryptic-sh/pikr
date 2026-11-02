@@ -128,9 +128,16 @@
     opening the instance before the window's first configure, which needs the
     open split around surface creation. crcbl 0.13.0 (tag `227fdc4a`) shipped
     both fixes on 2026-10-29, and pikr moved straight from 0.12.1 to 0.15.0 on
-    2026-11-01 with no source changes. **Still owed:** measure `UiRenderer::new`
-    and first paint against 0.12.1 (v0.9.5), on Linux and on Windows, each in a
-    quiet window; nothing has been timed on 0.15.0 yet.
+    2026-11-01 with no source changes, and v0.9.6 shipped on 0.15.0. **Still
+    owed:** measure `UiRenderer::new` and first paint against 0.12.1 (v0.9.5),
+    on Linux and on Windows, each in a quiet window; nothing has been timed on
+    0.15.0 yet.
+  - **crcbl 0.16.0 is not adopted yet.** It reached crates.io on 2026-11-01 at
+    13:52 UTC, about an hour after the bump to 0.15.0, and is a minor (possibly
+    breaking) release. Its changes have not been read and nothing has been built
+    against it. Bump every crcbl crate together with
+    `cargo upgrade --incompatible allow`, then run the full gate and the e2e
+    suite before the next release.
   - **Windows: D3D12 device creation is about 300 ms of every launch (decision
     needed).** Measured 2026-10-29 by the Windows session (pikr 0.9.5, crcbl
     0.12.1, Windows 11, AMD RX 7900 XTX driving the display plus a Ryzen iGPU,
