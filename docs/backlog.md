@@ -178,8 +178,19 @@
     binary's 9.7 MB is second: release builds already use thin LTO, one codegen
     unit and `strip = "symbols"`, and trimming unused crcbl-image formats or
     building with `opt-level = "s"` would save a few MB of clean pages, which is
-    likely not worth the first-paint risk without a measurement. Not checked:
-    drun, Windows, macOS, and the Intel laptop on the current build.
+    likely not worth the first-paint risk without a measurement. **Windows,
+    2026-11-02** (release build of `49cbe1c`, Windows 11, RX 7900 XTX on D3D12,
+    read from .NET's `Process` 1.5 s after launch, five launches each, one dmenu
+    launch closed itself on focus loss first and was skipped): dmenu had a 65 MB
+    working set and 69.6–69.8 MB private bytes, drun 76.3–76.8 MB and 71.7–72.1
+    MB. The largest mapped image is AMD's D3D12 driver, `amdxc64.dll` (77.4 MB),
+    then `pikr.exe` (9.2 MB). On WARP (`CRCBL_ADAPTER=cpu`, four dmenu launches)
+    private bytes were 39.5–40.3 MB, so about 30 MB of the D3D12 figure is the
+    AMD driver's. Windows' private bytes are committed memory, touched or not,
+    so the 40 MB does not compare directly with Linux's 13.7 MB `Private_Dirty`;
+    splitting it would need a heap trace (ETW heap tracing through `wpr`, or a
+    counting allocator in a scratch build). Not checked: macOS, and the Intel
+    laptop on the current build.
   - **Windows: D3D12 device creation is about 300 ms of every launch (decision
     needed).** Measured 2026-10-29 by the Windows session (pikr 0.9.5, crcbl
     0.12.1, Windows 11, AMD RX 7900 XTX driving the display plus a Ryzen iGPU,
