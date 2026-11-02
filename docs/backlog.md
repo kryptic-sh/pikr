@@ -146,6 +146,28 @@
     so the gain is small here. **Not measured:** the Intel laptop (ANV), where
     the 12 ms `UiRenderer::new` was found, and Windows. Both are still owed,
     each in a quiet window.
+  - **Memory: most of RADV's 116 MB is libLLVM; pikr's own share is still to
+    break down.** One dmenu launch of the v0.9.7 release build on 2026-11-02
+    (headless sway, RX 7900 XTX on RADV), read from `/proc/<pid>/smaps` and
+    `smaps_rollup` after first paint. Resident 117.5 MB: `libLLVM.so.23.1` 75.9
+    MB (1.3 MB private), the `pikr` binary 9.7 MB (private but clean,
+    file-backed and reclaimable), `libvulkan_radeon.so` 8.7 MB, anonymous memory
+    8.5 MB and heap 1.7 MB. Arch's `vulkan-radeon` (Mesa 26.2.6) has
+    `libLLVM.so` as a `DT_NEEDED` entry, so every Vulkan process on this card
+    loads it. A bare `dlopen` of it from Python raised resident size from 13 to
+    95 MB, so the figure is the library's, not pikr's. Those pages are clean and
+    shared, and pikr cannot avoid them; the Intel laptop (ANV, no LLVM) showed
+    32 MB. Proportional size was 36.3 MB. **What pikr really costs is 13.7 MB
+    `Private_Dirty`, and it has not been broken down.** Suspects, not verified:
+    the theme font and any fallback faces held in memory, the CPU-side glyph and
+    icon atlases, and the driver's own allocations. Next: run a heap profiler
+    over a dmenu and a drun launch (valgrind is installed; massif or dhat),
+    split pikr's allocations from the driver's, and see what can go. The
+    binary's 9.7 MB is second: release builds already use thin LTO, one codegen
+    unit and `strip = "symbols"`, and trimming unused crcbl-image formats or
+    building with `opt-level = "s"` would save a few MB of clean pages, which is
+    likely not worth the first-paint risk without a measurement. Not checked:
+    drun, Windows, macOS, and the Intel laptop on the current build.
   - **Windows: D3D12 device creation is about 300 ms of every launch (decision
     needed).** Measured 2026-10-29 by the Windows session (pikr 0.9.5, crcbl
     0.12.1, Windows 11, AMD RX 7900 XTX driving the display plus a Ryzen iGPU,
