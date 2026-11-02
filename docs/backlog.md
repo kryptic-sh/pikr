@@ -64,10 +64,22 @@
     reported `Used` and held no `/dev/nvidia*` descriptor (14 without the file);
     a choice edited to a missing device reported `Stale` and was replaced;
     `CRCBL_ADAPTER=discrete` reported `Ignored` and left the file unchanged, and
-    with no file saved nothing. Not verified: the D3D12 path on Windows
-    (compiled by CI only), and whether opening a saved driver still wakes a
-    runtime-suspended dGPU, which this machine cannot test (its MX550 has
-    runtime D3 off and the compositor holds `/dev/nvidia0` open all session).
+    with no file saved nothing. Checked on D3D12 on 2026-11-02 (Windows 11,
+    v0.9.7 plus `49cbe1c`, RX 7900 XTX and a Ryzen iGPU, dmenu closed with a
+    posted `WM_CLOSE`): a saved choice reported `Used` and crcbl enumerated that
+    adapter alone ("first of 1", against "first of 3" without it); no file
+    reported `NotGiven` and saved one; a device id no adapter has reported
+    `Stale` and was replaced, the next launch `Used`; `CRCBL_ADAPTER=integrated`
+    reported `Ignored`, drew on the iGPU and left the file unchanged, and with
+    no file saved nothing; an unparsable file warned and was replaced. A wrong
+    LUID alone is not stale: `Dx12Instance::open_adapter` falls back from the
+    LUID to vendor, device and name, since a LUID lasts only until a restart.
+    The file saved before this boot held `0x11c94` and the adapter is now
+    `0x11cb2`; it still reported `Used`, and pikr does not rewrite a used
+    choice, so the old LUID stays in the file. Not verified: whether opening a
+    saved driver still wakes a runtime-suspended dGPU, which the Arch laptop
+    cannot test (its MX550 has runtime D3 off and the compositor holds
+    `/dev/nvidia0` open all session).
 - **Startup profile, 2026-10-26** (release build, nested Hyprland on the Arch
   laptop, Papirus-Dark icons, after the first-page icon warm-up in
   `ui::run::run`). Re-checked the GPU: Intel renders, chosen as above, but every
