@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- pikr builds on crcbl 0.16.0 (from 0.15.0). The crates pikr uses (crcbl-app,
+  -frame, -hal, -image, -shell and -ui) have no source changes between the two
+  releases; 0.16.0 changes crcbl's animation, physics, navigation and 3D
+  rendering crates.
+
 ## [0.9.6] - 2026-11-02
 
 ### Changed
