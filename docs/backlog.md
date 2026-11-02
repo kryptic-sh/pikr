@@ -155,9 +155,18 @@
     noise: dmenu 20.28 against 19.69 ms, drun 23.35 against 22.30 ms, with
     v0.9.5 at 19.84 and 23.18 ms. Resident size was about 116 MB on all three
     (RADV; the Intel laptop showed 32 MB). On RADV the upload costs about 1 ms,
-    so the gain is small here. **Not measured:** the Intel laptop (ANV), where
-    the 12 ms `UiRenderer::new` was found, and Windows. Both are still owed,
-    each in a quiet window.
+    so the gain is small here. **Windows, 2026-11-02:** the same two
+    configurations (`49cbe1c` with the same temporary log, release builds),
+    D3D12 on the RX 7900 XTX, saved choice `Used`, every local session paused
+    and total CPU at 0–1%, 12 interleaved launches each, closed with a posted
+    `WM_CLOSE`. `UiRenderer::new` fell from a median 13.57 ms (12.52–23.04) to
+    9.89 ms (8.89–20.45) in dmenu and from 13.12 ms (12.40–14.56) to 9.51 ms
+    (8.35–11.38) in drun. Past each version's first launch, every 0.16.0 launch
+    was faster than every 0.12.1 one. `Presenter::open` stayed at a median of
+    317–332 ms, AMD's `D3D12CreateDevice` (below). First paint was not compared:
+    its log line was missing from 3 of the 48 launches, and its outliers reached
+    3.4 s with no cause found. **Not measured:** the Intel laptop (ANV), where
+    the 12 ms `UiRenderer::new` was found, still owed in a quiet window.
   - **Memory: most of RADV's 116 MB is libLLVM; pikr's own share is still to
     break down.** One dmenu launch of the v0.9.7 release build on 2026-11-02
     (headless sway, RX 7900 XTX on RADV), read from `/proc/<pid>/smaps` and
