@@ -318,16 +318,16 @@
     pikr's thread while composing, and screenshots showed the reading once,
     inline and underlined at the caret (before 0.10.0 Windows drew its own copy
     beside it). The candidate list opens below the caret, the Enter that commits
-    does not reach pikr, and the commit arrives whole and once: the second Enter
-    printed one `日本語` or one `にほんご`, never doubled. During conversion
-    pikr draws the caret at the start of the pre-edit, where the IME reports it.
-    Surprise, not a bug: this desktop's IME has learned `にほんご` as the first
-    conversion of "nihongo" from earlier test commits, so one Space now commits
-    the kana and a second Space reaches `日本語`; a test expecting kanji must
-    press Space twice or run on a fresh IME profile. Not checked: AppKit. Not in
-    CI: these checks are manual only. Windows runners have no Japanese IME
-    installed, and driving one needs a real TSF session; the fix's own tests
-    live in crcbl.
+    does not reach pikr, and the commit arrives once (as one `TextCommit` per
+    character, see the IME entry below): the second Enter printed one `日本語`
+    or one `にほんご`, never doubled. During conversion pikr draws the caret at
+    the start of the pre-edit, where the IME reports it. Surprise, not a bug:
+    this desktop's IME has learned `にほんご` as the first conversion of
+    "nihongo" from earlier test commits, so one Space now commits the kana and a
+    second Space reaches `日本語`; a test expecting kanji must press Space twice
+    or run on a fresh IME profile. Not checked: AppKit. Not in CI: these checks
+    are manual only. Windows runners have no Japanese IME installed, and driving
+    one needs a real TSF session; the fix's own tests live in crcbl.
   - `ui::run::headless` drives named keys through `HeadlessShell::key_press`. An
     "events due at pump N" queue, which would let those tests script input
     across frames, is in crcbl's backlog, unscheduled.
@@ -606,8 +606,17 @@
     it stays off the live session): the pre-edit draws inline and underlined at
     the caret, the candidate list opens under the caret, Backspace inside the
     composition edits the composition and not the query (no rerank), and the
-    Enter that commits does not reach pikr, the commit arriving whole. Not
-    checked: AppKit, and Backspace inside a composition on Win32.
+    Enter that commits does not reach pikr, the commit arriving whole. On Win32
+    (2026-11-02, Microsoft Japanese IME, release build of `49cbe1c`, keys sent
+    while pikr held the foreground): `nihongo` drew にほんご as the pre-edit
+    with the list still at 1/2, Backspace made it にほん in place with no
+    rerank, and Enter committed にほん, which Return printed (exit 0). Behaviour
+    worth knowing: the commit came as three reranks within 2 ms. crcbl-shell's
+    `win32::proc` pushes a `GCS_RESULTSTR` result as one `RawEvent::Char` per
+    UTF-16 unit, as `WM_CHAR` would carry it, so pikr gets a `TextCommit` per
+    character. The query ends right and nothing doubles; it costs a rerank per
+    character. One commit per result would be crcbl's change to make. Not
+    checked: AppKit.
   - **Screen readers: adopted 2026-10-21** (crcbl's `accesskit` feature on
     crcbl-shell and crcbl-ui; `ui::run` sends `Ui::accessibility_update` after
     each frame while `reading`, and passes `AccessibilityAction` to
