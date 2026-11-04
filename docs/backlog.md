@@ -884,8 +884,13 @@ macOS and Windows.
   on 2026-10-23 (`Process.Start` from PowerShell), the first launch from a fresh
   PowerShell process usually never became the foreground window within 8 s (11
   of 12), and every later launch from the same process did (21 of 21). That fits
-  Windows' foreground lock refusing a process that has not had recent input; a
-  launch from a hotkey tool, which owns the last input, was not tried.
+  Windows' foreground lock refusing a process that has not had recent input. A
+  hotkey tool is not refused: on 2026-11-04 (release build at `403a2ae`), each
+  launch from a fresh PowerShell process that registered Ctrl+Alt+F12 with
+  `RegisterHotKey`, synthesized it and started pikr on the `WM_HOTKEY` got the
+  foreground (6 of 6, 35–320 ms after the start), while the plain launches
+  interleaved with them never did within 8 s (0 of 6, each logging "the window
+  system refused pikr the keyboard focus").
 - `--kb-custom KEY=PROMPT` with no matching row shows the confirm card in the
   empty-state row (`ui::view`'s `.empty-row`); the headless test
   `kb_custom_confirm_card` covers the behaviour on every OS. Looked at on
