@@ -376,8 +376,12 @@
     foreground, and reading the console buffer back: Notepad started, and "GPU
     choice saved", which `ui::run::run` logs after the payloads run, was there.
     A scratch build that skipped `without_console`'s re-attach saved the file
-    but its line never reached the console. Not checked: typing into the opened
-    shell.
+    but its line never reached the console. The opened shell reads what is typed
+    into it: on 2026-11-04 (release build at `403a2ae`, Windows Terminal as the
+    default terminal) run mode's `cmd` row started `cmd.exe` as pikr's child; a
+    probe attached to that cmd's console and wrote a command line into its input
+    buffer (`WriteConsoleInput`, so no keystroke could reach another window),
+    and cmd ran it, writing the marker file, then exited on a typed `exit`.
   - Cleared 2026-10-19: the review's guess that
     `drun::icons_windows::hbitmap_to_png` should treat `IShellItemImageFactory`
     bitmaps as premultiplied. The 139 icons in this Windows 11 host's cache,
