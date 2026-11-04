@@ -212,8 +212,37 @@
     timed `D3D12CreateDevice` on the same card on 2026-10-29, 20 mirrored pairs
     at 2–10% CPU, and got medians of 287.6 ms plain and 284.4 ms with DRED. The
     options are the user's: render with WARP, keep a resident pikr process that
-    holds the device, or accept it. Switching to Vulkan is not one of them; see
-    below.
+    holds the device, accept it, or move Windows to Vulkan once crcbl releases
+    its DirectComposition path for Vulkan, which halves first paint (see the
+    2026-11-04 measurement below). That path is unreleased; the move is one
+    change to `ui::gpu::platform_backend`.
+    - **Vulkan through DirectComposition, measured 2026-11-04** at crcbl's
+      request, on its branch `feat/vk-transparent-win32` (`8c3282da`). crcbl-vk
+      renders into textures shared with a D3D11 device and presents a copy on
+      the DirectComposition visual crcbl-dx12 uses, so it skips
+      `vkCreateSwapchainKHR`. A scratch build of pikr `12f2a2e` patched every
+      crcbl crate to that branch, chose Vulkan by an environment variable and
+      kept a separate saved GPU choice per backend. Interleaved launches, five
+      rounds of dmenu and drun on each backend, 40 keys each, with every other
+      session paused (1.8% total CPU before the run, 4.7–9.6% around it):
+
+      | Backend, mode | `Presenter::open` | `UiRenderer::new` | First paint (ms) | `present` median |
+      | ------------- | ----------------- | ----------------- | ---------------- | ---------------- |
+      | D3D12, dmenu  | 325.1–339.3 ms    | 8.73–9.22 ms      | 368.1–391.1      | 2.31–2.57 ms     |
+      | Vulkan, dmenu | 124.5–138.9 ms    | 6.80–7.64 ms      | 165.7–187.9      | 1.78–1.81 ms     |
+      | D3D12, drun   | 329.6–352.0 ms    | 9.91–15.82 ms     | 376.3–406.6      | 2.50–2.59 ms     |
+      | Vulkan, drun  | 125.5–132.3 ms    | 6.82–7.90 ms      | 169.3–179.0      | 1.80–1.84 ms     |
+
+      Building a frame took the same on both (0.20–0.21 ms median in dmenu,
+      0.66–0.68 ms in drun). The windowed checks passed on Vulkan as on D3D12: a
+      `PreMultiplied` swapchain with see-through corners and the rounded
+      region's hit test, a `SetWindowPos` resize to 900x600, a live 100% to 125%
+      DPI change and back, the Microsoft IME's candidate list without a focus
+      loss, and Alt-Tab closing it. Not checked: a frame-by-frame capture of a
+      resize (a one-frame flash would not show in the screenshots taken), and
+      the very first Vulkan launch on a machine, which took 1254 ms in
+      `Presenter::open` here before the caches warmed.
+
     - **WARP and Vulkan, measured 2026-10-29** with every other session on the
       machine paused (about a third of one core busy). A scratch build added
       timing logs, a Vulkan override and simulated typing: `a` and Backspace by
@@ -238,11 +267,12 @@
       included. But `vkCreateSwapchainKHR` on a 720×448 window took 290–297 ms,
       and 615 ms on its first run. The first device creation of each Vulkan
       driver took 159–462 ms once, then dropped.
-    - Vulkan also cannot draw pikr transparent on Windows: crcbl refuses a
-      transparent Win32 window on Vulkan, so the scratch build opened it opaque.
-      Two Vulkan drivers list each AMD adapter, and pikr then logs "no Vulkan
-      driver alone shows the adapter; saving it without one", so the saved
-      choice still enumerates all four. Its second launch did say `Used`.
+    - On crcbl 0.17.1 Vulkan cannot draw pikr transparent on Windows: crcbl
+      refuses a transparent Win32 window on Vulkan, so the 2026-10-29 scratch
+      build opened it opaque. Two Vulkan drivers list each AMD adapter, and pikr
+      then logs "no Vulkan driver alone shows the adapter; saving it without
+      one", so the saved choice still enumerates all four. Its second launch did
+      say `Used`.
 
   - **Windows: cold drun icons are extracted in the background.** With no
     `drun-apps.toml`, `drun_windows::collect_cached` lists the apps with
