@@ -708,14 +708,19 @@
     `screen_readers_hear_whole_labels_the_selected_row_and_the_query` reads all
     three from `Ui::accessibility_update`. On AT-SPI, the label and the selected
     state were checked in a patched clone on 2026-10-22 ("gamma" read as one
-    label, `selected`); the text input was not read through AT-SPI. On Windows,
-    .NET's `System.Windows.Automation` client read `028b1a0` on 2026-10-23
-    (dmenu, keys synthesized while pikr held the foreground): the query is an
-    Edit whose ValuePattern and TextPattern caret follow typing and Backspace
-    (`a` caret 1, `alp` caret 3, Backspace `al` caret 2), under `-P` its value
-    is `●●●`; each row's label is one Text (`alpha`); the selected ListItem
-    follows Down (`alpha` to `beta`) and re-ranking. Each ListItem's own Name
-    was still empty there, the label being its child; since `2550ee8`
+    label, `selected`); the text input was read on 2026-11-04 (release build of
+    `234486a`, headless Hyprland, at-spi-bus-launcher on a private
+    `dbus-run-session` bus with `IsEnabled` set there, Python's `Atspi`): the
+    query is an `entry` with Text and EditableText, reading `alp` with caret 3
+    after typing and `al` with caret 2 after Backspace, and `●●●` then `●●`
+    under `-P`; the matched row read as a `list item` named `alpha`, selected.
+    On Windows, .NET's `System.Windows.Automation` client read `028b1a0` on
+    2026-10-23 (dmenu, keys synthesized while pikr held the foreground): the
+    query is an Edit whose ValuePattern and TextPattern caret follow typing and
+    Backspace (`a` caret 1, `alp` caret 3, Backspace `al` caret 2), under `-P`
+    its value is `●●●`; each row's label is one Text (`alpha`); the selected
+    ListItem follows Down (`alpha` to `beta`) and re-ranking. Each ListItem's
+    own Name was still empty there, the label being its child; since `2550ee8`
     `result_row` names the list row itself (`Ui::current_key`, its label and
     `(description)`), and the same client read the ListItems as `alpha`, `beta`,
     `gamma` (2026-10-23). The `:` line opens as a second Edit beside the query,
