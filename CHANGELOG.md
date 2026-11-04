@@ -8,6 +8,12 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- pikr builds on crcbl 0.17.2 (from 0.17.1). The release adds transparent Vulkan
+  windows on Windows (presented through DirectComposition); pikr still draws
+  with D3D12 there, and its picker behaves as before.
+
 ## [0.9.8] - 2026-11-04
 
 ### Changed
