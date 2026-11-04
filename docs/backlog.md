@@ -165,15 +165,25 @@
     was faster than every 0.12.1 one. `Presenter::open` stayed at a median of
     317–332 ms, AMD's `D3D12CreateDevice` (below). First paint was not compared:
     its log line was missing from 3 of the 48 launches, and its outliers reached
-    3.4 s with no cause found. **Intel laptop (ANV), 2026-11-04:** the same pair
-    rebuilt at `234486a` (crcbl `=0.12.1` against 0.17.1, same temporary log),
-    nested Hyprland, saved choice `Used`, every local session paused (top 90.6%
-    idle, load average 2.62 before and 1.95 after), 13 interleaved rounds of
-    dmenu and drun with the first dropped as warm-up, 12 each. `UiRenderer::new`
-    fell from a median 11.02 ms (9.63–14.41) to 7.98 ms (7.16–11.52) in dmenu
-    and from 11.00 to 7.83 ms in drun; `Presenter::open` stayed at 10.6–11.3 ms.
-    First paint moved from 29.00 to 27.49 ms in dmenu and from 33.00 to 28.65 ms
-    in drun at the median, inside each run's spread (dmenu 25.00–37.05 against
+    3.4 s with no cause found. Retried on 2026-11-04 (release build at
+    `ba34e00`, crcbl 0.17.1, D3D12 on the RX 7900 XTX, saved choice `Used`; six
+    local sessions confirmed paused, three did not answer but no cargo or rustc
+    ran, total CPU 6.8–7.3% before and 0.9–4.1% after): 24 dmenu and 24 drun
+    launches interleaved, none given the foreground, each closed with `WM_CLOSE`
+    1.5 s after its window appeared. All 48 logged a first paint: dmenu
+    346.0–411.8 ms (median 360.1), drun 353.0–426.0 ms (median 366.7). The
+    window appeared 58–95 ms after the start. So it no longer shows under this
+    harness; the 2026-11-02 run's exact harness is not recorded, so whether its
+    outliers came from it (keys, foreground forcing) or from 0.12.1/0.16.0 is
+    not known. **Intel laptop (ANV), 2026-11-04:** the same pair rebuilt at
+    `234486a` (crcbl `=0.12.1` against 0.17.1, same temporary log), nested
+    Hyprland, saved choice `Used`, every local session paused (top 90.6% idle,
+    load average 2.62 before and 1.95 after), 13 interleaved rounds of dmenu and
+    drun with the first dropped as warm-up, 12 each. `UiRenderer::new` fell from
+    a median 11.02 ms (9.63–14.41) to 7.98 ms (7.16–11.52) in dmenu and from
+    11.00 to 7.83 ms in drun; `Presenter::open` stayed at 10.6–11.3 ms. First
+    paint moved from 29.00 to 27.49 ms in dmenu and from 33.00 to 28.65 ms in
+    drun at the median, inside each run's spread (dmenu 25.00–37.05 against
     21.80–36.99 ms), so a small gain at most.
   - **Memory: most of RADV's 116 MB is libLLVM; pikr's own share is still to
     break down.** One dmenu launch of the v0.9.7 release build on 2026-11-02
