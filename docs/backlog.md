@@ -768,9 +768,13 @@
     scratch `USERPROFILE` whose config had `Host pikr-desc` with `HostName` and
     `User`; Windows drun rows carry no description): its ListItem's Name was
     `pikr-desc (192.0.2.10 (probe))`, with two Text children, the label and the
-    parenthesised description. Not checked: Orca or Narrator speaking any of it,
-    which needs someone listening. Before the change (2026-10-22, `1712f0b`) no
-    row was selected and the query was a Text with no ValuePattern.
+    parenthesised description. Seen in the same read, not looked into: only the
+    selected ListItem answered `GetCurrentPattern(SelectionItemPattern)`; the
+    two unselected rows threw, so a UIA client may not be able to read or change
+    their selection state. Not checked: whether crcbl means unselected rows to
+    omit the pattern, and Orca or Narrator speaking any of it, which needs
+    someone listening. Before the change (2026-10-22, `1712f0b`) no row was
+    selected and the query was a Text with no ValuePattern.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
