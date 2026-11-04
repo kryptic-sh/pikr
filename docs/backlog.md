@@ -821,6 +821,14 @@
   workspace `Cargo.toml`). Moving off evalexpr to another permissively licensed
   expression evaluator, or writing calc mode's own, is the alternative if 11
   ever needs a fix it will not get.
+- **CI has not yet passed on crcbl 0.17.2.** The bump (`cad4eb5`, 2026-11-05)
+  passed the workspace gate locally on Windows (clippy, fmt, 347 tests) and a
+  D3D12 release build drew, scrolled and accepted a click. On GitHub every run
+  from `cad4eb5` to `7ab3ce2` was cancelled by the next push to `main` before
+  finishing; `cad4eb5`'s run had already lost `clippy macos-latest` as
+  cancelled. Run 41883740785 (`88ebd96`, same code as `7ab3ce2`) was queued at
+  session end. Next: read its result; a macOS or Linux failure is the first sign
+  of a crcbl 0.17.2 change in a `#[cfg]` arm a Windows run cannot compile.
 
 ## Release pipeline
 
