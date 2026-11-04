@@ -205,9 +205,21 @@
     private bytes were 39.5–40.3 MB, so about 30 MB of the D3D12 figure is the
     AMD driver's. Windows' private bytes are committed memory, touched or not,
     so the 40 MB does not compare directly with Linux's 13.7 MB `Private_Dirty`;
-    splitting it would need a heap trace (ETW heap tracing through `wpr`, or a
-    counting allocator in a scratch build). **Intel laptop (ANV), 2026-11-04**
-    (release build at `234486a` on crcbl 0.17.1, nested Hyprland, read from
+    a counting `#[global_allocator]` in a scratch build of `bf732b9` (not
+    committed; 2026-11-04, three launches each) split it: Rust's own heap held
+    5.94 MB live at first paint in dmenu and 6.22 MB in drun on the RX 7900 XTX,
+    and 5.95 and 6.26 MB on WARP, identical across launches. Of that, 0.18–0.29
+    MB was live once the entries were ranked, 0.56–0.68 MB after the fonts
+    (DirectWrite's faces are mapped, not heap), about the same after
+    `Presenter::open`, and the remaining 5.4 MB arrived between the GPU and the
+    first paint: the UI renderer, its atlases and the first frame. Private bytes
+    in the same launches were 73.3–73.7 MB (dmenu) and 75.7–76.0 MB (drun) on
+    the 7900 XTX, 38.9–39.1 and 41.7–42.3 MB on WARP, so about 33 MB even on
+    WARP sits outside Rust's allocator (the D3D12 runtime and WARP,
+    DirectComposition, DirectWrite and the system DLLs) and the AMD driver adds
+    about 34 MB more. Not split further: which of the 5.4 MB is atlas pixels
+    against tree and glyph state. **Intel laptop (ANV), 2026-11-04** (release
+    build at `234486a` on crcbl 0.17.1, nested Hyprland, read from
     `/proc/<pid>/smaps` after first paint): resident 32.4 MB in dmenu and 33.7
     MB in drun, as on 0.12.1. `Private_Dirty` was 10.0 MB in dmenu: anonymous
     mappings 6.6 MB, the main heap 1.6 MB, the `pikr` binary's data 0.7 MB and
