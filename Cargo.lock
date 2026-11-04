@@ -1590,7 +1590,7 @@ dependencies = [
 
 [[package]]
 name = "pikr"
-version = "0.9.7"
+version = "0.9.8"
 dependencies = [
  "anyhow",
  "arboard",

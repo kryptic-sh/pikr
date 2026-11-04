@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-11-04
+
 ### Changed
 
 - Windows: on a launch of drun with no app list cached yet, the icons are
@@ -1513,7 +1515,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.7...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.8...main
+[0.9.8]: https://github.com/kryptic-sh/pikr/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/kryptic-sh/pikr/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/kryptic-sh/pikr/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/kryptic-sh/pikr/compare/v0.9.4...v0.9.5
