@@ -14,6 +14,11 @@ and this project adheres to
   extracted in the order the apps are listed, so the rows on the first page get
   theirs first. Before, they were extracted in the shell's enumeration order,
   and a visible row could wait for the last of them.
+- pikr builds on crcbl 0.17.1 (from 0.16.0) and toml 1.2. Of the crates pikr
+  uses only crcbl-shell changed: it gains opening a URL in the browser, keeping
+  the display awake and, on Windows, the executable's icon on its windows, none
+  of which pikr calls. evalexpr stays at 11, since 12 and later are
+  AGPL-3.0-only.
 
 ## [0.9.7] - 2026-11-02
 

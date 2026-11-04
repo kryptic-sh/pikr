@@ -196,9 +196,9 @@ dependencies = [
 
 [[package]]
 name = "async-executor"
-version = "1.14.0"
+version = "1.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c96bf972d85afc50bf5ab8fe2d54d1586b4e0b46c97c50a0c9e71e2f7bcd812a"
+checksum = "f426a31126c735126297bc5ea7a521263c9faff4f63ca415267ee625651c4f37"
 dependencies = [
  "async-task",
  "concurrent-queue",
@@ -228,9 +228,9 @@ dependencies = [
 
 [[package]]
 name = "async-lock"
-version = "3.4.2"
+version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "290f7f2596bd5b78a9fec8088ccd89180d7f9f55b94b0576823bbbdc72ee8311"
+checksum = "0876700b0d007ad25d5508865a4259c3af9af6d296bf663a0d586d0bc3369f6f"
 dependencies = [
  "event-listener",
  "event-listener-strategy",
@@ -536,9 +536,9 @@ dependencies = [
 
 [[package]]
 name = "crcbl-app"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d109c3b549a42a8573bdec0938348465f09f783e39f6cd722dea9dad08ea9e06"
+checksum = "581cd723f6195a103be99895a4ce3748b79d9807564695672af443b8a65a57e5"
 dependencies = [
  "crcbl-core",
  "crcbl-dx12",
@@ -555,15 +555,15 @@ dependencies = [
 
 [[package]]
 name = "crcbl-console"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cf092aabd2fb6cb4a73bf2700966873f8f07bc4a4f1a51f0c38f2de43fa9907"
+checksum = "b931cadc92f319d183de57bb152559c8987f1e2a2ef3ab24ac7d8b635af8be21"
 
 [[package]]
 name = "crcbl-core"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d9ce28a807ed464f48049529900ede1fa22e06519fd15d4b0b05c17f93b5180"
+checksum = "550bad3bcc9044e7df00566845ffb72dccc7fbe2c64ac918efd2f148b771e248"
 dependencies = [
  "bitflags",
  "crcbl-console",
@@ -573,9 +573,9 @@ dependencies = [
 
 [[package]]
 name = "crcbl-dx12"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a241c2f90e5ed462db9864ab0c3f605e6ad46f66a56b49a863d11dbb975a2cde"
+checksum = "8f36761803a293618fe589ea1a647b6e26de77b5db9f4dd202a3d5197c10529b"
 dependencies = [
  "crcbl-core",
  "crcbl-hal",
@@ -585,18 +585,18 @@ dependencies = [
 
 [[package]]
 name = "crcbl-font"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a134a2d35cba8afb122aa8f38f29a12960679b67c65ac2ef517254d37d5e33ba"
+checksum = "cda3a48a44912d06079f3ae7b098283ba4861476a1552430700ebf38cbb8e0b9"
 dependencies = [
  "skrifa",
 ]
 
 [[package]]
 name = "crcbl-frame"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5acc101ecbf78930e1cdbbedc823217358b0b6f5c8691cb1fe43bf4e2b25aacf"
+checksum = "b53ce637ed2c35c36234da2ed0e84f8c60a480be06642b9864ed6f19d33301ee"
 dependencies = [
  "bytemuck",
  "crcbl-core",
@@ -608,9 +608,9 @@ dependencies = [
 
 [[package]]
 name = "crcbl-hal"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36b6d5059a682cdbd549cf4cce029940d4bda8d7fb17e1b0724c75a16060e5bc"
+checksum = "6e5fbbce34a4b9b2e53689698f8340ca93ccf439f16557316002373dd044f186"
 dependencies = [
  "bitflags",
  "crcbl-core",
@@ -619,9 +619,9 @@ dependencies = [
 
 [[package]]
 name = "crcbl-image"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd12a7710c8cf51a59d015ca4afb8ef7576ff2b452cea51228a5633df9c38e78"
+checksum = "c3ddb485ef2da5cdb89116bb51331e8fdb99cce97bd86f1723b5457a6ec907f4"
 dependencies = [
  "crcbl-font",
  "harfrust",
@@ -633,9 +633,9 @@ dependencies = [
 
 [[package]]
 name = "crcbl-mtl"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cd361efb28af1195e5f3b9d2df9b36f56255dc2ad112551a555a30d7a71ac08"
+checksum = "08026e3bdee002910480cbd132ff8b5c12ae66970577c2c388d2c7bc33c29732"
 dependencies = [
  "block2",
  "crcbl-core",
@@ -649,9 +649,9 @@ dependencies = [
 
 [[package]]
 name = "crcbl-reflect"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef2c07b46be6a27112143309ef78ce7b45817b4c7e27c944963bd53bd822c701"
+checksum = "30901ebb01ffe5e8149d96661af19a16a2e7cdecbb6c399b941446c0742dd496"
 dependencies = [
  "crcbl-reflect-derive",
  "glam",
@@ -660,9 +660,9 @@ dependencies = [
 
 [[package]]
 name = "crcbl-reflect-derive"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3cd60bd6ab02b390f9657436718d2e078d4f759615610b9d39d3bc9ba9a8ff7"
+checksum = "93398e06aacedadae0ba268d579ab26c68cc94a9ca69aae2f57d4c4d9406b4da"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -671,18 +671,18 @@ dependencies = [
 
 [[package]]
 name = "crcbl-shaders"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d12759b7449fa1d74c19ee0ed281497710cec3a8f7524d230e88ebe0c01b13f"
+checksum = "891385013f2a47d129feffbf0d587b31460dc3a9fcbd0311c1514e5aeb29cd6e"
 dependencies = [
  "crcbl-spawn",
 ]
 
 [[package]]
 name = "crcbl-shell"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bac0d1ad5fdef92fd098f14a5f2318a6ec9e4f4f946523a50ffa5aca7be00692"
+checksum = "d4f693895af4e4847a36782a803350191fa86a3a6e21584a39402fa9eb4a5489"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -695,15 +695,15 @@ dependencies = [
 
 [[package]]
 name = "crcbl-spawn"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69d677aea710f52789ff4bbce7024d1c2cdd4b602304c7c90f33745e73eba458"
+checksum = "91bd4de0b89534285efa99d5b11291b8de927382fea849f90714d02b269f4ad9"
 
 [[package]]
 name = "crcbl-ui"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e079eb1ee0d8e5d672a72822c243315a8d1947798dda53da3abd09ee058a763"
+checksum = "d77ed800bff7f493916bb98c69444bf4e107aeba6eb0917ae21ee05361876022"
 dependencies = [
  "accesskit",
  "bytemuck",
@@ -723,9 +723,9 @@ dependencies = [
 
 [[package]]
 name = "crcbl-vk"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7231e9ba54a7c7f1d90cc46d364816853887273edad7e6874bd1828b61ce8351"
+checksum = "cd8d86c4f1bc76436b83eb1e3e4e59d89e5cd611e4eb9ab1796383ffb9e7ffe0"
 dependencies = [
  "ash",
  "crcbl-core",
@@ -737,9 +737,9 @@ dependencies = [
 
 [[package]]
 name = "crcbl-webgpu"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39ab80b781bf9b0b906cb52bba525a8a8792659d579efa1ebad29ceed508592a"
+checksum = "0c04b72de15cb5a9723b2cae1d81cb45c1841075104fb0965a0d23f637d74d7f"
 dependencies = [
  "crcbl-core",
  "crcbl-hal",
@@ -748,9 +748,9 @@ dependencies = [
 
 [[package]]
 name = "crcbl-wl-scanner"
-version = "0.16.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b09d0474781c6c0c616be939f7d440a0b5e7661d8c112e61f34a3627d00c252e"
+checksum = "87dfb460171bd95420ae1f123f2e475fe10312ebeb344e757dbf3d96e1570e82"
 
 [[package]]
 name = "crossbeam-deque"
@@ -2064,9 +2064,9 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "toml"
-version = "1.1.8+spec-1.1.0"
+version = "1.2.0+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20489e00e4d8741d6be680764cc12e270655e375a20d1011e844a9c3379e678d"
+checksum = "c5ffcdf8f50436dbbfd675c1fe1b8e0854f42b7defea8584bdebe1aee900e561"
 dependencies = [
  "indexmap",
  "serde_core",
@@ -2088,9 +2088,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.25.17+spec-1.1.0"
+version = "0.25.18+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3641d5bbb5349a79e1020a242d251efbc546ad8048d133958323ce9c40a9c9c"
+checksum = "1ec6e78bd70db9420d8d212fa9dc97f116448a1ceff5d00eabb991d407e21396"
 dependencies = [
  "indexmap",
  "toml_datetime",
@@ -2109,9 +2109,9 @@ dependencies = [
 
 [[package]]
 name = "toml_writer"
-version = "1.1.3+spec-1.1.0"
+version = "1.2.0+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
+checksum = "009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a"
 
 [[package]]
 name = "tracing"
