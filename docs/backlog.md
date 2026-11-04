@@ -15,22 +15,22 @@
   medians of 79 to 89 ms (0.8.0) and 74 to 76 ms (0.8.1), maxima 148 to 160 and
   140 to 146 ms. No timeout-long stall showed on either, so the fix was not
   observed here; the burst numbers assume wtype keeps to its 25 ms interval.
-- **Windows transparency is D3D12 only in every crcbl release.** crcbl 0.17.1
-  draws a transparent Win32 window through a DirectComposition swapchain and
-  refuses one on Vulkan, which pikr does not use on Windows. crcbl main
-  (`ce452ab5`) adds the Vulkan side, on drivers that list
-  `VK_KHR_external_memory_win32` and `VK_KHR_external_semaphore_win32`, but no
-  tag contains it yet (checked 2026-11-04; v0.17.1 is the newest); see the D3D12
-  device creation entry for the move. From crcbl 0.6.0 `ui::run`'s
-  `update_input_region` gives a transparent window a rounded input region
-  (`PhysicalRect::rounded`), so a click on a see-through corner reaches the
-  window beneath; on Win32 the region also clips drawing, so it is the corners'
-  outer bound. Checked on the Windows test desktop against crcbl main
-  `588ce48b`: `GetWindowRgnBox` reports a complex region covering the 720x447
-  window, and a magnified screenshot shows the rounded border whole with the
-  desktop behind the corner. Hit-testing (`WindowFromPoint`, which applies
-  window regions) puts the outermost corner pixel on the window beneath and the
-  top edge and centre on pikr; no real click was sent.
+- **Windows transparency: pikr uses D3D12, and Vulkan can do it since crcbl
+  0.17.2.** crcbl draws a transparent Win32 window through a DirectComposition
+  swapchain on D3D12, and from 0.17.2 (released 2026-11-04, which pikr builds on
+  since `cad4eb5`) on Vulkan too, on drivers that list
+  `VK_KHR_external_memory_win32` and `VK_KHR_external_semaphore_win32`. pikr
+  still picks D3D12 on Windows; see the D3D12 device creation entry for the
+  move. From crcbl 0.6.0 `ui::run`'s `update_input_region` gives a transparent
+  window a rounded input region (`PhysicalRect::rounded`), so a click on a
+  see-through corner reaches the window beneath; on Win32 the region also clips
+  drawing, so it is the corners' outer bound. Checked on the Windows test
+  desktop against crcbl main `588ce48b`: `GetWindowRgnBox` reports a complex
+  region covering the 720x447 window, and a magnified screenshot shows the
+  rounded border whole with the desktop behind the corner. Hit-testing
+  (`WindowFromPoint`, which applies window regions) puts the outermost corner
+  pixel on the window beneath and the top edge and centre on pikr; no real click
+  was sent.
 - `picker::icons::tests::svg_text_is_drawn` needs a system sans-serif face; the
   Ubuntu test job installs no fonts, so it relies on the runner image.
 - **GPU choice is crcbl-app's rule (crcbl 0.6.0).** `ui::gpu::Gpu::open` opens
@@ -255,11 +255,15 @@
     timed `D3D12CreateDevice` on the same card on 2026-10-29, 20 mirrored pairs
     at 2–10% CPU, and got medians of 287.6 ms plain and 284.4 ms with DRED. The
     options are the user's: render with WARP, keep a resident pikr process that
-    holds the device, accept it, or move Windows to Vulkan once crcbl releases
-    its DirectComposition path for Vulkan, which halves first paint (see the
-    2026-11-04 measurement below). That path is on crcbl main (`ce452ab5`) but
-    in no crcbl release yet; once one carries it, the move is one change to
-    `ui::gpu::platform_backend`.
+    holds the device, accept it, or move Windows to Vulkan through crcbl's
+    DirectComposition path, which halved first paint (see the 2026-11-04
+    measurement below). That path shipped in crcbl 0.17.2, which pikr builds on
+    since `cad4eb5`, so the move is now one change to
+    `ui::gpu::platform_backend`. The measurement was taken on crcbl's branch
+    before the release, not on 0.17.2 itself; re-run the windowed checks on the
+    release after switching. crcbl's caveat for debug builds: the Vulkan SDK
+    1.4.357 validation layer can crash in its own allocator when a worker thread
+    first calls into it; `CRCBL_VK_VALIDATION=0` turns it off.
     - **Vulkan through DirectComposition, measured 2026-11-04** at crcbl's
       request, on its branch `feat/vk-transparent-win32` (`8c3282da`). crcbl-vk
       renders into textures shared with a D3D11 device and presents a copy on
@@ -311,12 +315,12 @@
       included. But `vkCreateSwapchainKHR` on a 720×448 window took 290–297 ms,
       and 615 ms on its first run. The first device creation of each Vulkan
       driver took 159–462 ms once, then dropped.
-    - On crcbl 0.17.1 Vulkan cannot draw pikr transparent on Windows: crcbl
-      refuses a transparent Win32 window on Vulkan, so the 2026-10-29 scratch
-      build opened it opaque. Two Vulkan drivers list each AMD adapter, and pikr
-      then logs "no Vulkan driver alone shows the adapter; saving it without
-      one", so the saved choice still enumerates all four. Its second launch did
-      say `Used`.
+    - Before crcbl 0.17.2 Vulkan could not draw pikr transparent on Windows:
+      crcbl refused a transparent Win32 window on Vulkan, so the 2026-10-29
+      scratch build opened it opaque. Two Vulkan drivers list each AMD adapter,
+      and pikr then logs "no Vulkan driver alone shows the adapter; saving it
+      without one", so the saved choice still enumerates all four. Its second
+      launch did say `Used`.
 
   - **Windows: cold drun icons are extracted in the background.** With no
     `drun-apps.toml`, `drun_windows::collect_cached` lists the apps with
