@@ -15,18 +15,22 @@
   medians of 79 to 89 ms (0.8.0) and 74 to 76 ms (0.8.1), maxima 148 to 160 and
   140 to 146 ms. No timeout-long stall showed on either, so the fix was not
   observed here; the burst numbers assume wtype keeps to its 25 ms interval.
-- **Windows transparency is D3D12 only.** crcbl draws a transparent Win32 window
-  through a DirectComposition swapchain and refuses one on Vulkan, which pikr
-  does not use on Windows. From crcbl 0.6.0 `ui::run`'s `update_input_region`
-  gives a transparent window a rounded input region (`PhysicalRect::rounded`),
-  so a click on a see-through corner reaches the window beneath; on Win32 the
-  region also clips drawing, so it is the corners' outer bound. Checked on the
-  Windows test desktop against crcbl main `588ce48b`: `GetWindowRgnBox` reports
-  a complex region covering the 720x447 window, and a magnified screenshot shows
-  the rounded border whole with the desktop behind the corner. Hit-testing
-  (`WindowFromPoint`, which applies window regions) puts the outermost corner
-  pixel on the window beneath and the top edge and centre on pikr; no real click
-  was sent.
+- **Windows transparency is D3D12 only in every crcbl release.** crcbl 0.17.1
+  draws a transparent Win32 window through a DirectComposition swapchain and
+  refuses one on Vulkan, which pikr does not use on Windows. crcbl main
+  (`ce452ab5`) adds the Vulkan side, on drivers that list
+  `VK_KHR_external_memory_win32` and `VK_KHR_external_semaphore_win32`, but no
+  tag contains it yet (checked 2026-11-04; v0.17.1 is the newest); see the D3D12
+  device creation entry for the move. From crcbl 0.6.0 `ui::run`'s
+  `update_input_region` gives a transparent window a rounded input region
+  (`PhysicalRect::rounded`), so a click on a see-through corner reaches the
+  window beneath; on Win32 the region also clips drawing, so it is the corners'
+  outer bound. Checked on the Windows test desktop against crcbl main
+  `588ce48b`: `GetWindowRgnBox` reports a complex region covering the 720x447
+  window, and a magnified screenshot shows the rounded border whole with the
+  desktop behind the corner. Hit-testing (`WindowFromPoint`, which applies
+  window regions) puts the outermost corner pixel on the window beneath and the
+  top edge and centre on pikr; no real click was sent.
 - `picker::icons::tests::svg_text_is_drawn` needs a system sans-serif face; the
   Ubuntu test job installs no fonts, so it relies on the runner image.
 - **GPU choice is crcbl-app's rule (crcbl 0.6.0).** `ui::gpu::Gpu::open` opens
@@ -200,7 +204,8 @@
     `Private_Dirty`, and it has not been broken down.** Suspects, not verified:
     the theme font and any fallback faces held in memory, the CPU-side glyph and
     icon atlases, and the driver's own allocations. Next: run a heap profiler
-    over a dmenu and a drun launch (valgrind is installed; massif or dhat),
+    over a dmenu and a drun launch (valgrind was installed on the RX 7900 XTX
+    machine on 2026-11-02, and is not on the Intel laptop; massif or dhat),
     split pikr's allocations from the driver's, and see what can go. The
     binary's 9.7 MB is second: release builds already use thin LTO, one codegen
     unit and `strip = "symbols"`, and trimming unused crcbl-image formats or
