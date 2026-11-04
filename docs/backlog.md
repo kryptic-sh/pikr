@@ -165,8 +165,16 @@
     was faster than every 0.12.1 one. `Presenter::open` stayed at a median of
     317–332 ms, AMD's `D3D12CreateDevice` (below). First paint was not compared:
     its log line was missing from 3 of the 48 launches, and its outliers reached
-    3.4 s with no cause found. **Not measured:** the Intel laptop (ANV), where
-    the 12 ms `UiRenderer::new` was found, still owed in a quiet window.
+    3.4 s with no cause found. **Intel laptop (ANV), 2026-11-04:** the same pair
+    rebuilt at `234486a` (crcbl `=0.12.1` against 0.17.1, same temporary log),
+    nested Hyprland, saved choice `Used`, every local session paused (top 90.6%
+    idle, load average 2.62 before and 1.95 after), 13 interleaved rounds of
+    dmenu and drun with the first dropped as warm-up, 12 each. `UiRenderer::new`
+    fell from a median 11.02 ms (9.63–14.41) to 7.98 ms (7.16–11.52) in dmenu
+    and from 11.00 to 7.83 ms in drun; `Presenter::open` stayed at 10.6–11.3 ms.
+    First paint moved from 29.00 to 27.49 ms in dmenu and from 33.00 to 28.65 ms
+    in drun at the median, inside each run's spread (dmenu 25.00–37.05 against
+    21.80–36.99 ms), so a small gain at most.
   - **Memory: most of RADV's 116 MB is libLLVM; pikr's own share is still to
     break down.** One dmenu launch of the v0.9.7 release build on 2026-11-02
     (headless sway, RX 7900 XTX on RADV), read from `/proc/<pid>/smaps` and
@@ -198,8 +206,16 @@
     AMD driver's. Windows' private bytes are committed memory, touched or not,
     so the 40 MB does not compare directly with Linux's 13.7 MB `Private_Dirty`;
     splitting it would need a heap trace (ETW heap tracing through `wpr`, or a
-    counting allocator in a scratch build). Not checked: macOS, and the Intel
-    laptop on the current build.
+    counting allocator in a scratch build). **Intel laptop (ANV), 2026-11-04**
+    (release build at `234486a` on crcbl 0.17.1, nested Hyprland, read from
+    `/proc/<pid>/smaps` after first paint): resident 32.4 MB in dmenu and 33.7
+    MB in drun, as on 0.12.1. `Private_Dirty` was 10.0 MB in dmenu: anonymous
+    mappings 6.6 MB, the main heap 1.6 MB, the `pikr` binary's data 0.7 MB and
+    `libvulkan_intel.so` 0.5 MB; drun 11.2 MB, the heap 3.3 MB. glibc gives each
+    thread past the first its own arena in an anonymous mapping, so the 6.6 MB
+    mixes those threads' heaps with the driver's own mappings; splitting it
+    needs a heap profiler, and neither valgrind nor heaptrack is installed on
+    the laptop. Not checked: macOS.
   - **Windows: D3D12 device creation is about 300 ms of every launch (decision
     needed).** Measured 2026-10-29 by the Windows session (pikr 0.9.5, crcbl
     0.12.1, Windows 11, AMD RX 7900 XTX driving the display plus a Ryzen iGPU,
