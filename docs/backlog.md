@@ -532,9 +532,16 @@
     through `hyprctl eval`) typed `be`, highlighted `beta`, and Return printed
     it. **wtype does not work for X11 clients**: its uploaded keymap does not
     reach Xwayland, so `wtype be` left pikr in Normal mode with an empty query
-    (Escape-like) and the run exited 1. Use `send_shortcut` there. Not checked:
-    X11 under a real X server, and transparency with a compositing manager
-    (crcbl's X11 shell has no ARGB visual yet).
+    (Escape-like) and the run exited 1. Use `send_shortcut` there. On a real X
+    server (Xvfb, 2026-11-04, release build of `234486a`, a private display with
+    no Wayland): pikr opened a 720x448 window centred on the 1280x800 screen,
+    warned that it draws opaque, and drew the picker whole with black corners;
+    `xdotool type gam` highlighted `gamma` and Return printed it, exit 0. Xvfb
+    has no DRI3, which Mesa's Vulkan drivers need to present ("No DRI3 support
+    detected"), so the walk passed over the Intel iGPU and lavapipe and chose
+    the NVIDIA MX550 (proprietary driver), the first of 3 that could present.
+    Not checked: an X server with DRI3 (Xorg on hardware), and transparency with
+    a compositing manager (crcbl's X11 shell has no ARGB visual yet).
   - Clipboard mode on Linux was checked on headless sway (2026-10-21, cliphist
     pointed at a scratch `XDG_CACHE_HOME`, which keeps the user's history out):
     a seeded history lists newest first, and accepting a row put its text on the
