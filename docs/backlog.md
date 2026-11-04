@@ -567,29 +567,29 @@
     parallel (one thread each) took 85 to 184 ms evicted against 170 to 205 ms
     in sequence in a probe: not adopted on that evidence. Reading faces only
     when a glyph needs them would need a crcbl API for lazily loaded fallbacks.
-  - **Run GUI checks in a nested Hyprland, never on the user's live desktop**:
-    pikr takes the keyboard on the overlay layer, so a test run there swallows
-    whatever the user is typing. Start `Hyprland -c <lua config>` through
-    `hyprctl eval "hl.exec_cmd(cmd, { workspace = 'special:x silent', no_initial_focus = true })"`
-    (0.56 configures and dispatches in Lua). The live compositor never draws
-    that hidden window, so its output gets no frame callbacks: grim hangs and
-    the app never gets a frame. Inside it, add `hyprctl output create headless`
-    and disable `WAYLAND-1`, then point `WAYLAND_DISPLAY` and
-    `HYPRLAND_INSTANCE_SIGNATURE` at it for pikr, wtype, wlrctl (AUR; pointer
-    moves are relative, so `move -5000 -5000` first to reach 0,0) and grim.
-    **Also set `XDG_STATE_HOME` (and `XDG_CACHE_HOME`) to a scratch directory
-    for every pikr a test launches**: each accept writes history and frecency
+  - **Run GUI checks in a compositor that cannot reach the user's session, never
+    on or against the live desktop** (the owner's rule since 2026-11-04, after a
+    nested niri hung the desktop). pikr takes the keyboard on the overlay layer,
+    so a run on the live desktop swallows whatever the user is typing, and a
+    Hyprland nested as a window there also asks logind to take control of the
+    user's session (its log on 2026-11-04: libseat "Could not take control of
+    session: Device or resource busy"). Use dsplr's
+    `tests/e2e/headless-hyprland.sh <command>`: Hyprland nested in
+    `kwin_wayland --virtual`, both in a private `XDG_RUNTIME_DIR` under
+    `env -i`, Hyprland with `LIBSEAT_BACKEND=seatd` so libseat fails without
+    asking logind. Inside it, run `hyprctl output create headless NAME`, then
+    point `WAYLAND_DISPLAY` at Hyprland's own socket (`wayland-1` there) for
+    pikr, wtype, wlrctl (AUR; pointer moves are relative, so `move -5000 -5000`
+    first to reach 0,0) and grim. Keys from wtype do not trigger Hyprland's
+    binds there, even with pikr closed. A nested compositor draws through its
+    parent's buffers, so its timings are not bare-metal ones either way. **Also
+    set `XDG_STATE_HOME` (and `XDG_CACHE_HOME`) to a scratch directory for every
+    pikr a test launches**: each accept writes history and frecency
     (`picker::state_file_path`), and tests on 2026-10-20 wrote theirs into the
-    user's real state until they were taken out by hand. The un-drawn output is
-    also a way to reproduce the frame-pacing freeze fixed on 2026-10-20 (the
-    frame gate, now crcbl-app's `Presenter`); turning a headless output off with
-    DPMS does not reproduce it. For checks that need no Hyprland, sway is also
-    installed on the Arch machine: the e2e suite starts its own headless sway in
-    a private `XDG_RUNTIME_DIR`, and
-    `cargo test --release --test keyboard -- --test-threads=1` (6 passed) and
-    `--test startup_gate` (345 ms against the 500 ms deadline) ran there on
-    2026-10-20. Keep build output off `/tmp` on that machine: it is a shared
-    tmpfs, and a second release build filled it.
+    user's real state until they were taken out by hand. For checks that need no
+    Hyprland, the e2e suite starts its own headless sway in a private
+    `XDG_RUNTIME_DIR`. Keep build output off `/tmp` on the Arch machines: it is
+    a shared tmpfs, and a second release build filled it.
   - Key handling is tested headless on every OS (`ui::run::headless`: crcbl's
     `HeadlessShell` and crcbl-hal's null backend driving the real window loop),
     which puts no frame on a screen and no key through a real keymap. The sway
@@ -944,11 +944,14 @@ macOS and Windows.
   v0.9.5 failed 9 of 10; locally (sway 1.11) the e2e suite passed 20 of 20 and
   the startup gate 10 of 10. A second pikr taking the keyboard still closes the
   first with exit 1. Not checked: whether Hyprland's own binds still fire over
-  an exclusive layer surface, and a toplevel (X11, Wayland without layer-shell)
-  whose transient leave lasts longer than the grace, such as an IME's candidate
-  window. On Windows the Microsoft IME's candidate list causes no leave: with
-  `7f1f66b` (2026-10-24) pikr stayed open through two Space conversions, the
-  second opening the candidate list, and committed.
+  an exclusive layer surface (tried 2026-11-04 in the headless Hyprland above: a
+  `SUPER + F12` bind did not fire from wtype with pikr open, nor with it closed,
+  so that harness cannot answer it; a real keyboard is needed), and a toplevel
+  (X11, Wayland without layer-shell) whose transient leave lasts longer than the
+  grace, such as an IME's candidate window. On Windows the Microsoft IME's
+  candidate list causes no leave: with `7f1f66b` (2026-10-24) pikr stayed open
+  through two Space conversions, the second opening the candidate list, and
+  committed.
 - Launched from a script, pikr often does not get the foreground: in 33 launches
   on 2026-10-23 (`Process.Start` from PowerShell), the first launch from a fresh
   PowerShell process usually never became the foreground window within 8 s (11
