@@ -20,8 +20,8 @@
   swapchain on D3D12, and from 0.17.2 (released 2026-11-04, which pikr builds on
   since `cad4eb5`) on Vulkan too, on drivers that list
   `VK_KHR_external_memory_win32` and `VK_KHR_external_semaphore_win32`. pikr
-  still picks D3D12 on Windows; see the D3D12 device creation entry for the
-  move. From crcbl 0.6.0 `ui::run`'s `update_input_region` gives a transparent
+  keeps D3D12 on Windows by the user's choice; see the D3D12 device creation
+  entry. From crcbl 0.6.0 `ui::run`'s `update_input_region` gives a transparent
   window a rounded input region (`PhysicalRect::rounded`), so a click on a
   see-through corner reaches the window beneath; on Win32 the region also clips
   drawing, so it is the corners' outer bound. Checked on the Windows test
@@ -243,27 +243,34 @@
     mixes those threads' heaps with the driver's own mappings; splitting it
     needs a heap profiler, and neither valgrind nor heaptrack is installed on
     the laptop. Not checked: macOS.
-  - **Windows: D3D12 device creation is about 300 ms of every launch (decision
-    needed).** Measured 2026-10-29 by the Windows session (pikr 0.9.5, crcbl
-    0.12.1, Windows 11, AMD RX 7900 XTX driving the display plus a Ryzen iGPU,
-    saved choice `Used`, six launches each): first paint at 337–352 ms in dmenu
-    and 356–439 ms in drun, of which `D3D12CreateDevice` alone took 293–308 ms.
-    A bare windows-rs probe gave the same, outside crcbl: 283–378 ms on the 7900
-    XTX, 349–506 ms on the iGPU, and 9.7–10.6 ms on WARP. It is the AMD driver's
-    start-up, not crcbl's. Fonts take 3–5 ms on DirectWrite and do not matter
-    there. crcbl's DRED settings are not part of it either: the crcbl session
-    timed `D3D12CreateDevice` on the same card on 2026-10-29, 20 mirrored pairs
-    at 2–10% CPU, and got medians of 287.6 ms plain and 284.4 ms with DRED. The
-    options are the user's: render with WARP, keep a resident pikr process that
-    holds the device, accept it, or move Windows to Vulkan through crcbl's
-    DirectComposition path, which halved first paint (see the 2026-11-04
-    measurement below). That path shipped in crcbl 0.17.2, which pikr builds on
-    since `cad4eb5`, so the move is now one change to
-    `ui::gpu::platform_backend`. The measurement was taken on crcbl's branch
-    before the release, not on 0.17.2 itself; re-run the windowed checks on the
-    release after switching. crcbl's caveat for debug builds: the Vulkan SDK
-    1.4.357 validation layer can crash in its own allocator when a worker thread
-    first calls into it; `CRCBL_VK_VALIDATION=0` turns it off.
+  - **Windows: D3D12 device creation is about 300 ms of every launch (decided
+    2026-11-05: keep D3D12).** Measured 2026-10-29 by the Windows session (pikr
+    0.9.5, crcbl 0.12.1, Windows 11, AMD RX 7900 XTX driving the display plus a
+    Ryzen iGPU, saved choice `Used`, six launches each): first paint at 337–352
+    ms in dmenu and 356–439 ms in drun, of which `D3D12CreateDevice` alone took
+    293–308 ms. A bare windows-rs probe gave the same, outside crcbl: 283–378 ms
+    on the 7900 XTX, 349–506 ms on the iGPU, and 9.7–10.6 ms on WARP. It is the
+    AMD driver's start-up, not crcbl's. Fonts take 3–5 ms on DirectWrite and do
+    not matter there. crcbl's DRED settings are not part of it either: the crcbl
+    session timed `D3D12CreateDevice` on the same card on 2026-10-29, 20
+    mirrored pairs at 2–10% CPU, and got medians of 287.6 ms plain and 284.4 ms
+    with DRED. The options were WARP, a resident pikr process that holds the
+    device, accepting it, or Vulkan through crcbl's DirectComposition path
+    (released in crcbl 0.17.2), which halved first paint (see the 2026-11-04
+    measurement below). **The user chose to keep D3D12 on Windows
+    (2026-11-05)**, accepting the ~300 ms. Why not Vulkan: D3D12 runs on more
+    Windows hardware. Every Windows 10/11 GPU driver of the last decade has it,
+    and with no usable GPU (VMs, Remote Desktop, the basic display driver) D3D12
+    still has WARP, while Vulkan needs a vendor driver (none on pre-2015 Intel,
+    recent only on Snapdragon, none in VMs) plus the two external-memory
+    extensions the transparent path uses, and has no software fallback.
+    Considered and not taken: Vulkan first with a fallback to D3D12, which would
+    need a fallback step in `ui::gpu::platform_backend` (it names one backend)
+    and costs the failed attempt on fallback machines. Re-open only if the
+    startup becomes a complaint. If it is: the Vulkan measurement was taken on
+    crcbl's branch, not on 0.17.2, and crcbl warns that the Vulkan SDK 1.4.357
+    validation layer can crash in debug builds (`CRCBL_VK_VALIDATION=0` turns it
+    off).
     - **Vulkan through DirectComposition, measured 2026-11-04** at crcbl's
       request, on its branch `feat/vk-transparent-win32` (`8c3282da`). crcbl-vk
       renders into textures shared with a D3D11 device and presents a copy on
