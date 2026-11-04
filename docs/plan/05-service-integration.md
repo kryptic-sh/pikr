@@ -11,13 +11,16 @@
   avoids), and that `scoop uninstall` stops the daemon and removes the startup
   entry (a `pre_uninstall` running `pikr daemon --uninstall`).
 - Linux: a systemd user unit bound to `graphical-session.target`, with
-  `Restart=always` so it comes back on the new binary after an update exits it,
-  getting `WAYLAND_DISPLAY`/`DISPLAY` from the session; documented `exec-once`
+  `Restart=on-failure` for crashes (an update needs no restart from systemd: the
+  daemon `exec`s the new binary in place and keeps its pid), getting
+  `WAYLAND_DISPLAY`/`DISPLAY` from the session; documented `exec-once`
   (Hyprland) and `exec` (sway) lines. Packages (deb, rpm, AUR, Alpine) ship the
   unit, disabled.
-- macOS: a launchd agent plist with `KeepAlive`, documented, after macOS has
-  been run with a window at all. Homebrew upgrades replace the binary in place,
-  which the handshake covers.
+- macOS: a launchd agent plist with `KeepAlive` for crashes, documented, after
+  macOS has been run with a window at all. A Homebrew upgrade installs into a
+  new Cellar directory and moves the `bin/pikr` link, so the daemon watches the
+  path it was started by (the link), not the resolved Cellar file, and the
+  change check follows the link to the new version.
 - README: what the daemon costs (resident memory per platform, from phase 01)
   and buys (first paint), how updates work, and how to turn it off.
 

@@ -9,11 +9,15 @@ and the GPU `Presenter`; a plain `pikr` invocation becomes a thin client that
 hands its request to the daemon and falls back to today's in-process path when
 no daemon answers.
 
-**Hard requirement: updating pikr never needs the daemon killed by hand.**
-Windows will not overwrite or delete a running `.exe` (it can only be renamed),
-and Scoop refuses to update an app while a process from its directory runs. So
-the daemon never runs from the installed binary on Windows, and every client
-checks the daemon's version and replaces a stale one itself (phase 03 and 04).
+**Hard requirement, on every platform: updating pikr never needs the daemon
+killed by hand, and the new version is picked up on its own.** Windows will not
+overwrite or delete a running `.exe` (it can only be renamed), and Scoop refuses
+to update an app while a process from its directory runs, so there the daemon
+never runs from the installed binary. Linux and macOS let the binary be
+replaced, but a running daemon keeps the old code. On all three the daemon
+watches its installed binary and restarts itself on the new one, and every
+client checks the daemon's version and replaces a stale one as a backstop (phase
+03 and 04).
 
 | Phase                                                        | Status  |
 | ------------------------------------------------------------ | ------- |
