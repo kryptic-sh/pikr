@@ -911,9 +911,15 @@ macOS and Windows.
   dmenu accept wrote `history.toml` newest first and Ctrl-P recalled it. The ssh
   accept ran with `TERMINAL` pointed at a pwsh probe script (so no connection
   was made): pikr launched it with `-NoExit -Command "ssh '<host>'"` and the
-  argument parsed back to `ssh` and a host from `known_hosts`, unquoted. Not
-  exercised: this host's default terminal, `wt.exe` (`-- ssh <host>`), and a
-  real connection.
+  argument parsed back to `ssh` and a host from `known_hosts`, unquoted. With
+  the default terminal on 2026-11-04 (no `TERMINAL`, so `wt.exe`; release build
+  at `403a2ae`), accepting the first ssh row twice started `ssh <host>` as a
+  child of `WindowsTerminal.exe`, the argv exactly `ssh` and the host. Six
+  seconds later the ssh process was still running, with an Established TCP
+  connection to the host's port 22, so a real connection was made; the probe
+  then stopped it. Not checked: what the user sees in that tab (login prompt or
+  shell), since the screenshot taken then showed another Windows Terminal tab in
+  front, and a host with a port (`-p PORT`) through `wt.exe`.
 - Clipboard mode reads Windows' clipboard history through WinRT
   (`clipboard::windows_impl::history_texts`, on a thread of its own in a
   single-threaded apartment, since `Clipboard` refuses activation from an MTA:
