@@ -719,11 +719,14 @@
     `result_row` names the list row itself (`Ui::current_key`, its label and
     `(description)`), and the same client read the ListItems as `alpha`, `beta`,
     `gamma` (2026-10-23). The `:` line opens as a second Edit beside the query,
-    its value including the colon (`:`, then `:ab` with caret 3). Not checked: a
-    row with a description through UI Automation (dmenu rows have none), and
-    Orca or Narrator speaking any of it. Before the change (2026-10-22,
-    `1712f0b`) no row was selected and the query was a Text with no
-    ValuePattern.
+    its value including the colon (`:`, then `:ab` with caret 3). A row with a
+    description was read on 2026-11-04 (ssh mode, release build at `5dca748`, a
+    scratch `USERPROFILE` whose config had `Host pikr-desc` with `HostName` and
+    `User`; Windows drun rows carry no description): its ListItem's Name was
+    `pikr-desc (192.0.2.10 (probe))`, with two Text children, the label and the
+    parenthesised description. Not checked: Orca or Narrator speaking any of it,
+    which needs someone listening. Before the change (2026-10-22, `1712f0b`) no
+    row was selected and the query was a Text with no ValuePattern.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
@@ -989,9 +992,17 @@ macOS and Windows.
   child of `WindowsTerminal.exe`, the argv exactly `ssh` and the host. Six
   seconds later the ssh process was still running, with an Established TCP
   connection to the host's port 22, so a real connection was made; the probe
-  then stopped it. Not checked: what the user sees in that tab (login prompt or
-  shell), since the screenshot taken then showed another Windows Terminal tab in
-  front, and a host with a port (`-p PORT`) through `wt.exe`.
+  then stopped it. Rerun on 2026-11-04 (release build at `5dca748`) with the tab
+  read through UI Automation (the `TermControl`'s TextPattern) eight seconds
+  after the accept: it held one line, ssh's password prompt (no host-key
+  question, no shell); the probe printed only that classification, since the
+  host is private, then stopped ssh and closed the tab. A host with a port: with
+  a scratch `USERPROFILE` whose `known_hosts` named `[127.0.0.1]:2222` and a
+  listener on that port, typing `2222` and accepting started
+  `ssh -p 2222 127.0.0.1` under `WindowsTerminal.exe`; the listener read the
+  client's banner (`SSH-2.0-OpenSSH_for_Windows_9.5`), and once it closed the
+  connection the tab showed ssh's "Connection reset by 127.0.0.1 port 2222" and
+  Windows Terminal's exit-code line.
 - Clipboard mode reads Windows' clipboard history through WinRT
   (`clipboard::windows_impl::history_texts`, on a thread of its own in a
   single-threaded apartment, since `Clipboard` refuses activation from an MTA:
