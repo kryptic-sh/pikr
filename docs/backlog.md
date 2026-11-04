@@ -266,11 +266,13 @@
     extensions the transparent path uses, and has no software fallback.
     Considered and not taken: Vulkan first with a fallback to D3D12, which would
     need a fallback step in `ui::gpu::platform_backend` (it names one backend)
-    and costs the failed attempt on fallback machines. Re-open only if the
-    startup becomes a complaint. If it is: the Vulkan measurement was taken on
-    crcbl's branch, not on 0.17.2, and crcbl warns that the Vulkan SDK 1.4.357
-    validation layer can crash in debug builds (`CRCBL_VK_VALIDATION=0` turns it
-    off).
+    and costs the failed attempt on fallback machines. The resident process is
+    planned instead (2026-11-05, `docs/plan/00-index.md`): a daemon keeps the
+    D3D12 device and a hidden window, so the backend stays D3D12 and the ~300 ms
+    is paid once per login. Re-open Vulkan only if that plan fails its spike. If
+    it is: the Vulkan measurement was taken on crcbl's branch, not on 0.17.2,
+    and crcbl warns that the Vulkan SDK 1.4.357 validation layer can crash in
+    debug builds (`CRCBL_VK_VALIDATION=0` turns it off).
     - **Vulkan through DirectComposition, measured 2026-11-04** at crcbl's
       request, on its branch `feat/vk-transparent-win32` (`8c3282da`). crcbl-vk
       renders into textures shared with a D3D11 device and presents a copy on
