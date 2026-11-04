@@ -210,12 +210,29 @@ mod windows_impl {
     }
 
     fn make_entry(text: String) -> Entry {
-        let label = preview_label(&text);
+        // A row draws one line, so the label's whitespace (line breaks, tabs,
+        // runs of spaces) collapses to single spaces; a copied line break
+        // otherwise drew its next line over the row below. The payload keeps
+        // the text as copied.
+        let one_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
         Entry {
-            label,
+            label: preview_label(&one_line),
             description: None,
             icon: None,
             payload: Payload::SetClipboard(text),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{Payload, make_entry};
+
+        #[test]
+        fn a_multi_line_item_is_labelled_on_one_line() {
+            let text = "first line\r\n\tsecond  line\n".to_string();
+            let entry = make_entry(text.clone());
+            assert_eq!(entry.label, "first line second line");
+            assert!(matches!(entry.payload, Payload::SetClipboard(copied) if copied == text));
         }
     }
 }

@@ -936,7 +936,12 @@ macOS and Windows.
   single-threaded apartment, since `Clipboard` refuses activation from an MTA:
   the first run on 2026-10-22 failed with `0x8000001D` until it moved there).
   Checked on Windows 11 with history off (the default): it logs that and lists
-  the current clipboard text, collected in 35 ms. Not checked: a history that is
-  on (turning it on starts Windows recording the user's clipboard, so it waits
-  for the owner), text items' order and accepting one, and how long a long
-  history takes to read at startup.
+  the current clipboard text, collected in 35 ms. With history on (2026-11-04,
+  release build at `403a2ae`, the `EnableClipboardHistory` value set for the
+  run, then the history cleared, the value deleted and the clipboard text put
+  back): a full history of 25 items, Windows' cap, was read in 38.5 ms (the
+  collect phase), listed newest first, and accepting the second row put its text
+  on the clipboard. Text copied by other sessions' tests during the run showed a
+  defect, since fixed: a multi-line item drew its next lines over the rows
+  below. Its label now collapses whitespace to one line (checked on screen:
+  "pikr multi line item"), and accepting it copied the original line breaks.

@@ -20,6 +20,13 @@ and this project adheres to
   of which pikr calls. evalexpr stays at 11, since 12 and later are
   AGPL-3.0-only.
 
+### Fixed
+
+- Windows: in clipboard mode, an item with line breaks, tabs or runs of spaces
+  is labelled on one line, its whitespace collapsed to single spaces. Before,
+  each copied line break drew the next line over the row below. Accepting the
+  item still copies its text exactly as it was.
+
 ## [0.9.7] - 2026-11-02
 
 ### Changed
