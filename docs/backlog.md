@@ -837,10 +837,17 @@ macOS and Windows.
   border matched the desktop just outside the window (31,31,31, not the panel's
   41,46,66 or an opaque fallback's black). A `SetWindowPos` to 900x600 from a
   probe logged "reconfiguring the swapchain to 900x600" and redrew the picker
-  laid out at the new size, the corners still see-through. Not checked: a scale
-  (DPI) change on D3D12, and Metal on macOS (CI builds and runs the unit tests
-  there). What is left unadopted is `text_input::TextPump`, which feeds
-  crcbl-ui's `TextInput` while pikr edits its own query.
+  laid out at the new size, the corners still see-through. A live scale change
+  on D3D12 was checked on 2026-11-04 (release build at `403a2ae`, crcbl 0.17.1,
+  one 2560x1440 display): with pikr open the display went from 100% to 125% and
+  back. crcbl logged "reconfiguring the swapchain to 900x560", then back to
+  720x448; `GetDpiForWindow` read 120, then 96; a screenshot at 125% showed the
+  picker laid out at the larger scale, and its four corner pixels were the
+  terminal behind it (26,27,38), not the panel (41,46,66) or black. pikr kept
+  the focus throughout, took typed keys at both scales and printed `gamma`,
+  exit 0. Not checked: Metal on macOS (CI builds and runs the unit tests there).
+  What is left unadopted is `text_input::TextPump`, which feeds crcbl-ui's
+  `TextInput` while pikr edits its own query.
 
 ### Coverage gaps (not verified)
 
