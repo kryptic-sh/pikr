@@ -626,8 +626,19 @@
     none. A first drun launch with no `drun-apps.toml` walks `AppsFolder` in the
     foreground (`drun_windows::collect`): 943 ms to collect, first paint at 1313
     ms, with the icons already cached; the next five launches collected in 1 ms
-    and painted at 315 to 360 ms. Clicks and the wheel were not exercised, and a
-    launch from a hotkey tool was never tried.
+    and painted at 315 to 360 ms. Clicks and the wheel were driven on 2026-11-04
+    (release build at `234486a`, dmenu over 100 lines, input synthesized with
+    `mouse_event` while pikr held the foreground): the pointer drew the hover on
+    the row under it, three wheel detents scrolled the list three rows with the
+    scrollbar thumb and the hover following, and a left click printed the row
+    under the pointer (`line-007` where the unscrolled list had `line-004`),
+    exit 0. A temporary log line in `ui::run`'s `ShellEvent::Wheel` arm (not
+    committed) showed one `Lines { y: ±1.0 }` per detent. Not a defect, just
+    something seen: this machine has `ReverseMouseWheelDirection` set
+    (`HKCU\Control Panel\Mouse`), and Windows applies it to injected input too,
+    so a synthesized `-120` arrived as a detent away from the user and scrolled
+    up; an ordinary WinForms window saw the same sign. A probe that scrolls must
+    read that value first.
   - Real theme icons and HiDPI were checked on Hyprland at scale 2 (nested,
     2026-10-20): drun rows drew hicolor PNGs (Discord at 256 px, Firefox at 48
     px) sharp, with sharp text, and the layer mapped centred at its logical
