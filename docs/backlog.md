@@ -214,8 +214,9 @@
     options are the user's: render with WARP, keep a resident pikr process that
     holds the device, accept it, or move Windows to Vulkan once crcbl releases
     its DirectComposition path for Vulkan, which halves first paint (see the
-    2026-11-04 measurement below). That path is unreleased; the move is one
-    change to `ui::gpu::platform_backend`.
+    2026-11-04 measurement below). That path is on crcbl main (`ce452ab5`) but
+    in no crcbl release yet; once one carries it, the move is one change to
+    `ui::gpu::platform_backend`.
     - **Vulkan through DirectComposition, measured 2026-11-04** at crcbl's
       request, on its branch `feat/vk-transparent-win32` (`8c3282da`). crcbl-vk
       renders into textures shared with a D3D11 device and presents a copy on
