@@ -189,60 +189,90 @@
     paint moved from 29.00 to 27.49 ms in dmenu and from 33.00 to 28.65 ms in
     drun at the median, inside each run's spread (dmenu 25.00–37.05 against
     21.80–36.99 ms), so a small gain at most.
-  - **Memory: most of RADV's 116 MB is libLLVM; pikr's own share is still to
-    break down.** One dmenu launch of the v0.9.7 release build on 2026-11-02
-    (headless sway, RX 7900 XTX on RADV), read from `/proc/<pid>/smaps` and
-    `smaps_rollup` after first paint. Resident 117.5 MB: `libLLVM.so.23.1` 75.9
-    MB (1.3 MB private), the `pikr` binary 9.7 MB (private but clean,
-    file-backed and reclaimable), `libvulkan_radeon.so` 8.7 MB, anonymous memory
-    8.5 MB and heap 1.7 MB. Arch's `vulkan-radeon` (Mesa 26.2.6) has
-    `libLLVM.so` as a `DT_NEEDED` entry, so every Vulkan process on this card
-    loads it. A bare `dlopen` of it from Python raised resident size from 13 to
-    95 MB, so the figure is the library's, not pikr's. Those pages are clean and
-    shared, and pikr cannot avoid them; the Intel laptop (ANV, no LLVM) showed
-    32 MB. Proportional size was 36.3 MB. **What pikr really costs is 13.7 MB
-    `Private_Dirty`, and it has not been broken down.** Suspects, not verified:
-    the theme font and any fallback faces held in memory, the CPU-side glyph and
-    icon atlases, and the driver's own allocations. Next: run a heap profiler
-    over a dmenu and a drun launch (valgrind was installed on the RX 7900 XTX
-    machine on 2026-11-02, and is not on the Intel laptop; massif or dhat),
-    split pikr's allocations from the driver's, and see what can go. The
-    binary's 9.7 MB is second: release builds already use thin LTO, one codegen
-    unit and `strip = "symbols"`, and trimming unused crcbl-image formats or
-    building with `opt-level = "s"` would save a few MB of clean pages, which is
-    likely not worth the first-paint risk without a measurement. **Windows,
-    2026-11-02** (release build of `49cbe1c`, Windows 11, RX 7900 XTX on D3D12,
-    read from .NET's `Process` 1.5 s after launch, five launches each, one dmenu
-    launch closed itself on focus loss first and was skipped): dmenu had a 65 MB
-    working set and 69.6–69.8 MB private bytes, drun 76.3–76.8 MB and 71.7–72.1
-    MB. The largest mapped image is AMD's D3D12 driver, `amdxc64.dll` (77.4 MB),
-    then `pikr.exe` (9.2 MB). On WARP (`CRCBL_ADAPTER=cpu`, four dmenu launches)
-    private bytes were 39.5–40.3 MB, so about 30 MB of the D3D12 figure is the
-    AMD driver's. Windows' private bytes are committed memory, touched or not,
-    so the 40 MB does not compare directly with Linux's 13.7 MB `Private_Dirty`;
-    a counting `#[global_allocator]` in a scratch build of `bf732b9` (not
-    committed; 2026-11-04, three launches each) split it: Rust's own heap held
-    5.94 MB live at first paint in dmenu and 6.22 MB in drun on the RX 7900 XTX,
-    and 5.95 and 6.26 MB on WARP, identical across launches. Of that, 0.18–0.29
-    MB was live once the entries were ranked, 0.56–0.68 MB after the fonts
-    (DirectWrite's faces are mapped, not heap), about the same after
-    `Presenter::open`, and the remaining 5.4 MB arrived between the GPU and the
-    first paint: the UI renderer, its atlases and the first frame. Private bytes
-    in the same launches were 73.3–73.7 MB (dmenu) and 75.7–76.0 MB (drun) on
-    the 7900 XTX, 38.9–39.1 and 41.7–42.3 MB on WARP, so about 33 MB even on
-    WARP sits outside Rust's allocator (the D3D12 runtime and WARP,
-    DirectComposition, DirectWrite and the system DLLs) and the AMD driver adds
-    about 34 MB more. Not split further: which of the 5.4 MB is atlas pixels
-    against tree and glyph state. **Intel laptop (ANV), 2026-11-04** (release
-    build at `234486a` on crcbl 0.17.1, nested Hyprland, read from
-    `/proc/<pid>/smaps` after first paint): resident 32.4 MB in dmenu and 33.7
-    MB in drun, as on 0.12.1. `Private_Dirty` was 10.0 MB in dmenu: anonymous
-    mappings 6.6 MB, the main heap 1.6 MB, the `pikr` binary's data 0.7 MB and
-    `libvulkan_intel.so` 0.5 MB; drun 11.2 MB, the heap 3.3 MB. glibc gives each
-    thread past the first its own arena in an anonymous mapping, so the 6.6 MB
-    mixes those threads' heaps with the driver's own mappings; splitting it
-    needs a heap profiler, and neither valgrind nor heaptrack is installed on
-    the laptop. Not checked: macOS.
+  - **Memory: most of RADV's 116 MB is libLLVM; of pikr's own share, the biggest
+    piece is the theme font read whole.** One dmenu launch of the v0.9.7 release
+    build on 2026-11-02 (headless sway, RX 7900 XTX on RADV), read from
+    `/proc/<pid>/smaps` and `smaps_rollup` after first paint. Resident 117.5 MB:
+    `libLLVM.so.23.1` 75.9 MB (1.3 MB private), the `pikr` binary 9.7 MB
+    (private but clean, file-backed and reclaimable), `libvulkan_radeon.so` 8.7
+    MB, anonymous memory 8.5 MB and heap 1.7 MB. Arch's `vulkan-radeon` (Mesa
+    26.2.6) has `libLLVM.so` as a `DT_NEEDED` entry, so every Vulkan process on
+    this card loads it. A bare `dlopen` of it from Python raised resident size
+    from 13 to 95 MB, so the figure is the library's, not pikr's. Those pages
+    are clean and shared, and pikr cannot avoid them; the Intel laptop (ANV, no
+    LLVM) showed 32 MB. Proportional size was 36.3 MB. **What pikr really costs
+    is its `Private_Dirty`, broken down on 2026-11-10** (main at `2aa7719`,
+    crcbl 0.17.2, a release build kept unstripped with line tables, same
+    headless sway on RADV). valgrind massif over dmenu in heap mode and in
+    `--pages-as-heap` mode, plus `/proc/<pid>/smaps` per mapping after first
+    paint, three dmenu and two drun launches. `Private_Dirty` was 11.8–13.8 MB
+    in dmenu and 12.1–12.4 MB in drun:
+    - **2.7 MB: the theme font file, read whole.** `ui::run::load_fonts` calls
+      `Font::from_system`, which reads the face through
+      `crcbl_font::FontMatch::read` (`std::fs::read`): one 2716 kB anonymous
+      mapping, fully dirty, matching the 2,778,948-byte allocation massif traced
+      to that call. Mapping the file instead would make it clean pages shared
+      with the page cache, and only the pages read would be resident. crcbl has
+      no API for a mapped face; asked of crcbl on 2026-11-10. pikr cannot do it
+      alone without a new dependency or `unsafe`, and a font file replaced while
+      mapped would need handling (`SIGBUS` on a truncated file).
+    - **1–3 MB: glibc per-thread malloc arenas.** The font thread (whose
+      background fontconfig re-check holds about 0.5 MB of parsed fontconfig
+      configuration live, and more freed but still dirty) and the icon thread
+      each get their own arena. Over three interleaved pairs, the same binary
+      under `MALLOC_ARENA_MAX=1` had 10.6–11.0 MB against 11.8–13.8 MB. Setting
+      it from inside pikr needs `mallopt` or `malloc_trim` through FFI (pikr has
+      no `libc` dependency, and musl's allocator differs). Not adopted.
+    - **1.7–2.2 MB: the main heap.** The UI tree and layouts, crcbl-ui's glyph
+      page (`GlyphAtlas`, 1 MiB zeroed, written as glyphs land) and the image
+      atlas page (`ImageAtlas::new`, 4 MiB zeroed, called from
+      `UiRenderer::new`). massif counts the image page whole, but a zeroed
+      allocation that size is fresh `mmap` pages, so it is resident only where
+      written: 104 kB of its 4100 kB mapping in dmenu, which draws no icons.
+    - The rest: libLLVM's relocations (1.4 MB, RADV), the `pikr` binary's data
+      (0.7 MB), `libvulkan_radeon.so` (0.4 MB) and stacks. Driver heap
+      allocations through `vk_alloc` were about 0.16 MB.
+    - Seen, not a cost: accesskit_unix starts its threads (async-io, blocking
+      for zbus) at start-up even when no screen reader is running; their 2 MiB
+      stacks are reserved but barely touched, and their heap was 0.09 MB.
+
+    The binary's 9.7 MB is clean and reclaimable: release builds already use
+    thin LTO, one codegen unit and `strip = "symbols"`, and trimming unused
+    crcbl-image formats or building with `opt-level = "s"` would save a few MB
+    of clean pages, which is likely not worth the first-paint risk without a
+    measurement. **Windows, 2026-11-02** (release build of `49cbe1c`, Windows
+    11, RX 7900 XTX on D3D12, read from .NET's `Process` 1.5 s after launch,
+    five launches each, one dmenu launch closed itself on focus loss first and
+    was skipped): dmenu had a 65 MB working set and 69.6–69.8 MB private bytes,
+    drun 76.3–76.8 MB and 71.7–72.1 MB. The largest mapped image is AMD's D3D12
+    driver, `amdxc64.dll` (77.4 MB), then `pikr.exe` (9.2 MB). On WARP
+    (`CRCBL_ADAPTER=cpu`, four dmenu launches) private bytes were 39.5–40.3 MB,
+    so about 30 MB of the D3D12 figure is the AMD driver's. Windows' private
+    bytes are committed memory, touched or not, so the 40 MB does not compare
+    directly with Linux's 13.7 MB `Private_Dirty`; a counting
+    `#[global_allocator]` in a scratch build of `bf732b9` (not committed;
+    2026-11-04, three launches each) split it: Rust's own heap held 5.94 MB live
+    at first paint in dmenu and 6.22 MB in drun on the RX 7900 XTX, and 5.95 and
+    6.26 MB on WARP, identical across launches. Of that, 0.18–0.29 MB was live
+    once the entries were ranked, 0.56–0.68 MB after the fonts (DirectWrite's
+    faces are mapped, not heap), about the same after `Presenter::open`, and the
+    remaining 5.4 MB arrived between the GPU and the first paint: the UI
+    renderer, its atlases and the first frame. Private bytes in the same
+    launches were 73.3–73.7 MB (dmenu) and 75.7–76.0 MB (drun) on the 7900 XTX,
+    38.9–39.1 and 41.7–42.3 MB on WARP, so about 33 MB even on WARP sits outside
+    Rust's allocator (the D3D12 runtime and WARP, DirectComposition, DirectWrite
+    and the system DLLs) and the AMD driver adds about 34 MB more. Not split
+    further: which of the 5.4 MB is atlas pixels against tree and glyph state.
+    **Intel laptop (ANV), 2026-11-04** (release build at `234486a` on crcbl
+    0.17.1, nested Hyprland, read from `/proc/<pid>/smaps` after first paint):
+    resident 32.4 MB in dmenu and 33.7 MB in drun, as on 0.12.1. `Private_Dirty`
+    was 10.0 MB in dmenu: anonymous mappings 6.6 MB, the main heap 1.6 MB, the
+    `pikr` binary's data 0.7 MB and `libvulkan_intel.so` 0.5 MB; drun 11.2 MB,
+    the heap 3.3 MB. glibc gives each thread past the first its own arena in an
+    anonymous mapping, so the 6.6 MB mixes those threads' heaps with the
+    driver's own mappings; splitting it needs a heap profiler, and neither
+    valgrind nor heaptrack is installed on the laptop. Not checked: macOS.
+
   - **Windows: D3D12 device creation is about 300 ms of every launch (decided
     2026-11-05: keep D3D12).** Measured 2026-10-29 by the Windows session (pikr
     0.9.5, crcbl 0.12.1, Windows 11, AMD RX 7900 XTX driving the display plus a
