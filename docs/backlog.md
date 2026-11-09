@@ -31,8 +31,6 @@
   (`WindowFromPoint`, which applies window regions) puts the outermost corner
   pixel on the window beneath and the top edge and centre on pikr; no real click
   was sent.
-- `picker::icons::tests::svg_text_is_drawn` needs a system sans-serif face; the
-  Ubuntu test job installs no fonts, so it relies on the runner image.
 - **GPU choice is crcbl-app's rule (crcbl 0.6.0).** `ui::gpu::Gpu::open` opens
   crcbl-app's `Presenter`, which ranks adapters with
   `crcbl_app::adapter::choose`: `CRCBL_ADAPTER` if set, else the adapter driving
