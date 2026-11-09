@@ -20,6 +20,7 @@ use crcbl_ui::widget::PointerInput;
 use glam::Vec2;
 
 use crate::modes::{self, dmenu::LoadedEntries};
+use crate::picker::icon_theme;
 use crate::picker::session::{Outcome, Session};
 use crate::picker::state::VimMode;
 use crate::ui::font_lookup::{self, Lookup};
@@ -70,8 +71,9 @@ pub struct WindowSpec {
     pub stylesheet: String,
     pub font_family: String,
     pub font_size: f32,
-    /// Icon themes searched first, in order.
-    pub icon_themes: Vec<String>,
+    /// The icon theme pikr's config names, searched before the desktop's
+    /// ([`icon_theme::chosen`](crate::picker::icon_theme::chosen)).
+    pub icon_theme: Option<String>,
 }
 
 /// Opens the window, runs until the picker finishes, then — window gone —
@@ -86,16 +88,17 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
         let lookup = std::thread::spawn(move || load_fonts(&family, font_lookup::path(), &ready));
         (fonts, lookup)
     };
-    // So do the first rows' icon lookups, which read every directory of
-    // each icon theme they reach.
+    // So do finding the desktop's icon theme, which may run `gsettings`, and
+    // the first rows' icon lookups, which read every directory of each icon
+    // theme they reach.
     let icons = {
-        let themes = spec.icon_themes.clone();
+        let configured = spec.icon_theme.clone();
         let first = match &content {
             Content::Picker { session, .. } => first_page_icons(session),
             Content::Message(_) => Vec::new(),
         };
         std::thread::spawn(move || {
-            let mut icons = Icons::new(&themes);
+            let mut icons = Icons::new(&icon_theme::chosen(configured.as_deref()));
             icons.warm(first.iter().map(Option::as_deref));
             icons
         })
@@ -117,7 +120,7 @@ pub fn run(spec: WindowSpec, content: Content, startup_started: Instant) -> Resu
     });
     let icons = icons
         .join()
-        .unwrap_or_else(|_| Icons::new(&spec.icon_themes));
+        .unwrap_or_else(|_| Icons::new(&icon_theme::chosen(spec.icon_theme.as_deref())));
     let outcome = Window::new(
         shell.as_mut(),
         window,

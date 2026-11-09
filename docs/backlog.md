@@ -761,9 +761,20 @@
     (the test outputs were headless).
   - Icon theme order (`picker::icon_theme::chosen`), as the owner set it on
     2026-10-20: pikr's `theme.icon_theme`, then KDE's `kdeglobals`, then GTK 3's
-    and GTK 4's `settings.ini`, then `FALLBACK_THEMES`, then hicolor. Not read:
-    GNOME's gsettings `icon-theme` (dconf, no file to read) and the XDG settings
-    portal; a GNOME desktop that only sets it there gets the fallbacks.
+    and GTK 4's `settings.ini`, then `FALLBACK_THEMES`, then hicolor. Since
+    2026-11-10 (the owner's pick), when none of those files names a theme,
+    GNOME's GSettings `org.gnome.desktop.interface icon-theme` follows the GTK
+    files, asked of the `gsettings` tool (2.0–3.2 ms here) on the icon thread in
+    `ui::run::run`, off the start-up path. `gsettings get` prints the schema's
+    default when nothing set it, so a desktop that sets no theme anywhere now
+    starts with `Adwaita`, as its GTK apps do, where it began with hicolor
+    before. Checked on headless sway with GLib's keyfile backend in a scratch
+    `XDG_CONFIG_HOME` (so nothing reached the user's dconf): GSettings alone
+    gave `["Papirus-Dark"]`, a GTK file naming `breeze` beside it gave
+    `["breeze"]` without running `gsettings`, and neither gave `["Adwaita"]`
+    (pikr's "icon themes chosen" debug line). Not read: the XDG settings portal,
+    and Cinnamon's (`org.cinnamon.desktop.interface`) and MATE's
+    (`org.mate.interface`) own schemas, which also hold an icon theme.
   - IME: pikr draws `TextPreedit` at the query caret (`ui::view::Preedit`) and
     sends the caret through `set_text_input_area` after every frame that moves
     it (`ui::run`). The Microsoft IME on Win32 was checked (see above). On

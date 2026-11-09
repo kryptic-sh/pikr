@@ -33,7 +33,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         stylesheet: crate::ui::theme_css::stylesheet_source(&cfg.theme),
         font_family: cfg.theme.font.clone(),
         font_size: cfg.theme.font_size,
-        icon_themes: crate::picker::icon_theme::chosen(cfg.theme.icon_theme.as_deref()),
+        icon_theme: cfg.theme.icon_theme.clone(),
     };
 
     // ── Message modal path ─────────────────────────────────────────────────

@@ -110,7 +110,7 @@ fn with_window<T>(
         stylesheet: crate::ui::theme_css::stylesheet_source(&Default::default()),
         font_family: "sans-serif".into(),
         font_size: crate::config::Theme::default().font_size,
-        icon_themes: Vec::new(),
+        icon_theme: None,
     };
     let window = create_window(&mut shell, &spec).unwrap();
     let (extent, early) = wait_for_size(&mut shell, window).unwrap();
@@ -122,7 +122,8 @@ fn with_window<T>(
         theme: Err("headless test".into()),
         fallbacks: Vec::new(),
     };
-    let icons = Icons::new(&spec.icon_themes);
+    // No desktop's icon theme either: a test must not depend on the machine.
+    let icons = Icons::new(&[]);
     let outcome = Window::new(
         &mut shell,
         window,

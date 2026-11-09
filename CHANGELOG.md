@@ -8,6 +8,17 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- On Linux and the BSDs, pikr follows GNOME's icon theme: when neither KDE's
+  `kdeglobals` nor GTK's `settings.ini` names one, it asks `gsettings` for
+  `org.gnome.desktop.interface icon-theme`, which GNOME and GTK on Wayland keep
+  the theme in. A GNOME desktop that sets its icon theme only there now gets it
+  instead of the fallback themes, and a desktop that sets none anywhere gets
+  GSettings' default (Adwaita), the theme its GTK apps draw with. pikr's own
+  `theme.icon_theme` still comes first. Finding the theme now runs on the thread
+  that warms the first rows' icons, alongside opening the window.
+
 ### Changed
 
 - pikr builds on crcbl 0.17.2 (from 0.17.1). The release adds transparent Vulkan
