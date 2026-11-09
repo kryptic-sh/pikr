@@ -1,49 +1,50 @@
 //! Which icon themes entry icons are looked up in, before
 //! [`FALLBACK_THEMES`](super::icons) and `hicolor`: pikr's `theme.icon_theme`,
 //! then the theme KDE is set to, then the one GTK is set to, then, when no
-//! settings file names one, GNOME's from GSettings. Each is tried in
+//! settings file names one, the desktop's from GSettings. Each is tried in
 //! turn, so a theme that is not installed, or lacks an icon, gives way to the
 //! next.
 
-/// The GSettings schema and key GNOME keeps its icon theme in, which GTK
-/// also reads on Wayland.
-const GNOME_ICON_THEME: [&str; 2] = ["org.gnome.desktop.interface", "icon-theme"];
+/// The GSettings key that holds the icon theme, in each schema
+/// [`gsettings_schema`] names.
+const ICON_THEME_KEY: &str = "icon-theme";
 
 /// The themes to search first, highest priority first: `configured`, then
 /// KDE's (`kdeglobals`, `[Icons] Theme`), then GTK 3's and GTK 4's
 /// (`settings.ini`, `[Settings] gtk-icon-theme-name`), each read from the
 /// highest-priority XDG config file that sets it. When none of those files
-/// names one, GNOME's ([`GNOME_ICON_THEME`], asked of `gsettings`): GNOME
-/// keeps it there and writes no `settings.ini`. A name already listed is not
-/// repeated.
+/// names one, the running desktop's GSettings ([`gsettings_schema`], asked of
+/// `gsettings`): GNOME, Cinnamon and MATE keep it there and write no
+/// `settings.ini`, and GTK reads GNOME's on Wayland. A name already listed is
+/// not repeated.
 ///
 /// It may start a process, so call it off the start-up path.
 pub fn chosen(configured: Option<&str>) -> Vec<String> {
-    let themes = from_sources(configured, desktop_setting, gnome_setting);
+    let themes = from_sources(configured, desktop_setting, gsettings_icon_theme);
     tracing::debug!(?themes, "icon themes chosen");
     themes
 }
 
 /// [`chosen`] with the desktop settings read through `setting(file, group,
-/// key)`, and GNOME's through `gnome`.
+/// key)`, and GSettings' through `gsettings`.
 fn from_sources(
     configured: Option<&str>,
     setting: impl Fn(&str, &str, &str) -> Option<String>,
-    gnome: impl FnOnce() -> Option<String>,
+    gsettings: impl FnOnce() -> Option<String>,
 ) -> Vec<String> {
     let desktop = [
         setting("kdeglobals", "Icons", "Theme"),
         setting("gtk-3.0/settings.ini", "Settings", "gtk-icon-theme-name"),
         setting("gtk-4.0/settings.ini", "Settings", "gtk-icon-theme-name"),
     ];
-    let gnome = if desktop.iter().all(Option::is_none) {
-        gnome()
+    let gsettings = if desktop.iter().all(Option::is_none) {
+        gsettings()
     } else {
         None
     };
     let sources = std::iter::once(configured.map(str::to_owned))
         .chain(desktop)
-        .chain([gnome]);
+        .chain([gsettings]);
     let mut themes: Vec<String> = Vec::new();
     for theme in sources.flatten() {
         let theme = theme.trim();
@@ -77,13 +78,14 @@ fn desktop_setting(_file: &str, _group: &str, _key: &str) -> Option<String> {
     None
 }
 
-/// GNOME's icon theme, as `gsettings get` prints it. `None` when `gsettings`
-/// is missing or fails (no such schema, say) or prints no string.
+/// The running desktop's icon theme, as `gsettings get` prints it from the
+/// desktop's schema. `None` when `gsettings` is missing or fails (no such
+/// schema, say) or prints no string.
 #[cfg(unix)]
-fn gnome_setting() -> Option<String> {
+fn gsettings_icon_theme() -> Option<String> {
+    let desktops = freedesktop_desktop_entry::current_desktop().unwrap_or_default();
     let output = std::process::Command::new("gsettings")
-        .arg("get")
-        .args(GNOME_ICON_THEME)
+        .args(["get", gsettings_schema(&desktops), ICON_THEME_KEY])
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .output()
@@ -103,8 +105,24 @@ fn gnome_setting() -> Option<String> {
 
 /// No GSettings off the XDG platforms.
 #[cfg(not(unix))]
-fn gnome_setting() -> Option<String> {
+fn gsettings_icon_theme() -> Option<String> {
     None
+}
+
+/// The GSettings schema the desktop named in `desktops` (`XDG_CURRENT_DESKTOP`
+/// lowercased and split, as `freedesktop_desktop_entry::current_desktop`
+/// gives it) keeps its icon theme in: Cinnamon's and MATE's own, else
+/// GNOME's, which GTK reads on every other desktop.
+#[cfg(unix)]
+fn gsettings_schema(desktops: &[String]) -> &'static str {
+    desktops
+        .iter()
+        .find_map(|desktop| match desktop.as_str() {
+            "x-cinnamon" | "cinnamon" => Some("org.cinnamon.desktop.interface"),
+            "mate" => Some("org.mate.interface"),
+            _ => None,
+        })
+        .unwrap_or("org.gnome.desktop.interface")
 }
 
 /// The string a GVariant in text form holds, as `g_variant_print` writes one:
@@ -177,11 +195,11 @@ mod tests {
             _ => None,
         };
         assert_eq!(
-            from_sources(Some("Mine"), setting, no_gnome),
+            from_sources(Some("Mine"), setting, no_gsettings),
             ["Mine", "breeze-dark", "Papirus-Dark"]
         );
         assert_eq!(
-            from_sources(None, setting, no_gnome),
+            from_sources(None, setting, no_gsettings),
             ["breeze-dark", "Papirus-Dark"]
         );
     }
@@ -191,34 +209,51 @@ mod tests {
         let gtk_only = |file: &str, _: &str, _: &str| {
             (file == "gtk-4.0/settings.ini").then(|| "Adwaita".to_owned())
         };
-        assert_eq!(from_sources(Some("  "), gtk_only, no_gnome), ["Adwaita"]);
-        assert!(from_sources(None, |_, _, _| None, no_gnome).is_empty());
+        assert_eq!(
+            from_sources(Some("  "), gtk_only, no_gsettings),
+            ["Adwaita"]
+        );
+        assert!(from_sources(None, |_, _, _| None, no_gsettings).is_empty());
     }
 
     /// A GSettings source for tests where it holds nothing.
-    fn no_gnome() -> Option<String> {
+    fn no_gsettings() -> Option<String> {
         None
     }
 
     #[test]
-    fn gnome_is_asked_only_when_no_settings_file_names_a_theme() {
-        let gnome = || Some("Papirus-Dark".to_owned());
+    fn gsettings_is_asked_only_when_no_settings_file_names_a_theme() {
+        let gsettings = || Some("Papirus-Dark".to_owned());
         assert_eq!(
-            from_sources(Some("Mine"), |_, _, _| None, gnome),
+            from_sources(Some("Mine"), |_, _, _| None, gsettings),
             ["Mine", "Papirus-Dark"]
         );
         let kde =
             |file: &str, _: &str, _: &str| (file == "kdeglobals").then(|| "breeze-dark".to_owned());
         let asked = std::cell::Cell::new(false);
-        let gnome = || {
+        let gsettings = || {
             asked.set(true);
             Some("Adwaita".to_owned())
         };
-        assert_eq!(from_sources(None, kde, gnome), ["breeze-dark"]);
+        assert_eq!(from_sources(None, kde, gsettings), ["breeze-dark"]);
         assert!(
             !asked.get(),
             "gsettings was run though kdeglobals named a theme"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn gsettings_schema_follows_the_desktop() {
+        let schema = |desktop: &str| {
+            let desktops: Vec<String> = desktop.split(':').map(str::to_owned).collect();
+            gsettings_schema(&desktops)
+        };
+        assert_eq!(schema("x-cinnamon"), "org.cinnamon.desktop.interface");
+        assert_eq!(schema("mate"), "org.mate.interface");
+        assert_eq!(schema("ubuntu:gnome"), "org.gnome.desktop.interface");
+        assert_eq!(schema("hyprland"), "org.gnome.desktop.interface");
+        assert_eq!(gsettings_schema(&[]), "org.gnome.desktop.interface");
     }
 
     #[cfg(unix)]
