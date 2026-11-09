@@ -7,6 +7,7 @@
 
 /// The GSettings key that holds the icon theme, in each schema
 /// [`gsettings_schema`] names.
+#[cfg(unix)]
 const ICON_THEME_KEY: &str = "icon-theme";
 
 /// The themes to search first, highest priority first: `configured`, then
