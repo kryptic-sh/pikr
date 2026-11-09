@@ -213,9 +213,16 @@
       mapping, fully dirty, matching the 2,778,948-byte allocation massif traced
       to that call. Mapping the file instead would make it clean pages shared
       with the page cache, and only the pages read would be resident. crcbl has
-      no API for a mapped face; asked of crcbl on 2026-11-10. pikr cannot do it
-      alone without a new dependency or `unsafe`, and a font file replaced while
-      mapped would need handling (`SIGBUS` on a truncated file).
+      no API for a mapped face; asked of crcbl on 2026-11-10, and recorded in
+      its backlog ("System fonts are read, not mapped"). The fix there needs
+      `memmap2`, a new crcbl dependency and so the owner's call. pikr cannot do
+      it alone without a new dependency or `unsafe`, and a font file replaced
+      while mapped would need handling (`SIGBUS` on a truncated file). crcbl's
+      session says crcbl-font reads files on every platform, Windows and macOS
+      included. That disagrees with the Windows allocator count below, where
+      only 0.56–0.68 MB was live after the fonts, which is too little for a
+      Segoe UI face read whole. Not resolved; re-read `crcbl_font`'s Windows
+      path before relying on either.
     - **1–3 MB: glibc per-thread malloc arenas.** The font thread (whose
       background fontconfig re-check holds about 0.5 MB of parsed fontconfig
       configuration live, and more freed but still dirty) and the icon thread
