@@ -214,15 +214,17 @@
       no API for a mapped face; asked of crcbl on 2026-11-10, and recorded in
       its backlog ("System fonts are read, not mapped"). The fix there needs
       `memmap2`, a new crcbl dependency, which the owner approved on 2026-11-10.
-      Next: when a crcbl release maps faces, bump to it and re-measure
-      `Private_Dirty` here against the 2.7 MB above. pikr cannot do it alone
-      without a new dependency or `unsafe`, and a font file replaced while
-      mapped would need handling (`SIGBUS` on a truncated file). crcbl's session
-      says crcbl-font reads files on every platform, Windows and macOS included.
-      That disagrees with the Windows allocator count below, where only
-      0.56–0.68 MB was live after the fonts, which is too little for a Segoe UI
-      face read whole. Not resolved; re-read `crcbl_font`'s Windows path before
-      relying on either.
+      crcbl landed it on its main after 0.18.0 (`FontMatch::map`, which
+      crcbl-ui's `from_system` uses), so it is not in 0.18.0, which pikr builds
+      on; it ships in crcbl's next release, timed by the owner. Next: bump to
+      that release and re-measure `Private_Dirty` here against the 2.7 MB above.
+      pikr cannot do it alone without a new dependency or `unsafe`, and a font
+      file replaced while mapped would need handling (`SIGBUS` on a truncated
+      file). crcbl's session says crcbl-font reads files on every platform,
+      Windows and macOS included. That disagrees with the Windows allocator
+      count below, where only 0.56–0.68 MB was live after the fonts, which is
+      too little for a Segoe UI face read whole. Not resolved; re-read
+      `crcbl_font`'s Windows path before relying on either.
     - **1–3 MB: glibc per-thread malloc arenas.** The font thread (whose
       background fontconfig re-check holds about 0.5 MB of parsed fontconfig
       configuration live, and more freed but still dirty) and the icon thread
@@ -796,8 +798,9 @@
     `win32::proc` pushes a `GCS_RESULTSTR` result as one `RawEvent::Char` per
     UTF-16 unit, as `WM_CHAR` would carry it, so pikr gets a `TextCommit` per
     character. The query ends right and nothing doubles; it costs a rerank per
-    character. One commit per result would be crcbl's change to make. Not
-    checked: AppKit.
+    character. crcbl fixed it to one commit per result on its main after 0.18.0;
+    not released yet. Next: after bumping to the release that carries it, repeat
+    the `nihongo` run and confirm a single rerank. Not checked: AppKit.
   - **Screen readers: adopted 2026-10-21** (crcbl's `accesskit` feature on
     crcbl-shell and crcbl-ui; `ui::run` sends `Ui::accessibility_update` after
     each frame while `reading`, and passes `AccessibilityAction` to
@@ -842,10 +845,13 @@
     parenthesised description. Seen in the same read, not looked into: only the
     selected ListItem answered `GetCurrentPattern(SelectionItemPattern)`; the
     two unselected rows threw, so a UIA client may not be able to read or change
-    their selection state. Not checked: whether crcbl means unselected rows to
-    omit the pattern, and Orca or Narrator speaking any of it, which needs
-    someone listening. Before the change (2026-10-22, `1712f0b`) no row was
-    selected and the query was a Text with no ValuePattern.
+    their selection state. crcbl's main after 0.18.0 gives the list a
+    selectable-list ListBox role; not released yet, and whether unselected rows
+    then answer the pattern is to be re-read after bumping to it. Not checked:
+    whether crcbl means unselected rows to omit the pattern, and Orca or
+    Narrator speaking any of it, which needs someone listening. Before the
+    change (2026-10-22, `1712f0b`) no row was selected and the query was a Text
+    with no ValuePattern.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
