@@ -625,12 +625,16 @@ impl<'a> Window<'a> {
             }
             ShellEvent::Key {
                 keysym,
+                shortcut_keysym,
                 state: ButtonState::Pressed,
                 modifiers,
                 ..
             } => {
                 self.mods = modifiers_from_crcbl(modifiers);
-                let key = key_from_press(keysym, self.mods);
+                // A press is read only for named keys and chords, which Caps
+                // Lock must not change: `Ctrl+w` with it on is still `Ctrl+w`.
+                // Typed characters come from the commit, with Caps Lock.
+                let key = key_from_press(shortcut_keysym, self.mods);
                 // Under `-P` the keys spell the password: never log them.
                 if matches!(content, Content::Picker { session, .. } if session.app.password) {
                     tracing::trace!(?modifiers, "key pressed");

@@ -24,6 +24,14 @@ enum Input {
     Text(&'static str),
     /// A key press with the modifiers held.
     Key(KeyCode, ShellModifiers),
+    /// A key press with Caps Lock on, the modifiers held: the key gives
+    /// `locked`, and `unlocked` without Caps Lock, as Wayland and X11 report it.
+    CapsLocked {
+        code: KeyCode,
+        locked: char,
+        unlocked: char,
+        modifiers: ShellModifiers,
+    },
     /// A key release, no modifiers held.
     Release(KeyCode),
     /// The clipboard's answer to the run's first clipboard read: HeadlessShell
@@ -71,6 +79,23 @@ fn run(content: Content, input: &[Input]) -> (Vec<Payload>, i32) {
                         shell.key_press(window, code).unwrap();
                         shell.set_modifiers(ShellModifiers::empty());
                     }
+                    Input::CapsLocked {
+                        code,
+                        locked,
+                        unlocked,
+                        modifiers,
+                    } => shell.inject(ShellEvent::Key {
+                        window,
+                        device: crcbl_shell::headless::VIRTUAL_DEVICE,
+                        time: shell.now(),
+                        scancode: crcbl_shell::Scancode(0),
+                        key_code: Some(code),
+                        keysym: crcbl_shell::Keysym::from_char(locked),
+                        shortcut_keysym: crcbl_shell::Keysym::from_char(unlocked),
+                        state: ButtonState::Pressed,
+                        repeat: false,
+                        modifiers: modifiers | ShellModifiers::CAPS_LOCK,
+                    }),
                     Input::Release(code) => shell.key_release(window, code).unwrap(),
                     Input::Focus(focused) => shell.set_focus(window, focused).unwrap(),
                 }
@@ -608,6 +633,27 @@ fn a_commit_after_a_released_chord_is_typed() {
         picker(fruit(), ""),
         &[
             Input::Key(KeyCode::KeyU, ShellModifiers::CTRL),
+            Input::Release(KeyCode::KeyU),
+            Input::Text("cher"),
+            key(RETURN),
+        ],
+    );
+    assert_eq!(got, (stdout("cherry"), 0));
+}
+
+/// Caps Lock turns a chord's letter upper case; the chord is still the
+/// lower-case one, as it is in any other program.
+#[test]
+fn a_ctrl_chord_works_with_caps_lock_on() {
+    let got = run(
+        picker(fruit(), "xyz"),
+        &[
+            Input::CapsLocked {
+                code: KeyCode::KeyU,
+                locked: 'U',
+                unlocked: 'u',
+                modifiers: ShellModifiers::CTRL,
+            },
             Input::Release(KeyCode::KeyU),
             Input::Text("cher"),
             key(RETURN),

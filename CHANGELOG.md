@@ -37,6 +37,13 @@ and this project adheres to
   windows on Windows (presented through DirectComposition); pikr still draws
   with D3D12 there, and its picker behaves as before.
 
+### Fixed
+
+- Ctrl, Alt and Super chords work with Caps Lock on. A chord was read from the
+  key's symbol with Caps Lock applied, so `Ctrl+w`, `Ctrl+u` and the rest
+  arrived as `Ctrl+W` and `Ctrl+U` and did nothing on Wayland and X11. Typed
+  text still follows Caps Lock.
+
 ## [0.9.8] - 2026-11-04
 
 ### Changed
