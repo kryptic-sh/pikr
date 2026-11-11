@@ -23,12 +23,19 @@ and this project adheres to
 
 ### Changed
 
-- pikr builds on crcbl 0.18.0 (from 0.17.1). On Wayland, decoding an event with
-  more than one argument (`wl_registry.global` among them) is no longer
-  undefined behaviour in crcbl's generated protocol code. crcbl 0.17.2 also
-  added transparent Vulkan windows on Windows (presented through
-  DirectComposition); pikr still draws with D3D12 there, and its picker behaves
-  as before.
+- pikr builds on crcbl 0.19.1 (from 0.17.1). The theme font is now memory-mapped
+  instead of read onto the heap when it is a system font file (owned by root on
+  Linux and the BSDs, in the Windows `Fonts` directory), so its pages are shared
+  with the page cache rather than private to each pikr. The results list keeps
+  its laid-out text between frames. On Windows, a phrase an input method commits
+  arrives whole, so the list re-ranks once per phrase instead of once per
+  character. Screen readers now hear the results as a list box of options, each
+  saying whether it is selected, and Windows UI Automation offers every row its
+  `SelectionItem` pattern. On Wayland, decoding an event with more than one
+  argument (`wl_registry.global` among them) is no longer undefined behaviour in
+  crcbl's generated protocol code. crcbl 0.17.2 also added transparent Vulkan
+  windows on Windows (presented through DirectComposition); pikr still draws
+  with D3D12 there, and its picker behaves as before.
 
 ## [0.9.8] - 2026-11-04
 

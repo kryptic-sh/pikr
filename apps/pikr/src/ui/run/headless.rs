@@ -280,10 +280,21 @@ fn screen_readers_hear_whole_labels_the_selected_row_and_the_query() {
             .any(|(_, n)| n.role() == Role::Label && n.value() == Some("banana")),
         "no label reads banana"
     );
-    let selected: Vec<_> = tree
+    assert!(
+        tree.nodes.iter().any(|(_, n)| n.role() == Role::ListBox),
+        "the rows are a list box"
+    );
+    let rows: Vec<_> = tree
         .nodes
         .iter()
-        .filter(|(_, n)| n.role() == Role::ListItem && n.is_selected() == Some(true))
+        .filter(|(_, n)| n.role() == Role::ListBoxOption)
+        .collect();
+    assert!(rows.len() > 1, "{} rows", rows.len());
+    // Every row says whether it is selected, so a reader can tell the others
+    // are not.
+    let selected: Vec<_> = rows
+        .iter()
+        .filter(|(_, n)| n.is_selected().expect("a row with no selection state"))
         .map(|(id, _)| *id)
         .collect();
     assert_eq!(selected.len(), 1, "one row is selected");
@@ -291,7 +302,7 @@ fn screen_readers_hear_whole_labels_the_selected_row_and_the_query() {
         labels_under(selected[0]),
         std::slice::from_ref(&selected_label)
     );
-    // The list item carries the name itself, as UI Automation reads it.
+    // The row carries the name itself, as UI Automation reads it.
     assert_eq!(node(selected[0]).label(), Some(selected_label.as_str()));
 
     let (_, field) = tree
