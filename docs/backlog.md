@@ -187,9 +187,9 @@
     paint moved from 29.00 to 27.49 ms in dmenu and from 33.00 to 28.65 ms in
     drun at the median, inside each run's spread (dmenu 25.00–37.05 against
     21.80–36.99 ms), so a small gain at most.
-  - **Memory: most of RADV's 116 MB is libLLVM; of pikr's own share, the biggest
-    piece is the theme font read whole.** One dmenu launch of the v0.9.7 release
-    build on 2026-11-02 (headless sway, RX 7900 XTX on RADV), read from
+  - **Memory: most of RADV's 116 MB is libLLVM; pikr's own share is about 9–11
+    MB since crcbl 0.19.1 maps the theme font.** One dmenu launch of the v0.9.7
+    release build on 2026-11-02 (headless sway, RX 7900 XTX on RADV), read from
     `/proc/<pid>/smaps` and `smaps_rollup` after first paint. Resident 117.5 MB:
     `libLLVM.so.23.1` 75.9 MB (1.3 MB private), the `pikr` binary 9.7 MB
     (private but clean, file-backed and reclaimable), `libvulkan_radeon.so` 8.7
@@ -205,26 +205,24 @@
     `--pages-as-heap` mode, plus `/proc/<pid>/smaps` per mapping after first
     paint, three dmenu and two drun launches. `Private_Dirty` was 11.8–13.8 MB
     in dmenu and 12.1–12.4 MB in drun:
-    - **2.7 MB: the theme font file, read whole.** `ui::run::load_fonts` calls
-      `Font::from_system`, which reads the face through
-      `crcbl_font::FontMatch::read` (`std::fs::read`): one 2716 kB anonymous
-      mapping, fully dirty, matching the 2,778,948-byte allocation massif traced
-      to that call. Mapping the file instead would make it clean pages shared
-      with the page cache, and only the pages read would be resident. crcbl has
-      no API for a mapped face; asked of crcbl on 2026-11-10, and recorded in
-      its backlog ("System fonts are read, not mapped"). The fix there needs
-      `memmap2`, a new crcbl dependency, which the owner approved on 2026-11-10.
-      crcbl landed it on its main after 0.18.0 (`FontMatch::map`, which
-      crcbl-ui's `from_system` uses), so it is not in 0.18.0, which pikr builds
-      on; it ships in crcbl's next release, timed by the owner. Next: bump to
-      that release and re-measure `Private_Dirty` here against the 2.7 MB above.
-      pikr cannot do it alone without a new dependency or `unsafe`, and a font
-      file replaced while mapped would need handling (`SIGBUS` on a truncated
-      file). crcbl's session says crcbl-font reads files on every platform,
-      Windows and macOS included. That disagrees with the Windows allocator
-      count below, where only 0.56–0.68 MB was live after the fonts, which is
-      too little for a Segoe UI face read whole. Not resolved; re-read
-      `crcbl_font`'s Windows path before relying on either.
+    - **2.7 MB: the theme font file, read whole, until crcbl 0.19.1.**
+      `ui::run::load_fonts` calls `Font::from_system`, which read the face
+      through `crcbl_font::FontMatch::read` (`std::fs::read`): one 2716 kB
+      anonymous mapping, fully dirty. crcbl 0.19.1 maps it instead
+      (`FontMatch::map`, for a root-owned file not writable by group or others
+      on Unix, or one in the Windows `Fonts` directory; a `.ttc` face is still
+      copied). Re-measured 2026-11-12 (main at `3abb61a` against the crcbl
+      0.18.0 build of `3ee3b98`, same headless sway on RADV, quiet window at
+      load 1.9–2.2, three interleaved dmenu pairs and one drun pair): the 2716
+      kB anonymous mapping is gone, and `Private_Dirty` was 8.8–10.8 MB in dmenu
+      against 11.5–13.4 MB, and 9.6 MB in drun against 12.3 MB. Behaviour worth
+      knowing for a re-measure: a binary on `/tmp` (tmpfs), or one copied and
+      not yet written back (`sync`), shows its own pages as `Private_Dirty` (7–9
+      MB more), so measure binaries that sit on disk after a `sync`. crcbl's
+      session says crcbl-font read files on every platform, Windows and macOS
+      included, which disagrees with the Windows allocator count below (only
+      0.56–0.68 MB live after the fonts, too little for a Segoe UI face read
+      whole). Not resolved, and not re-measured on Windows since 0.19.1.
     - **1–3 MB: glibc per-thread malloc arenas.** The font thread (whose
       background fontconfig re-check holds about 0.5 MB of parsed fontconfig
       configuration live, and more freed but still dirty) and the icon thread
@@ -798,9 +796,9 @@
     `win32::proc` pushes a `GCS_RESULTSTR` result as one `RawEvent::Char` per
     UTF-16 unit, as `WM_CHAR` would carry it, so pikr gets a `TextCommit` per
     character. The query ends right and nothing doubles; it costs a rerank per
-    character. crcbl fixed it to one commit per result on its main after 0.18.0;
-    not released yet. Next: after bumping to the release that carries it, repeat
-    the `nihongo` run and confirm a single rerank. Not checked: AppKit.
+    character. crcbl 0.19.1, which pikr builds on since `1322383`, commits a
+    result whole. Not yet checked on Windows: repeat the `nihongo` run and
+    confirm a single rerank. Not checked: AppKit.
   - **Screen readers: adopted 2026-10-21** (crcbl's `accesskit` feature on
     crcbl-shell and crcbl-ui; `ui::run` sends `Ui::accessibility_update` after
     each frame while `reading`, and passes `AccessibilityAction` to
@@ -845,13 +843,14 @@
     parenthesised description. Seen in the same read, not looked into: only the
     selected ListItem answered `GetCurrentPattern(SelectionItemPattern)`; the
     two unselected rows threw, so a UIA client may not be able to read or change
-    their selection state. crcbl's main after 0.18.0 gives the list a
-    selectable-list ListBox role; not released yet, and whether unselected rows
-    then answer the pattern is to be re-read after bumping to it. Not checked:
-    whether crcbl means unselected rows to omit the pattern, and Orca or
-    Narrator speaking any of it, which needs someone listening. Before the
-    change (2026-10-22, `1712f0b`) no row was selected and the query was a Text
-    with no ValuePattern.
+    their selection state. crcbl 0.19.1 (pikr since `1322383`) makes the list a
+    ListBox of ListBoxOptions with every row's selection state, and the headless
+    test `screen_readers_hear_whole_labels_the_selected_row_and_the_query`
+    checks that in the accessibility tree. Not yet re-read on Windows: whether
+    unselected rows now answer `GetCurrentPattern(SelectionItemPattern)` through
+    UIA. Not checked: Orca or Narrator speaking any of it, which needs someone
+    listening. Before the change (2026-10-22, `1712f0b`) no row was selected and
+    the query was a Text with no ValuePattern.
 - **Project constraints for the GUI** (from the migration's design, still
   binding): pure-Rust libraries only, with GTK and GNOME-based stacks excluded
   by project direction; keep `ui/styles/default.css`, its class names and theme
