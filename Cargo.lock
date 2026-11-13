@@ -947,12 +947,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b5343afd4a8365a643ac588dab4cf234a190c7f6c88c9f6dd6ffe00837661b7"
 
 [[package]]
-name = "evalexpr"
-version = "11.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aff27af350e7b53e82aac3e5ab6389abd8f280640ac034508dff0608c4c7e5"
-
-[[package]]
 name = "event-listener"
 version = "5.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1640,7 +1634,6 @@ dependencies = [
  "crcbl-ui",
  "dirs",
  "emojis",
- "evalexpr",
  "freedesktop-desktop-entry",
  "glam",
  "libc",

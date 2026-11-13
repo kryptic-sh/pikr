@@ -21,7 +21,6 @@ anyhow.workspace = true
 clap.workspace = true
 dirs.workspace = true
 emojis.workspace = true
-evalexpr.workspace = true
 crcbl-app.workspace = true
 crcbl-frame.workspace = true
 crcbl-hal.workspace = true

@@ -22,7 +22,13 @@ Shipping. Latest release on
 - `emoji` — searchable Unicode emoji picker (output via stdout)
 - `clipboard` — recent clipboard history (cliphist; on Windows, the clipboard
   history from Win+V when it is turned on)
-- `calc` — reactive expression evaluator
+- `calc` — calculator that evaluates as you type: `+ - × ÷ ^ % !`, `√`, implicit
+  multiplication (`2pi`, `3(4+5)`), degrees (`sin(30°)`), the constants `pi`,
+  `tau` and `e`, functions such as `sqrt`, `ln`, `log`, `sin`, `abs`, `round`,
+  `min` and `max`, hex/binary/octal literals, and thousands separators
+  (`1,000`). Integers stay exact; the row shows the result grouped and the
+  picked value prints without grouping. Write function arguments with `,`, or
+  `;` where `,` is the decimal mark.
 
 ## Install
 

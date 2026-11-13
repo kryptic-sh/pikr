@@ -118,7 +118,10 @@ pub struct AppState {
     pub history: crate::picker::history::History,
     /// Precomputed expr → result for the calc-history entries, built once at
     /// startup (see modes::calc::precompute).
-    pub calc_results: HashMap<String, String>,
+    pub calc_results: HashMap<String, crate::modes::calc::Answer>,
+    /// The locale's decimal and group separators, which calc reads and
+    /// writes numbers with.
+    pub calc_separators: crate::modes::calc::Separators,
     /// `--kb-custom` bindings, in flag order. Checked before the vim keymap;
     /// binding N accepts the selection and exits `KB_CUSTOM_EXIT_BASE + N`.
     pub kb_custom: Vec<crate::picker::keyspec::KbCustom>,
@@ -187,10 +190,11 @@ impl AppState {
         let live_eval = if trimmed.is_empty() {
             None
         } else {
-            crate::modes::calc::eval(query).map(|r| (trimmed.to_string(), r))
+            crate::modes::calc::eval(query, self.calc_separators)
+                .map(|answer| (trimmed.to_string(), answer))
         };
 
-        let history: Vec<(String, String)> = self
+        let history: Vec<(String, crate::modes::calc::Answer)> = self
             .history
             .list(CliMode::Calc)
             .iter()
@@ -208,12 +212,12 @@ impl AppState {
             })
             .collect();
 
-        let mk_entry = |expr: &str, result: &str| {
+        let mk_entry = |expr: &str, answer: &crate::modes::calc::Answer| {
             Arc::new(Entry {
-                label: format!("{expr} = {result}"),
+                label: format!("{expr} = {}", answer.shown),
                 description: None,
                 icon: None,
-                payload: crate::modes::Payload::Stdout(result.to_owned()),
+                payload: crate::modes::Payload::Stdout(answer.output.clone()),
             })
         };
         let mut entries: Vec<Arc<Entry>> = Vec::with_capacity(history.len() + 1);
@@ -354,6 +358,7 @@ pub(crate) mod tests {
             usage: Default::default(),
             history: Default::default(),
             calc_results: Default::default(),
+            calc_separators: Default::default(),
             kb_custom: Vec::new(),
         }
     }

@@ -33,9 +33,6 @@ glam = "0.34"
 clap = { version = "4", features = ["derive"] }
 dirs = "7"
 emojis = "0.9"
-# Held at 11: evalexpr 12.0.0 relicensed under AGPL-3.0-only, which pikr's
-# MIT binaries cannot ship (cargo-deny rejects it).
-evalexpr = "11"
 freedesktop-desktop-entry = "0.8"
 nucleo = "0.5"
 serde = { version = "1", features = ["derive"] }

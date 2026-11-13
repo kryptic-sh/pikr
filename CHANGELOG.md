@@ -23,6 +23,19 @@ and this project adheres to
 
 ### Changed
 
+- calc mode has its own evaluator in place of evalexpr. Division gives the
+  fraction (`7/2` is 3.5, where it was 3), float noise is rounded away
+  (`0.1+0.2` is 0.3), and integers stay exact past 64 bits
+  (`9999999999*9999999999`, `25!`). It reads calculator notation: `×` `÷` `−`
+  `**`, implicit multiplication (`2pi`, `3(4+5)`), `n!`, `15%` as 0.15 (with
+  `10 % 3` still the remainder), `√`, degrees (`sin(30°)`), `0x`/`0b`/`0o`
+  literals, the constants `pi` `π` `tau` `e`, and functions by their plain names
+  (`sqrt`, `sin`, `ln`, `log(x[, base])`, `abs`, `floor`, `round`, `min`, `max`
+  and more; before, most needed a `math::` prefix and some were missing).
+  Numbers may carry thousands separators (`1,000`), and the row shows the result
+  grouped (`1,234,567.5`) while the picked value prints without grouping.
+  Nesting is limited, so a deeply nested expression is no result instead of a
+  risk to the stack.
 - pikr builds on crcbl 0.19.1 (from 0.17.1). The theme font is now memory-mapped
   instead of read onto the heap when it is a system font file (owned by root on
   Linux and the BSDs, in the Windows `Fonts` directory), so its pages are shared
@@ -36,6 +49,12 @@ and this project adheres to
   crcbl's generated protocol code. crcbl 0.17.2 also added transparent Vulkan
   windows on Windows (presented through DirectComposition); pikr still draws
   with D3D12 there, and its picker behaves as before.
+
+### Removed
+
+- calc mode no longer evaluates comparisons, booleans and strings (`1 < 2`,
+  `"a" + "b"`), which came with evalexpr and are not arithmetic. pikr no longer
+  depends on evalexpr.
 
 ### Fixed
 

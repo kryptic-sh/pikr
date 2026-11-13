@@ -90,7 +90,9 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
     }
 
     let history = crate::picker::history::History::load();
-    let calc_results = crate::modes::calc::precompute(history.list(crate::cli::Mode::Calc));
+    let calc_separators = crate::modes::calc::Separators::default();
+    let calc_results =
+        crate::modes::calc::precompute(history.list(crate::cli::Mode::Calc), calc_separators);
     let app = AppState {
         picker,
         usage_keys: crate::picker::frecency::entry_keys(&entries),
@@ -107,6 +109,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         usage: crate::picker::frecency::Usage::load(),
         history,
         calc_results,
+        calc_separators,
         kb_custom: cli.kb_custom,
     };
     let height = if app.password {
