@@ -10,6 +10,12 @@ and this project adheres to
 
 ### Added
 
+- Accepting a calc result also copies it to the clipboard, as well as printing
+  it. On Windows through the system clipboard; on Linux and the BSDs through
+  `wl-copy` under Wayland, else `xclip` or `xsel` under X11; on macOS through
+  `pbcopy`. When none is installed pikr still prints the result and says on
+  stderr which tools it looked for.
+
 - calc mode reads and writes numbers with the system locale's separators: on
   Windows the user's locale (`GetLocaleInfoEx`), on Linux and macOS `LC_NUMERIC`
   (`localeconv`). In a German locale `1.000,5 * 2` is 2.001 and the row shows

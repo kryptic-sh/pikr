@@ -197,7 +197,7 @@ pub(crate) fn entry_keys(entries: &[Arc<Entry>]) -> Vec<String> {
 /// "same" Firefox shortcut whether it appeared in drun once or twice).
 fn payload_key(payload: &Payload) -> String {
     match payload {
-        Payload::Stdout(s) => s.clone(),
+        Payload::Stdout(s) | Payload::Answer(s) => s.clone(),
         Payload::Exec { program, args } | Payload::ExecWait { program, args } => {
             // Length-prefix every component so the key is injective within
             // the Exec/ExecWait variants: a program or arg containing U+001F

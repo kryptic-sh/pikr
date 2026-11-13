@@ -26,9 +26,10 @@ Shipping. Latest release on
   multiplication (`2pi`, `3(4+5)`), degrees (`sin(30°)`), the constants `pi`,
   `tau` and `e`, functions such as `sqrt`, `ln`, `log`, `sin`, `abs`, `round`,
   `min` and `max`, hex/binary/octal literals, and thousands separators
-  (`1,000`). Integers stay exact; the row shows the result grouped and the
-  picked value prints without grouping. Write function arguments with `,`, or
-  `;` where `,` is the decimal mark.
+  (`1,000`). Integers stay exact; the row shows the result grouped, and the
+  picked value prints without grouping and is copied to the clipboard
+  (`wl-copy`, `xclip`/`xsel` or `pbcopy` on unix). Write function arguments with
+  `,`, or `;` where `,` is the decimal mark.
 
 ## Install
 

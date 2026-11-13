@@ -217,7 +217,7 @@ impl AppState {
                 label: format!("{expr} = {}", answer.shown),
                 description: None,
                 icon: None,
-                payload: crate::modes::Payload::Stdout(answer.output.clone()),
+                payload: crate::modes::Payload::Answer(answer.output.clone()),
             })
         };
         let mut entries: Vec<Arc<Entry>> = Vec::with_capacity(history.len() + 1);

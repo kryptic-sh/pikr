@@ -111,6 +111,9 @@ impl Entry {
 pub enum Payload {
     /// Print this string to stdout.
     Stdout(String),
+    /// Print this string to stdout and put it on the clipboard: calc mode's
+    /// answer, which is both a pipeline's output and something to paste.
+    Answer(String),
     /// Spawn `program` with `args` detached from pikr.
     Exec { program: String, args: Vec<String> },
     /// Spawn `program` with `args` and wait for it to exit, returning an
@@ -159,6 +162,10 @@ pub fn execute(payload: &Payload) -> Result<()> {
             println!("{s}");
             Ok(())
         }
+        Payload::Answer(s) => {
+            println!("{s}");
+            set_clipboard(s)
+        }
         Payload::Exec { program, args } => spawn_detached(program, args),
         Payload::ExecWait { program, args } => spawn_and_wait(program, args),
         Payload::SetClipboard(text) => set_clipboard(text),
@@ -184,17 +191,15 @@ fn launch_shell_app(app_id: &str) -> Result<()> {
 
 /// Write `text` to the system clipboard.
 ///
-/// On Unix the clipboard write is a no-op here: the unix clipboard mode
-/// shells out to `cliphist decode | wl-copy` via `Payload::Exec`, so
-/// `Payload::SetClipboard` is never emitted on that platform. The body
-/// below is only reachable on Windows (and other non-unix targets) where
-/// `arboard` provides the implementation.
+/// On Windows through `arboard`; the clipboard keeps the text after pikr
+/// exits. On unix through the platform's copy tool (`clipboard_tools`): a
+/// clipboard there belongs to a running program, so pikr, which exits right
+/// after, hands the text to one that stays (`wl-copy` and `xclip` fork a
+/// server; macOS's `pbcopy` hands it to the pasteboard).
 fn set_clipboard(text: &str) -> Result<()> {
     #[cfg(unix)]
     {
-        // Unreachable on Unix; unix clipboard mode uses Payload::Exec.
-        let _ = text;
-        Ok(())
+        pipe_to_first(&clipboard_tools(), text)
     }
     #[cfg(windows)]
     {
@@ -206,8 +211,69 @@ fn set_clipboard(text: &str) -> Result<()> {
     #[cfg(not(any(unix, windows)))]
     {
         let _ = text;
-        Ok(())
+        Err(anyhow::anyhow!("no clipboard on this platform"))
     }
+}
+
+/// Pipes `text` into the first of `tools` that is installed, and waits for
+/// it: an error when none is, or when it fails.
+#[cfg(unix)]
+fn pipe_to_first(tools: &[(&str, &[&str])], text: &str) -> Result<()> {
+    use std::io::{ErrorKind, Write};
+
+    for (program, args) in tools {
+        let mut child = match Command::new(program)
+            .args(*args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(e) if e.kind() == ErrorKind::NotFound => continue,
+            Err(e) => return Err(e).with_context(|| format!("spawn {program}")),
+        };
+        let written = child
+            .stdin
+            .take()
+            .context("no stdin pipe")
+            .and_then(|mut stdin| {
+                stdin
+                    .write_all(text.as_bytes())
+                    .with_context(|| format!("write to {program}"))
+            });
+        let status = child
+            .wait()
+            .with_context(|| format!("wait for {program}"))?;
+        written?;
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("{program} exited with {status}"))
+        };
+    }
+    let names: Vec<&str> = tools.iter().map(|(program, _)| *program).collect();
+    Err(anyhow::anyhow!(
+        "no clipboard tool found (looked for {})",
+        names.join(", ")
+    ))
+}
+
+/// The programs that can take text for the clipboard here, in the order they
+/// are tried; the first one installed is used.
+#[cfg(unix)]
+fn clipboard_tools() -> Vec<(&'static str, &'static [&'static str])> {
+    if cfg!(target_os = "macos") {
+        return vec![("pbcopy", &[])];
+    }
+    let mut tools = Vec::new();
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        tools.push(("wl-copy", &[][..]));
+    }
+    if std::env::var_os("DISPLAY").is_some() {
+        tools.push(("xclip", &["-selection", "clipboard"][..]));
+        tools.push(("xsel", &["--clipboard", "--input"][..]));
+    }
+    tools
 }
 
 /// Spawn `program` with `args` so the child survives pikr exiting and never
@@ -311,5 +377,39 @@ mod tests {
                 payload: wait,
             })]);
         assert_eq!(exec_key, wait_key);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod clipboard_tests {
+    use super::pipe_to_first;
+
+    #[test]
+    fn the_first_installed_tool_gets_the_text_byte_for_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let got = dir.path().join("clipboard");
+        let script = format!("cat >'{}'", got.display());
+        let tools: [(&str, &[&str]); 2] = [
+            ("no-such-clipboard-tool-xyz", &[]),
+            ("sh", &["-c", &script]),
+        ];
+        pipe_to_first(&tools, "2001,5 ü\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&got).unwrap(), "2001,5 ü\n");
+    }
+
+    #[test]
+    fn no_installed_tool_is_an_error_naming_them() {
+        let tools: [(&str, &[&str]); 1] = [("no-such-clipboard-tool-xyz", &[])];
+        let err = pipe_to_first(&tools, "1").unwrap_err();
+        assert!(
+            err.to_string().contains("no-such-clipboard-tool-xyz"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn a_failing_tool_is_an_error() {
+        let tools: [(&str, &[&str]); 1] = [("sh", &["-c", "cat >/dev/null; exit 3"])];
+        assert!(pipe_to_first(&tools, "1").is_err());
     }
 }
