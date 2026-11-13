@@ -10,6 +10,14 @@ and this project adheres to
 
 ### Added
 
+- calc mode reads and writes numbers with the system locale's separators: on
+  Windows the user's locale (`GetLocaleInfoEx`), on Linux and macOS `LC_NUMERIC`
+  (`localeconv`). In a German locale `1.000,5 * 2` is 2.001 and the row shows
+  `2.001`; where `,` is the decimal mark, function arguments are separated with
+  `;`. Where the locale groups with a space (French), a typed space groups too.
+  The new `[calc]` config keys `decimal_separator` and `thousands_separator`
+  override the locale; a clashing or unusable pair fails the config load.
+
 - On Linux and the BSDs, pikr follows the icon theme GNOME, Cinnamon and MATE
   keep in GSettings: when neither KDE's `kdeglobals` nor GTK's `settings.ini`
   names one, it asks `gsettings` for `icon-theme` in the running desktop's

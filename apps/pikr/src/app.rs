@@ -90,7 +90,14 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
     }
 
     let history = crate::picker::history::History::load();
-    let calc_separators = crate::modes::calc::Separators::default();
+    // Only calc needs them, and asking the system is not free on unix (it
+    // switches the C locale), so other modes keep the default. This runs
+    // before any thread starts, which that switch requires.
+    let calc_separators = if chosen_mode == Mode::Calc {
+        crate::modes::calc::separators(cfg.calc.decimal_separator, cfg.calc.thousands_separator)
+    } else {
+        crate::modes::calc::Separators::default()
+    };
     let calc_results =
         crate::modes::calc::precompute(history.list(crate::cli::Mode::Calc), calc_separators);
     let app = AppState {

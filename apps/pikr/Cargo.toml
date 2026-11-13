@@ -42,6 +42,8 @@ unicode-segmentation.workspace = true
 # from `dirs` instead of `xdg`.
 [target.'cfg(unix)'.dependencies]
 freedesktop-desktop-entry.workspace = true
+# localeconv() for calc mode's number separators.
+libc = "0.2"
 xdg.workspace = true
 
 # arboard writes the chosen clipboard entry on Windows, and reads the current
@@ -52,14 +54,16 @@ arboard = { version = "3", default-features = false }
 # and launch (SHGetKnownFolderItem, ShellExecuteExW — which needs
 # System_Registry for its struct), shell-item icons via GetDIBits, and the
 # console re-attach; clipboard mode's history through WinRT's
-# ApplicationModel_DataTransfer. Feature set kept narrow — only what we call
-# into.
+# ApplicationModel_DataTransfer; calc mode's number separators through
+# GetLocaleInfoEx (Win32_Globalization). Feature set kept narrow — only what
+# we call into.
 windows = { version = "0.62", features = [
     "ApplicationModel_DataTransfer",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
     "Win32_Graphics_Gdi",
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
     "Win32_System_Console",

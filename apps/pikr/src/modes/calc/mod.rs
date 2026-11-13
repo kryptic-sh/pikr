@@ -10,6 +10,7 @@
 //! while they fit, and only a finite result is ever shown.
 
 mod lexer;
+mod locale;
 mod number;
 mod parser;
 
@@ -18,6 +19,7 @@ use std::collections::HashMap;
 use super::{Entry, Mode};
 use anyhow::Result;
 
+pub use locale::{separators, validate as validate_separators};
 pub use number::Separators;
 
 /// Hard cap on expression length, in characters. The parser's own nesting

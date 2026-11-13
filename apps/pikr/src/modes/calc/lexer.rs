@@ -117,7 +117,7 @@ fn number(chars: &[char], seps: Separators) -> Option<(Num, usize)> {
             run += 1;
             i += 1;
         } else if !fraction
-            && (c == seps.group || c == '_')
+            && is_group_char(c, seps)
             && (grouped || (1..=3).contains(&run))
             && is_group(&chars[i + 1..])
         {
@@ -168,6 +168,13 @@ fn radix_prefix(chars: &[char]) -> Option<u32> {
         _ => return None,
     };
     chars.get(2).filter(|c| c.is_digit(radix)).map(|_| radix)
+}
+
+/// Whether `c` separates digit groups: the locale's separator, `_` in any
+/// locale, and a plain space where the locale groups with a space (French's
+/// U+202F, which nobody types).
+fn is_group_char(c: char, seps: Separators) -> bool {
+    c == seps.group || c == '_' || (c == ' ' && seps.group.is_whitespace())
 }
 
 /// Whether `after` (what follows a group separator) is exactly three digits.
@@ -224,6 +231,17 @@ mod tests {
         // A '.' that cannot group is a decimal point there, so `2.75`
         // still reads as typed.
         assert_eq!(num("2.75", DE), Some(Num::Float(2.75)));
+    }
+
+    #[test]
+    fn a_space_groups_where_the_locale_groups_with_one() {
+        let french = Separators {
+            decimal: ',',
+            group: '\u{202f}',
+        };
+        assert_eq!(num("1 000,5", french), Some(Num::Float(1000.5)));
+        assert_eq!(num("1\u{202f}000", french), Some(Num::Int(1000)));
+        assert_eq!(num("1 000", EN), None);
     }
 
     #[test]

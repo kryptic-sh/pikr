@@ -875,6 +875,24 @@
   - wayr: Wayland-only by design, so pikr would still need separate Windows and
     macOS paths.
 
+## calc mode
+
+- **Locale separators: verified on Windows only.** `modes::calc::locale` reads
+  `GetLocaleInfoEx` on Windows (checked 2026-11-13 on this machine's English
+  locale: `.` and `,`) and `localeconv()` under `LC_NUMERIC` on unix, where only
+  the unit test `the_system_answers` runs it (CI's Linux and macOS test jobs: it
+  answers with a usable pair). Not checked: a German or French locale on Linux
+  giving `,`/`.` and `,`/U+202F end to end. Known gap: macOS apps started from
+  Finder, Spotlight or a hotkey daemon usually get no `LANG`, so `localeconv()`
+  answers for the C locale and calc falls back to `.` and `,` whatever the
+  user's region is; reading `AppleLocale` (CoreFoundation's
+  `CFLocaleCopyCurrent`) would fix it but needs a new dependency. The `[calc]`
+  config keys are the workaround.
+- **Grouping is read by a rule, not by the locale's grouping pattern.** A
+  separator groups only when followed by exactly three digits (`lexer::number`),
+  so Indian lakh grouping (`1,00,000`) does not read as one number, and in
+  English `max(1,234)` reads as `max(1234)` (write `max(1, 234)`).
+
 ## Release pipeline
 
 - Package runtime dependencies (`pkg/nfpm/nfpm.yaml.in`, `pkg/aur/`,

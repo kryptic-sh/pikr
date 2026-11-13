@@ -191,6 +191,11 @@ font = "monospace"
 font_size = 14.0
 # Optional. Unset, the icon theme KDE or else GTK is set to is used.
 icon_theme = "Papirus-Dark"
+
+# Optional. Unset, calc follows the system locale's number separators.
+[calc]
+decimal_separator = ","
+thousands_separator = "."
 ```
 
 ## Requirements

@@ -10,6 +10,18 @@ pub struct Config {
     pub max_results: usize,
     pub case_sensitive: bool,
     pub theme: Theme,
+    pub calc: Calc,
+}
+
+/// `[calc]`: how calc mode reads and writes numbers. Each separator unset
+/// follows the system's locale.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Calc {
+    /// `"."` or `","`.
+    pub decimal_separator: Option<char>,
+    /// Between groups of three digits, such as `","`, `"."`, `"'"` or `" "`.
+    pub thousands_separator: Option<char>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +45,7 @@ impl Default for Config {
             max_results: 256,
             case_sensitive: false,
             theme: Theme::default(),
+            calc: Calc::default(),
         }
     }
 }
@@ -95,6 +108,11 @@ impl Config {
             );
             cfg.theme.font_size = Self::default().theme.font_size;
         }
+        crate::modes::calc::validate_separators(
+            cfg.calc.decimal_separator,
+            cfg.calc.thousands_separator,
+        )
+        .map_err(|e| anyhow::anyhow!("config {}: {e}", path.display()))?;
         Ok(cfg)
     }
 }
@@ -134,6 +152,32 @@ mod tests {
         let path = dir.path().join("config.toml");
         std::fs::write(&path, config_toml).unwrap();
         Config::load(Some(&path)).unwrap()
+    }
+
+    #[test]
+    fn calc_separators_load_and_bad_ones_are_refused() {
+        let cfg = load_with(
+            "[calc]
+decimal_separator = \",\"
+thousands_separator = \".\"
+",
+        );
+        assert_eq!(cfg.calc.decimal_separator, Some(','));
+        assert_eq!(cfg.calc.thousands_separator, Some('.'));
+        assert_eq!(load_with("").calc.decimal_separator, None);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[calc]
+decimal_separator = \",\"
+thousands_separator = \",\"
+",
+        )
+        .unwrap();
+        let err = Config::load(Some(&path)).unwrap_err();
+        assert!(err.to_string().contains("both"), "got: {err}");
     }
 
     #[test]
