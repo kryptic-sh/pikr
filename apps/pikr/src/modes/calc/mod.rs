@@ -104,11 +104,12 @@ fn eval_here(expr: &str, separators: Separators, rates: &Rates) -> Option<Answer
         return None;
     }
     let tokens = lexer::tokens(trimmed, separators)?;
-    let value = parser::evaluate(&tokens, rates)?;
+    let (value, sources) = parser::evaluate(&tokens, rates)?;
     let (number, unit) = value.shown()?;
-    let money = value.dims == units::MONEY;
     let rendered = match &unit {
-        Some(code) if money => format::render_fixed(&number, rates::minor_units(code), separators)?,
+        Some(code) if value.dims == units::MONEY => {
+            format::render_fixed(&number, rates::decimals(code), separators)?
+        }
         _ => format::render(&number, separators)?,
     };
     let with_unit = |text: String| match &unit {
@@ -119,7 +120,7 @@ fn eval_here(expr: &str, separators: Separators, rates: &Rates) -> Option<Answer
         shown: with_unit(rendered.shown),
         output: with_unit(rendered.output),
         approximate: rendered.approximate,
-        note: money.then(|| rates.note()).flatten(),
+        note: rates.note(&sources, std::time::SystemTime::now()),
     })
 }
 
@@ -357,10 +358,7 @@ mod tests {
         let euros = money("100 USD to EUR").unwrap();
         assert_eq!(euros.output, "92.49 EUR");
         assert!(euros.approximate);
-        assert_eq!(
-            euros.note.as_deref(),
-            Some("ECB reference rates of 2026-11-12")
-        );
+        assert_eq!(euros.note.as_deref(), Some("rates: ECB 2026-11-12"));
         let output = |expr: &str| money(expr).map(|a| a.output);
         assert_eq!(output("$100 in £").as_deref(), Some("77.23 GBP"));
         assert_eq!(output("1000 jpy to eur").as_deref(), Some("6.04 EUR"));
@@ -375,6 +373,23 @@ mod tests {
         assert_eq!(eval("100 USD to EUR", EN, &Rates::default()), None);
         // A plain result carries no rates note.
         assert_eq!(money("2+2").and_then(|a| a.note), None);
+    }
+
+    #[test]
+    fn crypto_converts_with_the_cached_prices() {
+        let rates = rates::tests::sample_rates();
+        let output = |expr: &str| eval(expr, EN, &rates).map(|a| a.output);
+        assert_eq!(output("1 BTC to EUR").as_deref(), Some("62110.00 EUR"));
+        assert_eq!(output("1000 EUR in btc").as_deref(), Some("0.01610047 BTC"));
+        assert_eq!(output("1000000 shib to €").as_deref(), Some("3.85 EUR"));
+        let dollars = eval("1 eth in usd", EN, &rates).unwrap();
+        assert_eq!(dollars.shown, "1,887.82 USD");
+        let note = dollars.note.unwrap();
+        assert!(
+            note.starts_with("rates: ECB 2026-11-12, CoinGecko "),
+            "{note}"
+        );
+        assert_eq!(output("1 XYZ to EUR"), None);
     }
 
     #[test]

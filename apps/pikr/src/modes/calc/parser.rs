@@ -25,7 +25,7 @@ use num_rational::BigRational;
 
 use super::lexer::Token;
 use super::number::{FloatFn, Num};
-use super::rates::Rates;
+use super::rates::{Rates, Source};
 use super::units::{self, Unit};
 use super::value::Value;
 
@@ -40,14 +40,15 @@ pub const MAX_DEPTH: usize = 256;
 /// The words that ask for a conversion (`5 km to mi`).
 const CONVERSION_WORDS: [&str; 3] = ["to", "in", "as"];
 
-/// The value of `tokens`, or `None` when they are not one complete
-/// expression or it has no finite value.
+/// The value of `tokens` and the rate sources its currencies came from, or
+/// `None` when they are not one complete expression or it has no finite
+/// value.
 ///
 /// A conversion splits at the last `to`/`in`/`as`/`->` outside parentheses
 /// where both sides evaluate and the right side is one unit of the left
 /// side's kind; failing that, the whole input is one expression (so `5 in`
 /// is five inches).
-pub fn evaluate(tokens: &[Token], rates: &Rates) -> Option<Value> {
+pub fn evaluate(tokens: &[Token], rates: &Rates) -> Option<(Value, Vec<Source>)> {
     let mut depth = 0usize;
     let mut splits = Vec::new();
     for (i, token) in tokens.iter().enumerate() {
@@ -62,37 +63,41 @@ pub fn evaluate(tokens: &[Token], rates: &Rates) -> Option<Value> {
         }
     }
     for &i in splits.iter().rev() {
-        let (Some(from), Some(to)) = (
+        let (Some((from, mut sources)), Some((to, more))) = (
             expression(&tokens[..i], rates),
             expression(&tokens[i + 1..], rates),
         ) else {
             continue;
         };
         if let Some(converted) = from.convert(&to) {
-            return Some(converted);
+            sources.extend(more);
+            return Some((converted, sources));
         }
     }
     expression(tokens, rates)
 }
 
-/// The value of `tokens` as one expression.
-fn expression(tokens: &[Token], rates: &Rates) -> Option<Value> {
+/// The value of `tokens` as one expression, and its rate sources.
+fn expression(tokens: &[Token], rates: &Rates) -> Option<(Value, Vec<Source>)> {
     if tokens.is_empty() {
         return None;
     }
     let mut parser = Parser {
         tokens,
         rates,
+        sources: Vec::new(),
         at: 0,
         depth: 0,
     };
     let value = parser.sum()?;
-    (parser.at == tokens.len()).then_some(value)
+    (parser.at == tokens.len()).then_some((value, parser.sources))
 }
 
 struct Parser<'a> {
     tokens: &'a [Token],
     rates: &'a Rates,
+    /// Where the currencies read so far got their rates.
+    sources: Vec<Source>,
     at: usize,
     depth: usize,
 }
@@ -252,9 +257,13 @@ impl Parser<'_> {
         }
     }
 
-    /// One unit of the currency `name` (`USD`, `$`), shown by its code.
-    fn currency(&self, name: &str) -> Option<Value> {
-        let (code, euros) = self.rates.currency(name)?;
+    /// One unit of the currency `name` (`USD`, `$`, `BTC`), shown by its
+    /// code.
+    fn currency(&mut self, name: &str) -> Option<Value> {
+        let (code, euros, source) = self.rates.currency(name)?;
+        if !self.sources.contains(&source) {
+            self.sources.push(source);
+        }
         let unit = Unit {
             dims: units::MONEY,
             factor: euros,

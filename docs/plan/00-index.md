@@ -8,8 +8,8 @@ never waits on the network. Decided 2026-11-13: rates from the European Central
 Bank (fiat) and CoinGecko (crypto), fetched with the system's `curl` (no TLS
 stack compiled into pikr).
 
-| Phase                                                 | Status  |
-| ----------------------------------------------------- | ------- |
-| 01 Units and conversions                              | done    |
-| 02 Fiat currencies (ECB)                              | done    |
-| [03 Crypto currencies (CoinGecko)](03-calc-crypto.md) | planned |
+| Phase                            | Status |
+| -------------------------------- | ------ |
+| 01 Units and conversions         | done   |
+| 02 Fiat currencies (ECB)         | done   |
+| 03 Crypto currencies (CoinGecko) | done   |

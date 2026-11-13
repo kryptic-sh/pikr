@@ -912,16 +912,17 @@
   and SI prefixes beyond the listed combinations (`Mm`, `Gg`). A product of two
   named units keeps both names (`3 m * 4 m` is `12 m·m`, not `m^2`).
 
-- **Exchange rates: what phase 02 left out, and how it behaves.** Only the ECB's
-  currencies have rates (about 30; crypto is `docs/plan/03-calc-crypto.md`).
-  Rates refresh only when calc mode opens with a cache over `ECB_MAX_AGE`
-  (`modes::calc::rates`); a failed fetch (offline, no `curl`, the ECB down) is
-  logged at debug level and the old cache stays, so an offline first run shows
-  no currency results at all. The row does not warn when the cached rates are
-  days old; it shows their date. Checked on Windows 2026-11-13: with no cache,
-  the first launch fetched the rates while open and the row appeared
-  (`100 USD to EUR ≈ 90.24 EUR`). Not checked on Linux or macOS, nor on a system
-  without `curl`.
+- **Exchange rates: what was left out, and how they behave.** Only the ECB's
+  currencies (about 30) and the 20 coins in `modes::calc::rates::COINS` have
+  rates; a coin outside the list is no result. Rates refresh only when calc mode
+  opens with a cache over `ECB_MAX_AGE` or `COINGECKO_MAX_AGE`; a failed fetch
+  (offline, no `curl`, the source down or rate-limiting) is logged at debug
+  level and the old cache stays, so an offline first run shows no currency
+  results at all. The row does not warn when rates are old; it says how old.
+  Checked on Windows 2026-11-13: with no caches, a first launch fetched each
+  source while open and the row appeared (`100 USD to EUR ≈ 90.24 EUR`,
+  `0.5 btc to usd ≈ 34,422.02 USD`). Not checked on Linux or macOS, nor on a
+  system without `curl`.
 
 ## Release pipeline
 
