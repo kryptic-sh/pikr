@@ -11,5 +11,5 @@ stack compiled into pikr).
 | Phase                                                 | Status  |
 | ----------------------------------------------------- | ------- |
 | 01 Units and conversions                              | done    |
-| [02 Fiat currencies (ECB)](02-calc-fiat.md)           | planned |
+| 02 Fiat currencies (ECB)                              | done    |
 | [03 Crypto currencies (CoinGecko)](03-calc-crypto.md) | planned |

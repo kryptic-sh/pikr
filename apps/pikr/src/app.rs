@@ -48,8 +48,18 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
     let chosen_mode = cli.chosen_mode();
     tracing::info!(?chosen_mode, "pikr starting");
 
+    // Only calc needs them, and asking the system is not free on unix (it
+    // switches the C locale), so other modes keep the default. This runs
+    // before any thread starts, which that switch requires: before
+    // collecting, which starts calc's exchange-rate refresh.
+    let calc_separators = if chosen_mode == Mode::Calc {
+        crate::modes::calc::separators(cfg.calc.decimal_separator, cfg.calc.thousands_separator)
+    } else {
+        crate::modes::calc::Separators::default()
+    };
+
     let mut mode: Box<dyn modes::Mode> = match chosen_mode {
-        Mode::Calc => Box::new(modes::calc::Calc),
+        Mode::Calc => Box::new(modes::calc::Calc::default()),
         Mode::Clipboard => Box::new(modes::clipboard::Clipboard),
         Mode::Dmenu => Box::new(modes::dmenu::Dmenu),
         Mode::Drun => Box::new(modes::drun::Drun::default()),
@@ -90,16 +100,16 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
     }
 
     let history = crate::picker::history::History::load();
-    // Only calc needs them, and asking the system is not free on unix (it
-    // switches the C locale), so other modes keep the default. This runs
-    // before any thread starts, which that switch requires.
-    let calc_separators = if chosen_mode == Mode::Calc {
-        crate::modes::calc::separators(cfg.calc.decimal_separator, cfg.calc.thousands_separator)
+    let calc_rates = if chosen_mode == Mode::Calc {
+        crate::modes::calc::load_rates()
     } else {
-        crate::modes::calc::Separators::default()
+        crate::modes::calc::Rates::default()
     };
-    let calc_results =
-        crate::modes::calc::precompute(history.list(crate::cli::Mode::Calc), calc_separators);
+    let calc_results = crate::modes::calc::precompute(
+        history.list(crate::cli::Mode::Calc),
+        calc_separators,
+        &calc_rates,
+    );
     let app = AppState {
         picker,
         usage_keys: crate::picker::frecency::entry_keys(&entries),
@@ -117,6 +127,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         history,
         calc_results,
         calc_separators,
+        calc_rates,
         calc_live_row: false,
         kb_custom: cli.kb_custom,
     };

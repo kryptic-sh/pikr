@@ -10,6 +10,16 @@ and this project adheres to
 
 ### Added
 
+- calc mode converts money: `100 USD to EUR`, `$100 in £`, `5 USD + 3 EUR`. The
+  rates are the European Central Bank's daily reference rates (about 30
+  currencies against the euro), cached in pikr's state directory
+  (`rates-ecb.toml`) and refreshed in the background with the system's `curl`
+  when they are over 12 hours old, so startup never waits for the network; a
+  refresh that lands while calc is open recomputes its rows. Amounts show their
+  currency's decimals (`92.49 EUR`, `1,654 JPY`), marked `≈`, and the row says
+  which day's rates converted them. A currency with no rate is no result, never
+  a made-up one.
+
 - calc mode computes with units and converts between them: `5 km to mi`,
   `60 km/h in mph`, `20 °C to °F` (temperatures convert as readings),
   `1 GiB as MB`, `6 ft -> cm`. Lengths, areas, volumes (US customary measures),

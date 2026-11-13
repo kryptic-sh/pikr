@@ -125,6 +125,26 @@ pub fn render(n: &Num, seps: Separators) -> Option<Rendered> {
     }
 }
 
+/// `n` rounded half away from zero to `decimals` places and always written
+/// with that many (`92.50`), as money is. Marked approximate: exchange rates
+/// are.
+pub fn render_fixed(n: &Num, decimals: u32, seps: Separators) -> Option<Rendered> {
+    let units = (n.to_rational()? * power_of_ten(i64::from(decimals)))
+        .round()
+        .to_integer();
+    let places = decimals as usize;
+    let digits = format!("{:0>width$}", units.abs(), width = places + 1);
+    let (whole, fraction) = digits.split_at(digits.len() - places);
+    let sign = if units.is_negative() { "-" } else { "" };
+    let point = if places == 0 { "" } else { "." };
+    let text = format!("{sign}{whole}{point}{fraction}");
+    Some(Rendered {
+        shown: seps.localize(&text, true),
+        output: seps.localize(&text, false),
+        approximate: true,
+    })
+}
+
 fn render_exact(r: &BigRational, seps: Separators) -> Rendered {
     let plain = |text: &str| Rendered {
         shown: seps.localize(text, true),
@@ -355,6 +375,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(zero.output, "0");
+    }
+
+    #[test]
+    fn money_keeps_its_decimals() {
+        let fixed = |n: i64, d: i64, places| {
+            render_fixed(&Num::Exact(r(n, d)), places, EN).map(|out| out.shown)
+        };
+        assert_eq!(fixed(185, 2, 2).as_deref(), Some("92.50"));
+        assert_eq!(fixed(-1, 3, 2).as_deref(), Some("-0.33"));
+        assert_eq!(fixed(1, 1000, 2).as_deref(), Some("0.00"));
+        assert_eq!(fixed(1_234_567, 2, 0).as_deref(), Some("617,284"));
+        assert_eq!(fixed(1_234_567, 1, 2).as_deref(), Some("1,234,567.00"));
     }
 
     #[test]

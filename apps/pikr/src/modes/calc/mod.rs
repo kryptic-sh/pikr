@@ -17,6 +17,7 @@ mod lexer;
 mod locale;
 mod number;
 mod parser;
+mod rates;
 mod units;
 mod value;
 
@@ -27,6 +28,7 @@ use anyhow::Result;
 
 pub use format::Separators;
 pub use locale::{separators, validate as validate_separators};
+pub use rates::{Rates, load as load_rates};
 
 /// Hard cap on expression length, in characters. The parser's own nesting
 /// limit is what keeps it off the end of the stack; this only bounds the
@@ -35,11 +37,21 @@ pub use locale::{separators, validate as validate_separators};
 const MAX_EXPR_LEN: usize = 4096;
 
 #[derive(Default)]
-pub struct Calc;
+pub struct Calc {
+    /// Signals the exchange rates' refresh landing on disk.
+    redraws: Option<std::sync::mpsc::Receiver<()>>,
+}
 
 impl Mode for Calc {
+    /// Calc's rows come from the query, not from here; collecting starts
+    /// refreshing the exchange rates in the background when they are stale.
     fn collect(&mut self) -> Result<Vec<Entry>> {
+        self.redraws = rates::refresh_in_background();
         Ok(Vec::new())
+    }
+
+    fn redraws(&mut self) -> Option<std::sync::mpsc::Receiver<()>> {
+        self.redraws.take()
     }
 }
 
@@ -52,8 +64,11 @@ pub struct Answer {
     /// For stdout and the clipboard: no grouping (`1234.5`), rounded to 20
     /// significant digits where it does not end, so it pastes as a number.
     pub output: String,
-    /// Whether `shown` is rounded rather than exact (`√2`, `pi`).
+    /// Whether `shown` is rounded rather than exact (`√2`, `pi`, money).
     pub approximate: bool,
+    /// What the row says about the answer: which exchange rates converted
+    /// it.
+    pub note: Option<String>,
 }
 
 /// The stack calc evaluates on. The parser recurses per nesting level
@@ -78,20 +93,24 @@ fn on_eval_stack<T: Send>(f: impl FnOnce() -> Option<T> + Send) -> Option<T> {
 
 /// Evaluate `expr` with the locale's `separators`, or `None` when it is
 /// empty, does not parse or has no finite value.
-pub fn eval(expr: &str, separators: Separators) -> Option<Answer> {
-    on_eval_stack(|| eval_here(expr, separators))
+pub fn eval(expr: &str, separators: Separators, rates: &Rates) -> Option<Answer> {
+    on_eval_stack(|| eval_here(expr, separators, rates))
 }
 
 /// [`eval`] on the current thread's stack.
-fn eval_here(expr: &str, separators: Separators) -> Option<Answer> {
+fn eval_here(expr: &str, separators: Separators, rates: &Rates) -> Option<Answer> {
     let trimmed = expr.trim();
     if trimmed.is_empty() || trimmed.chars().count() > MAX_EXPR_LEN {
         return None;
     }
     let tokens = lexer::tokens(trimmed, separators)?;
-    let value = parser::evaluate(&tokens)?;
+    let value = parser::evaluate(&tokens, rates)?;
     let (number, unit) = value.shown()?;
-    let rendered = format::render(&number, separators)?;
+    let money = value.dims == units::MONEY;
+    let rendered = match &unit {
+        Some(code) if money => format::render_fixed(&number, rates::minor_units(code), separators)?,
+        _ => format::render(&number, separators)?,
+    };
     let with_unit = |text: String| match &unit {
         Some(unit) => format!("{text} {unit}"),
         None => text,
@@ -100,6 +119,7 @@ fn eval_here(expr: &str, separators: Separators) -> Option<Answer> {
         shown: with_unit(rendered.shown),
         output: with_unit(rendered.output),
         approximate: rendered.approximate,
+        note: money.then(|| rates.note()).flatten(),
     })
 }
 
@@ -107,12 +127,18 @@ fn eval_here(expr: &str, separators: Separators) -> Option<Answer> {
 /// session. History strings are immutable while pikr runs (entries are
 /// pushed only at Accept, after which the process exits), so rerank_calc
 /// can read these instead of re-evaluating every expression per keystroke.
-pub fn precompute(history: &[String], separators: Separators) -> HashMap<String, Answer> {
+pub fn precompute(
+    history: &[String],
+    separators: Separators,
+    rates: &Rates,
+) -> HashMap<String, Answer> {
     on_eval_stack(|| {
         Some(
             history
                 .iter()
-                .filter_map(|expr| eval_here(expr, separators).map(|answer| (expr.clone(), answer)))
+                .filter_map(|expr| {
+                    eval_here(expr, separators, rates).map(|answer| (expr.clone(), answer))
+                })
                 .collect(),
         )
     })
@@ -133,11 +159,11 @@ mod tests {
     };
 
     fn out(expr: &str) -> Option<String> {
-        eval(expr, EN).map(|a| a.output)
+        eval(expr, EN, &Rates::default()).map(|a| a.output)
     }
 
     fn out_de(expr: &str) -> Option<String> {
-        eval(expr, DE).map(|a| a.output)
+        eval(expr, DE, &Rates::default()).map(|a| a.output)
     }
 
     #[test]
@@ -233,24 +259,24 @@ mod tests {
 
     #[test]
     fn the_row_groups_and_the_output_does_not() {
-        let answer = eval("1234567.5 * 1", EN).unwrap();
+        let answer = eval("1234567.5 * 1", EN, &Rates::default()).unwrap();
         assert_eq!(answer.shown, "1,234,567.5");
         assert_eq!(answer.output, "1234567.5");
-        let answer = eval("1234567,5 * 1", DE).unwrap();
+        let answer = eval("1234567,5 * 1", DE, &Rates::default()).unwrap();
         assert_eq!(answer.shown, "1.234.567,5");
         assert_eq!(answer.output, "1234567,5");
     }
 
     #[test]
     fn the_row_marks_repeats_and_approximations() {
-        let third = eval("1/3", EN).unwrap();
+        let third = eval("1/3", EN, &Rates::default()).unwrap();
         assert_eq!((third.shown.as_str(), third.approximate), ("0.(3)", false));
-        let root2 = eval("√2", EN).unwrap();
+        let root2 = eval("√2", EN, &Rates::default()).unwrap();
         assert_eq!(
             (root2.shown.as_str(), root2.approximate),
             ("1.4142135623730950488", true)
         );
-        let exact_trig = eval("sin(30°)", EN).unwrap();
+        let exact_trig = eval("sin(30°)", EN, &Rates::default()).unwrap();
         assert_eq!(
             (exact_trig.shown.as_str(), exact_trig.approximate),
             ("0.5", false)
@@ -259,7 +285,7 @@ mod tests {
 
     #[test]
     fn results_too_large_for_exact_maths_are_approximate() {
-        let big = eval("2^99999", EN).unwrap();
+        let big = eval("2^99999", EN, &Rates::default()).unwrap();
         assert_eq!(big.output, "4.9950104650719225397e30102");
         assert!(big.approximate);
         assert_eq!(out("2^1000000"), None);
@@ -277,7 +303,7 @@ mod tests {
             out("5 km to mi").as_deref(),
             Some("3.1068559611866698481 mi")
         );
-        let miles = eval("5 km to mi", EN).unwrap();
+        let miles = eval("5 km to mi", EN, &Rates::default()).unwrap();
         assert_eq!(
             (miles.shown.as_str(), miles.approximate),
             ("3.1068559611866698481 mi", true)
@@ -325,6 +351,33 @@ mod tests {
     }
 
     #[test]
+    fn money_converts_with_the_cached_rates() {
+        let rates = rates::tests::sample_rates();
+        let money = |expr: &str| eval(expr, EN, &rates);
+        let euros = money("100 USD to EUR").unwrap();
+        assert_eq!(euros.output, "92.49 EUR");
+        assert!(euros.approximate);
+        assert_eq!(
+            euros.note.as_deref(),
+            Some("ECB reference rates of 2026-11-12")
+        );
+        let output = |expr: &str| money(expr).map(|a| a.output);
+        assert_eq!(output("$100 in £").as_deref(), Some("77.23 GBP"));
+        assert_eq!(output("1000 jpy to eur").as_deref(), Some("6.04 EUR"));
+        assert_eq!(
+            money("10 € to ¥").map(|a| a.shown).as_deref(),
+            Some("1,654 JPY")
+        );
+        assert_eq!(output("100 USD").as_deref(), Some("100.00 USD"));
+        assert_eq!(output("5 USD + 3 EUR").as_deref(), Some("8.24 USD"));
+        // No rate for it: no result, never a made-up one.
+        assert_eq!(output("100 CHF to EUR"), None);
+        assert_eq!(eval("100 USD to EUR", EN, &Rates::default()), None);
+        // A plain result carries no rates note.
+        assert_eq!(money("2+2").and_then(|a| a.note), None);
+    }
+
+    #[test]
     fn deep_nesting_is_refused_not_a_stack_overflow() {
         // The deepest input the limit lets through must fit calc's stack in a
         // debug build, where frames are largest; one level deeper is refused.
@@ -358,12 +411,12 @@ mod tests {
     #[test]
     fn precompute_keeps_only_what_evaluates() {
         let input: Vec<String> = vec!["1+1".into(), "zzz".into(), "7/2".into()];
-        let map = precompute(&input, EN);
+        let map = precompute(&input, EN, &Rates::default());
         assert_eq!(map.len(), 2);
         assert_eq!(map.get("1+1").map(|a| a.output.as_str()), Some("2"));
         assert!(!map.contains_key("zzz"));
         for (expr, answer) in &map {
-            assert_eq!(Some(answer.clone()), eval(expr, EN));
+            assert_eq!(Some(answer.clone()), eval(expr, EN, &Rates::default()));
         }
     }
 }

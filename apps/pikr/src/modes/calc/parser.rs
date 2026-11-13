@@ -25,7 +25,8 @@ use num_rational::BigRational;
 
 use super::lexer::Token;
 use super::number::{FloatFn, Num};
-use super::units;
+use super::rates::Rates;
+use super::units::{self, Unit};
 use super::value::Value;
 
 /// How deep parentheses, function calls and prefix operators may nest. The
@@ -46,7 +47,7 @@ const CONVERSION_WORDS: [&str; 3] = ["to", "in", "as"];
 /// where both sides evaluate and the right side is one unit of the left
 /// side's kind; failing that, the whole input is one expression (so `5 in`
 /// is five inches).
-pub fn evaluate(tokens: &[Token]) -> Option<Value> {
+pub fn evaluate(tokens: &[Token], rates: &Rates) -> Option<Value> {
     let mut depth = 0usize;
     let mut splits = Vec::new();
     for (i, token) in tokens.iter().enumerate() {
@@ -61,24 +62,27 @@ pub fn evaluate(tokens: &[Token]) -> Option<Value> {
         }
     }
     for &i in splits.iter().rev() {
-        let (Some(from), Some(to)) = (expression(&tokens[..i]), expression(&tokens[i + 1..]))
-        else {
+        let (Some(from), Some(to)) = (
+            expression(&tokens[..i], rates),
+            expression(&tokens[i + 1..], rates),
+        ) else {
             continue;
         };
         if let Some(converted) = from.convert(&to) {
             return Some(converted);
         }
     }
-    expression(tokens)
+    expression(tokens, rates)
 }
 
 /// The value of `tokens` as one expression.
-fn expression(tokens: &[Token]) -> Option<Value> {
+fn expression(tokens: &[Token], rates: &Rates) -> Option<Value> {
     if tokens.is_empty() {
         return None;
     }
     let mut parser = Parser {
         tokens,
+        rates,
         at: 0,
         depth: 0,
     };
@@ -88,6 +92,7 @@ fn expression(tokens: &[Token]) -> Option<Value> {
 
 struct Parser<'a> {
     tokens: &'a [Token],
+    rates: &'a Rates,
     at: usize,
     depth: usize,
 }
@@ -226,6 +231,13 @@ impl Parser<'_> {
             }
             Token::Ident(name) => {
                 self.at += 1;
+                // A currency symbol written before its amount (`$100`).
+                if !name.chars().any(char::is_alphanumeric)
+                    && let Some(Token::Num(amount)) = self.peek().cloned()
+                {
+                    self.at += 1;
+                    return self.currency(&name)?.mul(&Value::plain(Num::Exact(amount)));
+                }
                 if self.eat(&Token::LParen) {
                     let args = self.arguments()?;
                     call(&name.to_lowercase(), &args)
@@ -233,10 +245,22 @@ impl Parser<'_> {
                     constant(&name.to_lowercase())
                         .map(Value::plain)
                         .or_else(|| units::lookup(&name).map(|unit| Value::unit(&name, unit)))
+                        .or_else(|| self.currency(&name))
                 }
             }
             _ => None,
         }
+    }
+
+    /// One unit of the currency `name` (`USD`, `$`), shown by its code.
+    fn currency(&self, name: &str) -> Option<Value> {
+        let (code, euros) = self.rates.currency(name)?;
+        let unit = Unit {
+            dims: units::MONEY,
+            factor: euros,
+            zero: None,
+        };
+        Some(Value::unit(&code, unit))
     }
 
     /// A call's arguments, after its `(`, through its `)`.

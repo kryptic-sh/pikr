@@ -122,6 +122,8 @@ pub struct AppState {
     /// The locale's decimal and group separators, which calc reads and
     /// writes numbers with.
     pub calc_separators: crate::modes::calc::Separators,
+    /// The exchange rates calc converts money with, as cached on disk.
+    pub calc_rates: crate::modes::calc::Rates,
     /// Whether calc's first row is the live query's answer (it evaluated),
     /// so that row is not a history row. Set by each calc rerank.
     pub calc_live_row: bool,
@@ -210,7 +212,7 @@ impl AppState {
         let live_eval = if trimmed.is_empty() {
             None
         } else {
-            crate::modes::calc::eval(query, self.calc_separators)
+            crate::modes::calc::eval(query, self.calc_separators, &self.calc_rates)
                 .map(|answer| (trimmed.to_string(), answer))
         };
 
@@ -239,7 +241,7 @@ impl AppState {
                     if answer.approximate { '≈' } else { '=' },
                     answer.shown
                 ),
-                description: None,
+                description: answer.note.clone(),
                 icon: None,
                 payload: crate::modes::Payload::Answer(answer.output.clone()),
             })
@@ -296,6 +298,22 @@ impl AppState {
         self.picker.clamp_selected(self.matches.len());
     }
 
+    /// Re-reads what calc's rows are computed from (the cached exchange
+    /// rates) and recomputes them: on switching to calc, and when a rate
+    /// refresh lands while calc is open.
+    pub fn reload_calc_sources(&mut self) {
+        if self.cli_mode != CliMode::Calc {
+            return;
+        }
+        self.calc_rates = crate::modes::calc::load_rates();
+        self.calc_results = crate::modes::calc::precompute(
+            self.history.list(CliMode::Calc),
+            self.calc_separators,
+            &self.calc_rates,
+        );
+        self.rerank();
+    }
+
     pub fn switch_mode(&mut self, mode: CliMode) {
         self.cli_mode = mode;
         // Unsupported-on-this-platform modes resolve to `None`: the mode
@@ -303,7 +321,7 @@ impl AppState {
         // previous mode's entries under the new label. Unix behavior is
         // unchanged — every mode constructs its real Mode.
         let m: Option<Box<dyn crate::modes::Mode>> = match mode {
-            CliMode::Calc => Some(Box::new(crate::modes::calc::Calc)),
+            CliMode::Calc => Some(Box::new(crate::modes::calc::Calc::default())),
             CliMode::Clipboard => Some(Box::new(crate::modes::clipboard::Clipboard)),
             CliMode::Dmenu => Some(Box::new(crate::modes::dmenu::Dmenu)),
             #[cfg(unix)]
@@ -384,6 +402,7 @@ pub(crate) mod tests {
             history: Default::default(),
             calc_results: Default::default(),
             calc_separators: Default::default(),
+            calc_rates: Default::default(),
             calc_live_row: false,
             kb_custom: Vec::new(),
         }

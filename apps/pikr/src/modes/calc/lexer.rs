@@ -67,6 +67,7 @@ pub fn tokens(text: &str, seps: Separators) -> Option<Vec<Token>> {
                 Token::Arrow
             }
             '→' => Token::Arrow,
+            '$' | '€' | '£' | '¥' | '₹' => Token::Ident(c.to_string()),
             '-' | '−' => Token::Minus,
             '*' if chars.get(i + 1) == Some(&'*') => {
                 i += 1;
@@ -303,6 +304,6 @@ mod tests {
             tokens("max(1; 2)", DE).map(|t| t.contains(&Token::Comma)),
             Some(true)
         );
-        assert_eq!(tokens("2 $ 3", EN), None);
+        assert_eq!(tokens("2 @ 3", EN), None);
     }
 }

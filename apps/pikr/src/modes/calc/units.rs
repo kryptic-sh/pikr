@@ -56,6 +56,9 @@ const PRESSURE: Dims = dims(-1, 1, -2);
 const TEMPERATURE: Dims = [0, 0, 0, 1, 0, 0];
 const DATA: Dims = [0, 0, 0, 0, 1, 0];
 
+/// Money, measured in euros (see `rates`).
+pub const MONEY: Dims = [0, 0, 0, 0, 0, 1];
+
 const fn unit(names: &'static [&'static str], dims: Dims, factor: &'static str) -> Def {
     Def {
         names,

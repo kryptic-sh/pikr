@@ -524,6 +524,12 @@ impl Session {
     }
 
     /// Replaces the query and puts the caret at its end.
+    /// A mode's background work landed new data its rows are computed from
+    /// (calc's exchange rates): recompute them.
+    pub fn sources_changed(&mut self) {
+        self.app.reload_calc_sources();
+    }
+
     /// Accepting a calc history row does not pick it: its result becomes the
     /// query, ready to be the first operand of the next expression, and the
     /// live answer row is selected so Enter then picks that. Whether row
@@ -581,7 +587,8 @@ mod tests {
             state.history.push(CliMode::Calc, expr);
         }
         let stored: Vec<String> = exprs.iter().map(|e| (*e).to_owned()).collect();
-        state.calc_results = crate::modes::calc::precompute(&stored, state.calc_separators);
+        state.calc_results =
+            crate::modes::calc::precompute(&stored, state.calc_separators, &state.calc_rates);
         Session::new(state, None)
     }
 

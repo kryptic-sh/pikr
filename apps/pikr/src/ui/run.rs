@@ -404,6 +404,11 @@ impl<'a> Window<'a> {
                 // frame itself still waits for the GPU's pacing.
                 let (landed, done) = drain(rx);
                 dirty |= landed;
+                // What landed may be what the rows are computed from (calc's
+                // exchange rates), not only what they draw.
+                if landed && let Content::Picker { session, .. } = &mut content {
+                    session.sources_changed();
+                }
                 if done {
                     landing = None;
                 }
