@@ -10,6 +10,11 @@ and this project adheres to
 
 ### Added
 
+- Accepting a calc history row (Enter or a click) no longer picks it: its result
+  becomes the query, with the caret at the end in Insert mode, so it can start
+  the next expression (`42`, then type `+ 8`). Accepting the live answer row
+  still picks the result.
+
 - Accepting a calc result also copies it to the clipboard, as well as printing
   it. On Windows through the system clipboard; on Linux and the BSDs through
   `wl-copy` under Wayland, else `xclip` or `xsel` under X11; on macOS through

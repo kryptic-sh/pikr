@@ -117,6 +117,7 @@ pub fn run(cli: Cli, startup_started: Instant) -> Result<()> {
         history,
         calc_results,
         calc_separators,
+        calc_live_row: false,
         kb_custom: cli.kb_custom,
     };
     let height = if app.password {

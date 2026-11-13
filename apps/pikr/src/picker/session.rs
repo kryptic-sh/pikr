@@ -189,6 +189,10 @@ impl Session {
         if self.confirm.take().is_some() {
             return Outcome::Continue;
         }
+        if self.recall_calc_answer(mi) {
+            self.rerank_if_query_changed();
+            return Outcome::Continue;
+        }
         let Some(m) = self.app.matches.get(mi) else {
             return Outcome::Continue;
         };
@@ -456,6 +460,9 @@ impl Session {
     }
 
     fn accept(&mut self) -> Outcome {
+        if self.app.lists_rows() && self.recall_calc_answer(self.app.picker.selected) {
+            return Outcome::Continue;
+        }
         let payloads = self.selected_payloads();
         let query = self.app.picker.query.clone();
         if !self.app.lists_rows() {
@@ -517,6 +524,23 @@ impl Session {
     }
 
     /// Replaces the query and puts the caret at its end.
+    /// Accepting a calc history row does not pick it: its result becomes the
+    /// query, ready to be the first operand of the next expression, and the
+    /// live answer row is selected so Enter then picks that. Whether row
+    /// `mi` was such a row.
+    fn recall_calc_answer(&mut self, mi: usize) -> bool {
+        let Some(answer) = self.app.calc_history_answer(mi) else {
+            return false;
+        };
+        self.history_cursor = None;
+        self.set_query(answer);
+        let picker = &mut self.app.picker;
+        picker.selected = 0;
+        picker.visual_anchor = None;
+        picker.vim_mode = VimMode::Insert;
+        true
+    }
+
     fn set_query(&mut self, text: String) {
         self.app.picker.query_cursor = text.chars().count();
         self.app.picker.query = text;
@@ -548,6 +572,55 @@ mod tests {
         for c in text.chars() {
             assert_eq!(s.handle_key(&ch(&c.to_string()), none()), Outcome::Continue);
         }
+    }
+
+    /// A calc session whose history holds `exprs`, newest first.
+    fn calc_session(exprs: &[&str]) -> Session {
+        let mut state = app_state(CliMode::Calc, &[], false);
+        for expr in exprs.iter().rev() {
+            state.history.push(CliMode::Calc, expr);
+        }
+        let stored: Vec<String> = exprs.iter().map(|e| (*e).to_owned()).collect();
+        state.calc_results = crate::modes::calc::precompute(&stored, state.calc_separators);
+        Session::new(state, None)
+    }
+
+    #[test]
+    fn accepting_a_calc_history_row_puts_its_result_in_the_query() {
+        let mut s = calc_session(&["6*7"]);
+        // Empty query: the only row is the history row.
+        assert_eq!(
+            s.handle_key(&named(NamedKey::Enter), none()),
+            Outcome::Continue
+        );
+        assert_eq!(s.app.picker.query, "42");
+        assert_eq!(s.app.picker.query_cursor, 2);
+        type_text(&mut s, "+8");
+        assert_eq!(
+            s.handle_key(&named(NamedKey::Enter), none()),
+            Outcome::exit(vec![Payload::Answer("50".into())], 0)
+        );
+    }
+
+    #[test]
+    fn the_live_row_still_picks_and_a_click_on_history_recalls() {
+        let mut s = calc_session(&["6*7"]);
+        type_text(&mut s, "6");
+        // Row 0 is the live answer, row 1 the history row "6*7 = 42".
+        let labels: Vec<&str> = s
+            .app
+            .matches
+            .iter()
+            .map(|m| s.app.entries[m.index].label.as_str())
+            .collect();
+        assert_eq!(labels, ["6 = 6", "6*7 = 42"]);
+        assert_eq!(s.click_row(1), Outcome::Continue);
+        assert_eq!(s.app.picker.query, "42");
+        assert_eq!(s.app.picker.selected, 0);
+        assert_eq!(
+            s.handle_key(&named(NamedKey::Enter), none()),
+            Outcome::exit(vec![Payload::Answer("42".into())], 0)
+        );
     }
 
     #[test]

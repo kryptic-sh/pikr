@@ -122,12 +122,32 @@ pub struct AppState {
     /// The locale's decimal and group separators, which calc reads and
     /// writes numbers with.
     pub calc_separators: crate::modes::calc::Separators,
+    /// Whether calc's first row is the live query's answer (it evaluated),
+    /// so that row is not a history row. Set by each calc rerank.
+    pub calc_live_row: bool,
     /// `--kb-custom` bindings, in flag order. Checked before the vim keymap;
     /// binding N accepts the selection and exits `KB_CUSTOM_EXIT_BASE + N`.
     pub kb_custom: Vec<crate::picker::keyspec::KbCustom>,
 }
 
 impl AppState {
+    /// The result on result row `mi` when it is a calc history row (not the
+    /// live answer), as it would be printed: what accepting it puts back in
+    /// the query.
+    pub fn calc_history_answer(&self, mi: usize) -> Option<String> {
+        if self.cli_mode != CliMode::Calc {
+            return None;
+        }
+        let m = self.matches.get(mi)?;
+        if self.calc_live_row && m.index == 0 {
+            return None;
+        }
+        match &self.entries.get(m.index)?.payload {
+            crate::modes::Payload::Answer(output) => Some(output.clone()),
+            _ => None,
+        }
+    }
+
     /// Whether there is a list of rows: `-P` and `--lines 0` are bare
     /// prompts, where Enter prints what was typed.
     pub fn lists_rows(&self) -> bool {
@@ -229,6 +249,7 @@ impl AppState {
         }
         self.set_entries(entries);
 
+        self.calc_live_row = live_eval.is_some();
         let live_offset = usize::from(live_eval.is_some());
         let mut matches: Vec<Match> = Vec::new();
         if live_eval.is_some() {
@@ -359,6 +380,7 @@ pub(crate) mod tests {
             history: Default::default(),
             calc_results: Default::default(),
             calc_separators: Default::default(),
+            calc_live_row: false,
             kb_custom: Vec::new(),
         }
     }
