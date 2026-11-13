@@ -893,6 +893,18 @@
   so Indian lakh grouping (`1,00,000`) does not read as one number, and in
   English `max(1,234)` reads as `max(1234)` (write `max(1, 234)`).
 
+- **Limits and display rules that look like bugs and are not** (each a named
+  constant in `modes::calc::number` or `modes::calc::format`). `n!` stops at
+  `MAX_FACTORIAL` (3000! has 9131 digits; 3001! is no result). An exact power
+  past `MAX_EXACT_BITS` is computed approximately, and a result past
+  `MAX_VALUE_EXPONENT` (`2^1000000`) is no result. An approximate result that
+  agrees with a decimal of at most 15 significant digits to 40 digits is shown
+  as that decimal without `≈` (`sin(30°) = 0.5`); one below 10^-45 is 0
+  (`sin(pi)`). Repeating blocks are searched for `MAX_EXPANSION` digits, so
+  `1/97` (period 96) shows `≈` and 20 digits instead of its block. Measured on
+  this machine (release, 2026-11-13, no quiet window): the slowest common case
+  is `3000!` at about 4 ms per keystroke.
+
 ## Release pipeline
 
 - Package runtime dependencies (`pkg/nfpm/nfpm.yaml.in`, `pkg/aur/`,

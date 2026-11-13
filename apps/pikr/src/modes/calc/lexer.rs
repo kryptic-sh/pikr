@@ -1,10 +1,16 @@
 //! Splits a calc expression into tokens, reading numbers the locale's way.
 
-use super::number::{Num, Separators};
+use num_bigint::BigInt;
+use num_rational::BigRational;
+use num_traits::Num as _;
+
+use super::format::Separators;
+use super::number::decimal;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
-    Num(Num),
+    /// A literal, always exact (`0.1` is one tenth).
+    Num(BigRational),
     Ident(String),
     Plus,
     Minus,
@@ -90,7 +96,7 @@ fn next_is_digit(chars: &[char], i: usize) -> bool {
 /// arguments). `_` groups too, in any locale. Where `,` is the decimal mark,
 /// a `.` that cannot be a group is read as a decimal point, so `3.14` still
 /// works in German.
-fn number(chars: &[char], seps: Separators) -> Option<(Num, usize)> {
+fn number(chars: &[char], seps: Separators) -> Option<(BigRational, usize)> {
     if let Some(radix) = radix_prefix(chars) {
         let mut i = 2;
         let mut digits = String::new();
@@ -102,18 +108,23 @@ fn number(chars: &[char], seps: Separators) -> Option<(Num, usize)> {
             }
             i += 1;
         }
-        let value = i128::from_str_radix(&digits, radix).ok()?;
-        return Some((Num::Int(value), i));
+        let value = BigInt::from_str_radix(&digits, radix).ok()?;
+        return Some((BigRational::from_integer(value), i));
     }
 
-    let mut text = String::new();
+    let mut whole = String::new();
+    let mut fractional = String::new();
     let mut i = 0;
     let mut run = 0;
     let mut grouped = false;
     let mut fraction = false;
     while let Some(&c) = chars.get(i) {
         if c.is_ascii_digit() {
-            text.push(c);
+            if fraction {
+                fractional.push(c);
+            } else {
+                whole.push(c);
+            }
             run += 1;
             i += 1;
         } else if !fraction
@@ -128,7 +139,6 @@ fn number(chars: &[char], seps: Separators) -> Option<(Num, usize)> {
             && (c == seps.decimal || (c == '.' && seps.decimal == ','))
             && next_is_digit_or_end(chars, i)
         {
-            text.push('.');
             fraction = true;
             i += 1;
         } else {
@@ -136,27 +146,27 @@ fn number(chars: &[char], seps: Separators) -> Option<(Num, usize)> {
         }
     }
 
-    let mut float = fraction;
+    let mut exponent = 0;
     if matches!(chars.get(i), Some('e' | 'E')) {
-        let sign = matches!(chars.get(i + 1), Some('+' | '-'));
-        let first = i + 1 + usize::from(sign);
+        let sign = chars.get(i + 1).filter(|c| matches!(c, '+' | '-'));
+        let first = i + 1 + usize::from(sign.is_some());
         if chars.get(first).is_some_and(char::is_ascii_digit) {
-            text.push('e');
-            text.extend(&chars[i + 1..first]);
+            let mut digits = String::new();
             i = first;
             while let Some(&c) = chars.get(i).filter(|c| c.is_ascii_digit()) {
-                text.push(c);
+                digits.push(c);
                 i += 1;
             }
-            float = true;
+            // Too many digits to parse is past any exponent calc allows.
+            let magnitude: i64 = digits.parse().ok()?;
+            exponent = if sign == Some(&'-') {
+                -magnitude
+            } else {
+                magnitude
+            };
         }
     }
-
-    if !float && let Ok(int) = text.parse::<i128>() {
-        return Some((Num::Int(int), i));
-    }
-    let value = Num::float(text.parse().ok()?)?;
-    Some((value, i))
+    Some((decimal(&whole, &fractional, exponent)?, i))
 }
 
 /// The radix of a `0x`, `0b` or `0o` literal.
@@ -204,19 +214,23 @@ mod tests {
         group: '.',
     };
 
-    fn num(text: &str, seps: Separators) -> Option<Num> {
+    fn num(text: &str, seps: Separators) -> Option<BigRational> {
         match tokens(text, seps)?.as_slice() {
-            [Token::Num(n)] => Some(*n),
+            [Token::Num(n)] => Some(n.clone()),
             _ => None,
         }
     }
 
+    fn q(n: i64, d: i64) -> BigRational {
+        BigRational::new(n.into(), d.into())
+    }
+
     #[test]
     fn groups_need_three_digits_after_them() {
-        assert_eq!(num("1,000", EN), Some(Num::Int(1000)));
-        assert_eq!(num("12,345,678", EN), Some(Num::Int(12_345_678)));
-        assert_eq!(num("1,000.25", EN), Some(Num::Float(1000.25)));
-        assert_eq!(num("1_000", EN), Some(Num::Int(1000)));
+        assert_eq!(num("1,000", EN), Some(q(1000, 1)));
+        assert_eq!(num("12,345,678", EN), Some(q(12_345_678, 1)));
+        assert_eq!(num("1,000.25", EN), Some(q(4001, 4)));
+        assert_eq!(num("1_000", EN), Some(q(1000, 1)));
         // Not groups: these are separate tokens, never one number.
         assert_eq!(num("1,5", EN), None);
         assert_eq!(num("1,0000", EN), None);
@@ -225,12 +239,12 @@ mod tests {
 
     #[test]
     fn a_comma_decimal_locale_reads_both_ways_it_can() {
-        assert_eq!(num("1.000,5", DE), Some(Num::Float(1000.5)));
-        assert_eq!(num("1,5", DE), Some(Num::Float(1.5)));
-        assert_eq!(num("1.000", DE), Some(Num::Int(1000)));
+        assert_eq!(num("1.000,5", DE), Some(q(2001, 2)));
+        assert_eq!(num("1,5", DE), Some(q(3, 2)));
+        assert_eq!(num("1.000", DE), Some(q(1000, 1)));
         // A '.' that cannot group is a decimal point there, so `2.75`
         // still reads as typed.
-        assert_eq!(num("2.75", DE), Some(Num::Float(2.75)));
+        assert_eq!(num("2.75", DE), Some(q(11, 4)));
     }
 
     #[test]
@@ -239,26 +253,26 @@ mod tests {
             decimal: ',',
             group: '\u{202f}',
         };
-        assert_eq!(num("1 000,5", french), Some(Num::Float(1000.5)));
-        assert_eq!(num("1\u{202f}000", french), Some(Num::Int(1000)));
+        assert_eq!(num("1 000,5", french), Some(q(2001, 2)));
+        assert_eq!(num("1\u{202f}000", french), Some(q(1000, 1)));
         assert_eq!(num("1 000", EN), None);
     }
 
     #[test]
     fn radix_and_exponent_literals() {
-        assert_eq!(num("0xff", EN), Some(Num::Int(255)));
-        assert_eq!(num("0b101", EN), Some(Num::Int(5)));
-        assert_eq!(num("0o17", EN), Some(Num::Int(15)));
-        assert_eq!(num("1e3", EN), Some(Num::Float(1000.0)));
-        assert_eq!(num("1.5e-3", EN), Some(Num::Float(0.0015)));
-        assert_eq!(num(".5", EN), Some(Num::Float(0.5)));
+        assert_eq!(num("0xff", EN), Some(q(255, 1)));
+        assert_eq!(num("0b101", EN), Some(q(5, 1)));
+        assert_eq!(num("0o17", EN), Some(q(15, 1)));
+        assert_eq!(num("1e3", EN), Some(q(1000, 1)));
+        assert_eq!(num("1.5e-3", EN), Some(q(3, 2000)));
+        assert_eq!(num(".5", EN), Some(q(1, 2)));
     }
 
     #[test]
     fn a_trailing_e_is_the_constant_not_an_exponent() {
         assert_eq!(
             tokens("2e", EN),
-            Some(vec![Token::Num(Num::Int(2)), Token::Ident("e".into())])
+            Some(vec![Token::Num(q(2, 1)), Token::Ident("e".into())])
         );
     }
 
@@ -267,15 +281,15 @@ mod tests {
         assert_eq!(
             tokens("5 × 3 ÷ 2 − 1 ** 2", EN),
             Some(vec![
-                Token::Num(Num::Int(5)),
+                Token::Num(q(5, 1)),
                 Token::Times,
-                Token::Num(Num::Int(3)),
+                Token::Num(q(3, 1)),
                 Token::Divide,
-                Token::Num(Num::Int(2)),
+                Token::Num(q(2, 1)),
                 Token::Minus,
-                Token::Num(Num::Int(1)),
+                Token::Num(q(1, 1)),
                 Token::Power,
-                Token::Num(Num::Int(2)),
+                Token::Num(q(2, 1)),
             ])
         );
         assert_eq!(

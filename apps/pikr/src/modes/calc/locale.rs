@@ -7,7 +7,7 @@
 //! exercised by CI's Linux and macOS test runs, which check that it answers.
 #![allow(unsafe_code)]
 
-use super::number::Separators;
+use super::format::Separators;
 
 /// Characters calc reads as operators, digits' neighbours or brackets, so
 /// none of them can be a separator.

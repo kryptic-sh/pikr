@@ -42,19 +42,27 @@ and this project adheres to
 
 ### Changed
 
-- calc mode has its own evaluator in place of evalexpr. Division gives the
-  fraction (`7/2` is 3.5, where it was 3), float noise is rounded away
-  (`0.1+0.2` is 0.3), and integers stay exact past 64 bits
-  (`9999999999*9999999999`, `25!`). It reads calculator notation: `×` `÷` `−`
-  `**`, implicit multiplication (`2pi`, `3(4+5)`), `n!`, `15%` as 0.15 (with
-  `10 % 3` still the remainder), `√`, degrees (`sin(30°)`), `0x`/`0b`/`0o`
-  literals, the constants `pi` `π` `tau` `e`, and functions by their plain names
-  (`sqrt`, `sin`, `ln`, `log(x[, base])`, `abs`, `floor`, `round`, `min`, `max`
-  and more; before, most needed a `math::` prefix and some were missing).
-  Numbers may carry thousands separators (`1,000`), and the row shows the result
-  grouped (`1,234,567.5`) while the picked value prints without grouping.
-  Nesting is limited, so a deeply nested expression is no result instead of a
-  risk to the stack.
+- calc mode has its own evaluator in place of evalexpr, with exact arithmetic.
+  Numbers are rationals of any size, so `7/2` is 3.5 (it was 3), `6/2` is 3,
+  `0.1+0.2` is exactly 0.3, `1/3*3` is 1, and `9999999999*9999999999`, `25!` and
+  `2^100` print in full. A result that never ends is shown with its repeating
+  block (`1/3 = 0.(3)`, `22/7 = 3.(142857)`) and printed and copied to 20
+  significant digits. What cannot be exact (`pi`, `e`, `√2`, `ln`, trigonometry,
+  a fractional power) is computed to about 57 digits with astro-float and shown
+  to 20, as `√2 ≈ 1.4142135623730950488`; one that agrees with a short decimal
+  to 40 digits is shown as that decimal (`sin(30°) = 0.5`). Perfect roots stay
+  exact (`sqrt(16/9)`, `8^(1/3)`), as do whole logarithms (`log(1000) = 3`). It
+  reads calculator notation: `×` `÷` `−` `**`, implicit multiplication (`2pi`,
+  `3(4+5)`), `n!`, `15%` as 0.15 (with `10 % 3` still the remainder), `√`,
+  degrees (`sin(30°)`), `0x`/`0b`/`0o` literals, the constants `pi` `π` `tau`
+  `e`, and functions by their plain names (`sqrt`, `cbrt`, `sin`, `ln`,
+  `log(x[, base])`, `abs`, `floor`, `round`, `min`, `max` and more; before, most
+  needed a `math::` prefix and some were missing). Numbers may carry thousands
+  separators (`1,000`), and the row shows the result grouped (`1,234,567.5`)
+  while the picked value prints without grouping. Very large results switch to
+  scientific notation (`2^99999 ≈ 4.9950104650719225397e30102`). Nesting is
+  limited, so a deeply nested expression is no result instead of a risk to the
+  stack.
 - pikr builds on crcbl 0.19.1 (from 0.17.1). The theme font is now memory-mapped
   instead of read onto the heap when it is a system font file (owned by root on
   Linux and the BSDs, in the Windows `Fonts` directory), so its pages are shared

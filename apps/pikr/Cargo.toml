@@ -36,6 +36,11 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 unicode-normalization.workspace = true
 unicode-segmentation.workspace = true
+num-rational = "0.4.2"
+num-integer = "0.1.47"
+num-traits = "0.2.19"
+num-bigint = "0.4"
+astro-float = { version = "0.9.6", default-features = false, features = ["std"] }
 
 # Freedesktop-spec crates (drun entries, XDG base dirs) are unix-only.
 # Windows has its own drun collector, and its config and state paths come

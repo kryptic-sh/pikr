@@ -1,313 +1,421 @@
-//! Calc's numbers: exact integers while they fit, floats otherwise, and how
-//! a result is written out for a locale.
+//! Calc's numbers: exact rationals wherever the maths allows, and
+//! arbitrary-precision floats for what it does not (π, e, roots that are
+//! not perfect, logarithms, trigonometry).
 
-/// A value during evaluation. Integer arithmetic stays exact while it fits
-/// an `i128` and falls back to a float when it would overflow; a float that
-/// is not finite (`1.0/0`, `sqrt(-1)`) is no result at all.
-#[derive(Clone, Copy, Debug, PartialEq)]
+use std::cell::RefCell;
+use std::cmp::Ordering;
+
+use astro_float::{BigFloat, Consts, Radix, RoundingMode};
+use num_bigint::BigInt;
+use num_rational::BigRational;
+use num_traits::{One, Pow, Signed, ToPrimitive, Zero};
+
+/// Bits of precision for approximate values: about 57 significant decimal
+/// digits, far past the 20 a result is shown with, so rounding error never
+/// reaches the shown digits.
+const PRECISION: usize = 192;
+
+const ROUNDING: RoundingMode = RoundingMode::ToEven;
+
+/// The largest `n` whose factorial calc computes. 3000! has 9131 digits;
+/// past this the work per keystroke stops being negligible.
+const MAX_FACTORIAL: u32 = 3000;
+
+/// The most bits an exact power may produce (about 30,000 decimal digits).
+/// A larger one is computed approximately instead.
+const MAX_EXACT_BITS: u64 = 100_000;
+
+/// The largest root index tried exactly (`x^(1/q)` for `q` up to this).
+const MAX_EXACT_ROOT: u32 = 64;
+
+/// The largest power of ten a literal's exponent may name (`1e9999`).
+const MAX_LITERAL_EXPONENT: i64 = 10_000;
+
+/// The largest power of ten an approximate value is read back into a
+/// rational at, for rounding and display. It matches [`MAX_EXACT_BITS`]'s
+/// size; past it a result (`2^1000000`) is too large to write out and is no
+/// result.
+const MAX_VALUE_EXPONENT: i64 = 30_103;
+
+/// A value during evaluation.
+#[derive(Clone, Debug)]
 pub enum Num {
-    Int(i128),
-    Float(f64),
+    /// Known exactly.
+    Exact(BigRational),
+    /// Known to [`PRECISION`] bits; always finite.
+    Approx(BigFloat),
 }
 
-/// The largest `n` whose factorial is still a finite `f64` (171! overflows).
-const MAX_FLOAT_FACTORIAL: i128 = 170;
+thread_local! {
+    /// astro-float's constant cache (π, e, ln 2, ln 10), kept between
+    /// evaluations so each keystroke does not recompute them.
+    static CONSTS: RefCell<Option<Consts>> = const { RefCell::new(None) };
+}
 
-/// Significant digits a float result is rounded to before it is shown, so
-/// binary noise (`0.1 + 0.2` = `0.30000000000000004`) prints as `0.3`. An
-/// `f64` carries 15–17; 15 is the most that always round-trip.
-const SIGNIFICANT_DIGITS: usize = 15;
+/// Runs `f` with the constant cache, or `None` when it cannot be made.
+fn with_consts<T>(f: impl FnOnce(&mut Consts) -> T) -> Option<T> {
+    CONSTS.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {
+            *slot = Consts::new().ok();
+        }
+        slot.as_mut().map(f)
+    })
+}
 
-/// Floats at or above this magnitude are written in scientific notation.
-const SCIENTIFIC_ABOVE: f64 = 1e21;
-
-/// Non-zero floats below this magnitude are written in scientific notation.
-const SCIENTIFIC_BELOW: f64 = 1e-7;
+/// A float function in astro-float's shape, such as `BigFloat::sin`.
+pub type FloatFn = fn(&BigFloat, usize, RoundingMode, &mut Consts) -> BigFloat;
 
 impl Num {
-    pub fn to_f64(self) -> f64 {
+    pub fn int(i: i64) -> Self {
+        Self::Exact(BigRational::from_integer(BigInt::from(i)))
+    }
+
+    pub fn pi() -> Option<Self> {
+        Self::approx(with_consts(|cc| cc.pi(PRECISION, ROUNDING))?)
+    }
+
+    pub fn e() -> Option<Self> {
+        Self::approx(with_consts(|cc| cc.e(PRECISION, ROUNDING))?)
+    }
+
+    /// An approximate value, or `None` when it is NaN or infinite.
+    fn approx(f: BigFloat) -> Option<Self> {
+        (!f.is_nan() && !f.is_inf()).then_some(Self::Approx(f))
+    }
+
+    /// The value as a float: exact when it is one, else rounded.
+    fn to_float(&self) -> Option<BigFloat> {
         match self {
-            // Precision loss past 2^53 is the point of falling back to float.
-            #[allow(clippy::cast_precision_loss)]
-            Self::Int(i) => i as f64,
-            Self::Float(f) => f,
+            Self::Approx(f) => Some(f.clone()),
+            Self::Exact(r) => with_consts(|cc| {
+                let parse = |n: &BigInt, cc: &mut Consts| {
+                    BigFloat::parse(&n.to_string(), Radix::Dec, PRECISION, ROUNDING, cc)
+                };
+                let n = parse(r.numer(), cc);
+                let d = parse(r.denom(), cc);
+                n.div(&d, PRECISION, ROUNDING)
+            }),
         }
     }
 
-    /// `Some` only when finite: every operation ends here, so an infinite or
-    /// NaN result never reaches the user.
-    pub fn float(f: f64) -> Option<Self> {
-        f.is_finite().then_some(Self::Float(f))
-    }
-
-    /// A float that holds a whole number small enough to be exact, as an
-    /// integer; anything else unchanged.
-    fn integral(self) -> Option<i128> {
+    /// The value as a rational: exactly, or the float's own value.
+    pub fn to_rational(&self) -> Option<BigRational> {
         match self {
-            Self::Int(i) => Some(i),
-            // 2^53: the last float magnitude where every integer is exact.
-            Self::Float(f) if f.fract() == 0.0 && f.abs() <= 9_007_199_254_740_992.0 => {
-                // The guard bounds `f` well inside `i128`.
-                #[allow(clippy::cast_possible_truncation)]
-                Some(f as i128)
-            }
-            Self::Float(_) => None,
+            Self::Exact(r) => Some(r.clone()),
+            Self::Approx(f) => float_to_rational(f),
         }
     }
 
-    pub fn add(self, rhs: Self) -> Option<Self> {
-        self.int_op(rhs, i128::checked_add)
-            .map_or_else(|| Self::float(self.to_f64() + rhs.to_f64()), Some)
-    }
-
-    pub fn sub(self, rhs: Self) -> Option<Self> {
-        self.int_op(rhs, i128::checked_sub)
-            .map_or_else(|| Self::float(self.to_f64() - rhs.to_f64()), Some)
-    }
-
-    pub fn mul(self, rhs: Self) -> Option<Self> {
-        self.int_op(rhs, i128::checked_mul)
-            .map_or_else(|| Self::float(self.to_f64() * rhs.to_f64()), Some)
-    }
-
-    /// Division is exact when it divides evenly, a float otherwise; dividing
-    /// by zero is no result, never infinity.
-    pub fn div(self, rhs: Self) -> Option<Self> {
-        if rhs.to_f64() == 0.0 {
-            return None;
-        }
-        if let (Self::Int(a), Self::Int(b)) = (self, rhs)
-            && let Some(0) = a.checked_rem(b)
-            && let Some(q) = a.checked_div(b)
-        {
-            return Some(Self::Int(q));
-        }
-        Self::float(self.to_f64() / rhs.to_f64())
-    }
-
-    /// The remainder, with the sign of the dividend (Rust's `%`, and most
-    /// calculators' `mod`).
-    pub fn rem(self, rhs: Self) -> Option<Self> {
-        if rhs.to_f64() == 0.0 {
-            return None;
-        }
-        self.int_op(rhs, i128::checked_rem)
-            .map_or_else(|| Self::float(self.to_f64() % rhs.to_f64()), Some)
-    }
-
-    pub fn pow(self, rhs: Self) -> Option<Self> {
-        if let (Self::Int(base), Self::Int(exp)) = (self, rhs)
-            && let Ok(exp) = u32::try_from(exp)
-            && let Some(p) = base.checked_pow(exp)
-        {
-            return Some(Self::Int(p));
-        }
-        Self::float(self.to_f64().powf(rhs.to_f64()))
-    }
-
-    pub fn neg(self) -> Option<Self> {
+    pub fn as_exact(&self) -> Option<&BigRational> {
         match self {
-            Self::Int(i) => i
-                .checked_neg()
-                .map(Self::Int)
-                .or_else(|| Self::float(-self.to_f64())),
-            Self::Float(f) => Self::float(-f),
+            Self::Exact(r) => Some(r),
+            Self::Approx(_) => None,
         }
     }
 
-    /// `n!` for a whole `n ≥ 0`: exact while it fits, then a float up to the
-    /// largest finite one.
-    pub fn factorial(self) -> Option<Self> {
-        let n = self.integral()?;
-        if !(0..=MAX_FLOAT_FACTORIAL).contains(&n) {
-            return None;
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Self::Exact(r) => r.is_zero(),
+            Self::Approx(f) => f.is_zero(),
         }
-        let mut exact: Option<i128> = Some(1);
-        let mut approx = 1.0_f64;
-        for k in 2..=n {
-            exact = exact.and_then(|e| e.checked_mul(k));
-            #[allow(clippy::cast_precision_loss)]
-            {
-                approx *= k as f64;
-            }
-        }
-        exact.map_or_else(|| Self::float(approx), |e| Some(Self::Int(e)))
     }
 
-    /// A float rounding function's result, as an integer when it is one.
-    pub fn whole(f: f64) -> Option<Self> {
-        Self::float(f).map(|n| n.integral().map_or(n, Self::Int))
-    }
-
-    fn int_op(self, rhs: Self, op: fn(i128, i128) -> Option<i128>) -> Option<Self> {
+    pub fn add(&self, rhs: &Self) -> Option<Self> {
         match (self, rhs) {
-            (Self::Int(a), Self::Int(b)) => op(a, b).map(Self::Int),
+            (Self::Exact(a), Self::Exact(b)) => Some(Self::Exact(a + b)),
+            _ => Self::approx(self.to_float()?.add(&rhs.to_float()?, PRECISION, ROUNDING)),
+        }
+    }
+
+    pub fn sub(&self, rhs: &Self) -> Option<Self> {
+        match (self, rhs) {
+            (Self::Exact(a), Self::Exact(b)) => Some(Self::Exact(a - b)),
+            _ => Self::approx(self.to_float()?.sub(&rhs.to_float()?, PRECISION, ROUNDING)),
+        }
+    }
+
+    pub fn mul(&self, rhs: &Self) -> Option<Self> {
+        match (self, rhs) {
+            (Self::Exact(a), Self::Exact(b)) => Some(Self::Exact(a * b)),
+            _ => Self::approx(self.to_float()?.mul(&rhs.to_float()?, PRECISION, ROUNDING)),
+        }
+    }
+
+    /// Dividing by zero is no result.
+    pub fn div(&self, rhs: &Self) -> Option<Self> {
+        if rhs.is_zero() {
+            return None;
+        }
+        match (self, rhs) {
+            (Self::Exact(a), Self::Exact(b)) => Some(Self::Exact(a / b)),
+            _ => Self::approx(self.to_float()?.div(&rhs.to_float()?, PRECISION, ROUNDING)),
+        }
+    }
+
+    /// The remainder, with the sign of the dividend (`-7 % 3` is -1).
+    pub fn rem(&self, rhs: &Self) -> Option<Self> {
+        if rhs.is_zero() {
+            return None;
+        }
+        match (self, rhs) {
+            (Self::Exact(a), Self::Exact(b)) => Some(Self::Exact(a - b * (a / b).trunc())),
+            _ => Self::approx(self.to_float()?.rem(&rhs.to_float()?)),
+        }
+    }
+
+    pub fn neg(&self) -> Self {
+        match self {
+            Self::Exact(r) => Self::Exact(-r),
+            Self::Approx(f) => Self::Approx(f.neg()),
+        }
+    }
+
+    pub fn abs(&self) -> Self {
+        match self {
+            Self::Exact(r) => Self::Exact(r.abs()),
+            Self::Approx(f) => Self::Approx(f.abs()),
+        }
+    }
+
+    /// `self ^ exponent`: exact for a whole exponent and for a root that
+    /// comes out rational (`8^(1/3)`), approximate otherwise.
+    pub fn pow(&self, exponent: &Self) -> Option<Self> {
+        if let (Self::Exact(base), Self::Exact(exp)) = (self, exponent) {
+            if base.is_zero() && exp.is_negative() {
+                return None;
+            }
+            if let Some(value) = exact_pow(base, exp) {
+                return Some(Self::Exact(value));
+            }
+        }
+        // A negative base with a fractional exponent is NaN: no result.
+        let (base, exp) = (self.to_float()?, exponent.to_float()?);
+        Self::approx(with_consts(|cc| base.pow(&exp, PRECISION, ROUNDING, cc))?)
+    }
+
+    /// `n!` for a whole `n ≥ 0`, exactly.
+    pub fn factorial(&self) -> Option<Self> {
+        let n = whole(self.as_exact()?)?.to_u32()?;
+        if n > MAX_FACTORIAL {
+            return None;
+        }
+        let product = (2..=n).fold(BigInt::one(), |acc, k| acc * k);
+        Some(Self::Exact(BigRational::from_integer(product)))
+    }
+
+    /// The `q`-th root: exact when it is rational, else approximate. An even
+    /// root of a negative number is no result.
+    pub fn root(&self, q: u32) -> Option<Self> {
+        if let Self::Exact(r) = self
+            && let Some(root) = exact_root(r, q)
+        {
+            return Some(Self::Exact(root));
+        }
+        let f = self.to_float()?;
+        match q {
+            2 if !f.is_negative() => Self::approx(f.sqrt(PRECISION, ROUNDING)),
+            3 => Self::approx(f.cbrt(PRECISION, ROUNDING)),
             _ => None,
         }
     }
-}
 
-/// The characters a locale writes numbers with.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Separators {
-    /// Between the whole and the fractional part: `.` in `1.5`, `,` in `1,5`.
-    pub decimal: char,
-    /// Between groups of three digits: `,` in `1,000`, `.` in `1.000`.
-    pub group: char,
-}
+    /// A float function of the value, such as `sin` or `ln`.
+    pub fn apply(&self, f: FloatFn) -> Option<Self> {
+        let x = self.to_float()?;
+        Self::approx(with_consts(|cc| f(&x, PRECISION, ROUNDING, cc))?)
+    }
 
-impl Default for Separators {
-    fn default() -> Self {
-        Self {
-            decimal: '.',
-            group: ',',
+    /// Rounds to a whole number with `f` (`floor`, `ceil`, `round`,
+    /// `trunc`): exact, even for an approximate value.
+    pub fn whole_with(&self, f: fn(&BigRational) -> BigRational) -> Option<Self> {
+        Some(Self::Exact(f(&self.to_rational()?)))
+    }
+
+    pub fn cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.to_rational()?.cmp(&other.to_rational()?))
+    }
+
+    /// `log_base(self)`: exact when it is a whole number (`log(1000)` is 3).
+    pub fn log(&self, base: &Self) -> Option<Self> {
+        let (x, b) = (self.to_float()?, base.to_float()?);
+        let value = Self::approx(with_consts(|cc| {
+            x.ln(PRECISION, ROUNDING, cc)
+                .div(&b.ln(PRECISION, ROUNDING, cc), PRECISION, ROUNDING)
+        })?)?;
+        if let (Self::Exact(x), Self::Exact(b)) = (self, base)
+            && let Some(k) = value
+                .to_rational()
+                .and_then(|r| r.round().to_integer().to_i32())
+            && exact_pow(b, &BigRational::from_integer(k.into())).as_ref() == Some(x)
+        {
+            return Some(Self::int(k.into()));
         }
-    }
-}
-
-impl Separators {
-    /// Between a function's arguments: `,`, or `;` where `,` is the decimal
-    /// mark (as spreadsheets do). `;` is accepted everywhere.
-    pub fn argument(self) -> char {
-        if self.decimal == ',' { ';' } else { ',' }
-    }
-
-    /// `n` the way the row shows it: the locale's decimal mark, and its
-    /// whole part grouped by threes.
-    pub fn shown(self, n: Num) -> String {
-        self.localize(&canonical(n), true)
-    }
-
-    /// `n` the way it is printed and copied: the locale's decimal mark and no
-    /// grouping, so it pastes as a number into other programs.
-    pub fn plain(self, n: Num) -> String {
-        self.localize(&canonical(n), false)
-    }
-
-    /// Rewrites a canonical number (`-1234.5`, `1.5e-8`) for this locale.
-    fn localize(self, canonical: &str, grouped: bool) -> String {
-        let (sign, rest) = canonical
-            .strip_prefix('-')
-            .map_or(("", canonical), |r| ("-", r));
-        let (mantissa, exponent) = rest.find('e').map_or((rest, ""), |i| rest.split_at(i));
-        let (whole, fraction) = mantissa
-            .find('.')
-            .map_or((mantissa, ""), |i| (&mantissa[..i], &mantissa[i + 1..]));
-        let mut out = String::from(sign);
-        if grouped {
-            for (i, digit) in whole.chars().enumerate() {
-                if i > 0 && (whole.len() - i) % 3 == 0 {
-                    out.push(self.group);
-                }
-                out.push(digit);
-            }
-        } else {
-            out.push_str(whole);
-        }
-        if !fraction.is_empty() {
-            out.push(self.decimal);
-            out.push_str(fraction);
-        }
-        out.push_str(exponent);
-        out
+        Some(value)
     }
 }
 
-/// `n` in Rust's own notation (`.` decimal, no grouping), floats rounded to
-/// [`SIGNIFICANT_DIGITS`] and switched to scientific notation outside the
-/// range a row can show in full.
-fn canonical(n: Num) -> String {
-    match n {
-        Num::Int(i) => i.to_string(),
-        Num::Float(f) => {
-            // Printing in scientific notation with a fixed digit count rounds
-            // to that many significant digits; parsing it back gives the float
-            // nearest the rounded value, which Rust then prints shortest.
-            let rounded: f64 = format!("{f:.*e}", SIGNIFICANT_DIGITS - 1)
-                .parse()
-                .unwrap_or(f);
-            let magnitude = rounded.abs();
-            if magnitude == 0.0 {
-                "0".to_owned()
-            } else if !(SCIENTIFIC_BELOW..SCIENTIFIC_ABOVE).contains(&magnitude) {
-                format!("{rounded:e}")
-            } else {
-                format!("{rounded}")
-            }
-        }
+/// `r` as a whole number, if it is one.
+fn whole(r: &BigRational) -> Option<BigInt> {
+    r.is_integer().then(|| r.to_integer())
+}
+
+/// `base ^ exp` when it is rational and small enough to compute.
+fn exact_pow(base: &BigRational, exp: &BigRational) -> Option<BigRational> {
+    let q = exp.denom().to_u32()?;
+    let p = exp.numer().to_i32()?;
+    let base = if q == 1 {
+        base.clone()
+    } else {
+        exact_root(base, q)?
+    };
+    if base.is_zero() {
+        return (p >= 0).then(|| if p == 0 { BigRational::one() } else { base });
     }
+    let bits = base.numer().bits().max(base.denom().bits());
+    if bits.saturating_mul(u64::from(p.unsigned_abs())) > MAX_EXACT_BITS {
+        return None;
+    }
+    Some(Pow::pow(&base, p))
+}
+
+/// The rational `q`-th root of `r`, when there is one.
+fn exact_root(r: &BigRational, q: u32) -> Option<BigRational> {
+    if q == 0 || q > MAX_EXACT_ROOT || (r.is_negative() && q.is_multiple_of(2)) {
+        return None;
+    }
+    let root = |n: &BigInt| -> Option<BigInt> {
+        let candidate = n.nth_root(q);
+        (Pow::pow(&candidate, q) == *n).then_some(candidate)
+    };
+    Some(BigRational::new(root(r.numer())?, root(r.denom())?))
+}
+
+/// A float's exact value, read back through its decimal digits
+/// (`1.4142…e+0`).
+fn float_to_rational(f: &BigFloat) -> Option<BigRational> {
+    let text = with_consts(|cc| f.format(Radix::Dec, ROUNDING, cc).ok())??;
+    let (mantissa, exponent) = text.split_once('e').unwrap_or((&text, "0"));
+    let (negative, mantissa) = mantissa
+        .strip_prefix('-')
+        .map_or((false, mantissa), |m| (true, m));
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let value = scaled(whole, fraction, exponent.parse().ok()?, MAX_VALUE_EXPONENT)?;
+    Some(if negative { -value } else { value })
+}
+
+/// The rational a literal `whole.fraction × 10^exponent` names, from ASCII
+/// digits, or `None` past [`MAX_LITERAL_EXPONENT`].
+pub fn decimal(whole: &str, fraction: &str, exponent: i64) -> Option<BigRational> {
+    scaled(whole, fraction, exponent, MAX_LITERAL_EXPONENT)
+}
+
+/// `whole.fraction × 10^exponent`, or `None` when `|exponent|` passes `max`.
+fn scaled(whole: &str, fraction: &str, exponent: i64, max: i64) -> Option<BigRational> {
+    if exponent.abs() > max {
+        return None;
+    }
+    let digits = format!("{whole}{fraction}");
+    let mantissa: BigInt = if digits.is_empty() {
+        BigInt::zero()
+    } else {
+        digits.parse().ok()?
+    };
+    let scale = exponent - i64::try_from(fraction.len()).ok()?;
+    let power: BigInt = Pow::pow(&BigInt::from(10), scale.unsigned_abs());
+    Some(if scale >= 0 {
+        BigRational::from_integer(mantissa * power)
+    } else {
+        BigRational::new(mantissa, power)
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const EN: Separators = Separators {
-        decimal: '.',
-        group: ',',
-    };
-    const DE: Separators = Separators {
-        decimal: ',',
-        group: '.',
-    };
+    fn exact(n: i64, d: i64) -> Num {
+        Num::Exact(BigRational::new(n.into(), d.into()))
+    }
 
-    #[test]
-    fn integer_overflow_falls_back_to_float() {
-        let big = Num::Int(9_999_999_999);
-        assert_eq!(big.mul(big), Some(Num::Int(99_999_999_980_000_000_001)));
-        let huge = Num::Int(i128::MAX);
-        assert!(matches!(huge.add(Num::Int(1)), Some(Num::Float(_))));
+    fn rational(n: &Num) -> BigRational {
+        n.as_exact().cloned().expect("exact")
+    }
+
+    fn r(n: i64, d: i64) -> BigRational {
+        BigRational::new(n.into(), d.into())
     }
 
     #[test]
-    fn division_is_exact_only_when_it_divides() {
-        assert_eq!(Num::Int(6).div(Num::Int(2)), Some(Num::Int(3)));
-        assert_eq!(Num::Int(7).div(Num::Int(2)), Some(Num::Float(3.5)));
-        assert_eq!(Num::Int(1).div(Num::Int(0)), None);
-        assert_eq!(Num::Float(1.0).div(Num::Float(0.0)), None);
+    fn arithmetic_on_exact_values_stays_exact() {
+        assert_eq!(rational(&exact(1, 10).add(&exact(1, 5)).unwrap()), r(3, 10));
+        assert_eq!(rational(&exact(1, 3).mul(&Num::int(3)).unwrap()), r(1, 1));
+        assert_eq!(rational(&Num::int(1).div(&Num::int(3)).unwrap()), r(1, 3));
+        assert!(Num::int(1).div(&Num::int(0)).is_none());
+        assert_eq!(rational(&Num::int(-7).rem(&Num::int(3)).unwrap()), r(-1, 1));
     }
 
     #[test]
-    fn factorial_is_exact_then_float_then_none() {
-        assert_eq!(Num::Int(5).factorial(), Some(Num::Int(120)));
-        assert_eq!(Num::Int(0).factorial(), Some(Num::Int(1)));
-        assert!(matches!(Num::Int(40).factorial(), Some(Num::Float(_))));
-        assert_eq!(Num::Int(171).factorial(), None);
-        assert_eq!(Num::Int(-1).factorial(), None);
-        assert_eq!(Num::Float(2.5).factorial(), None);
+    fn powers_and_roots_are_exact_when_they_can_be() {
+        assert_eq!(
+            rational(&Num::int(2).pow(&Num::int(100)).unwrap()).to_string(),
+            "1267650600228229401496703205376"
+        );
+        assert_eq!(rational(&Num::int(2).pow(&Num::int(-2)).unwrap()), r(1, 4));
+        assert_eq!(rational(&Num::int(8).pow(&exact(1, 3)).unwrap()), r(2, 1));
+        assert_eq!(rational(&Num::int(-8).root(3).unwrap()), r(-2, 1));
+        assert_eq!(rational(&exact(9, 4).root(2).unwrap()), r(3, 2));
+        assert!(matches!(Num::int(2).root(2), Some(Num::Approx(_))));
+        assert!(Num::int(-4).root(2).is_none());
+        assert!(Num::int(0).pow(&Num::int(-1)).is_none());
+        assert_eq!(rational(&Num::int(0).pow(&Num::int(0)).unwrap()), r(1, 1));
+        assert!(Num::int(-8).pow(&exact(1, 2)).is_none());
     }
 
     #[test]
-    fn floats_drop_binary_noise() {
-        let sum = Num::Float(0.1).add(Num::Float(0.2)).unwrap();
-        assert_eq!(EN.plain(sum), "0.3");
-        assert_eq!(EN.plain(Num::Float(1.0 / 3.0)), "0.333333333333333");
+    fn a_huge_power_falls_back_to_approximate() {
+        let big = Num::int(10).pow(&Num::int(1_000_000)).unwrap();
+        assert!(matches!(big, Num::Approx(_)));
     }
 
     #[test]
-    fn extremes_switch_to_scientific_notation() {
-        assert_eq!(EN.plain(Num::Float(1e21)), "1e21");
-        assert_eq!(EN.plain(Num::Float(1e20)), "100000000000000000000");
-        assert_eq!(EN.plain(Num::Float(1.5e-8)), "1.5e-8");
-        assert_eq!(EN.plain(Num::Float(0.000_001)), "0.000001");
-        assert_eq!(EN.plain(Num::Float(-0.0)), "0");
+    fn factorial_is_exact_and_bounded() {
+        assert_eq!(
+            rational(&Num::int(25).factorial().unwrap()).to_string(),
+            "15511210043330985984000000"
+        );
+        assert!(Num::int(-1).factorial().is_none());
+        assert!(exact(5, 2).factorial().is_none());
+        assert!(Num::int(i64::from(MAX_FACTORIAL) + 1).factorial().is_none());
     }
 
     #[test]
-    fn shown_groups_and_plain_does_not() {
-        let n = Num::Float(-1_234_567.5);
-        assert_eq!(EN.shown(n), "-1,234,567.5");
-        assert_eq!(EN.plain(n), "-1234567.5");
-        assert_eq!(DE.shown(n), "-1.234.567,5");
-        assert_eq!(DE.plain(n), "-1234567,5");
-        assert_eq!(EN.shown(Num::Int(999)), "999");
-        assert_eq!(EN.shown(Num::Int(1000)), "1,000");
-        assert_eq!(DE.shown(Num::Float(2.5e-9)), "2,5e-9");
+    fn a_whole_logarithm_is_exact() {
+        assert_eq!(
+            rational(&Num::int(1000).log(&Num::int(10)).unwrap()),
+            r(3, 1)
+        );
+        assert_eq!(rational(&exact(1, 8).log(&Num::int(2)).unwrap()), r(-3, 1));
+        assert!(matches!(
+            Num::int(1001).log(&Num::int(10)),
+            Some(Num::Approx(_))
+        ));
+        assert!(Num::int(-1).log(&Num::int(10)).is_none());
     }
 
     #[test]
-    fn the_argument_separator_avoids_the_decimal_mark() {
-        assert_eq!(EN.argument(), ',');
-        assert_eq!(DE.argument(), ';');
+    fn an_approximate_value_reads_back_as_its_digits() {
+        let root2 = Num::int(2).root(2).unwrap().to_rational().unwrap();
+        let squared = &root2 * &root2;
+        let error = (squared - r(2, 1)).abs();
+        assert!(error < r(1, 1) / BigRational::from_integer(BigInt::from(10).pow(50u32)));
+    }
+
+    #[test]
+    fn decimals_read_exactly() {
+        assert_eq!(decimal("0", "1", 0), Some(r(1, 10)));
+        assert_eq!(decimal("15", "", -4), Some(r(15, 10000)));
+        assert_eq!(decimal("1", "", 3), Some(r(1000, 1)));
+        assert_eq!(decimal("1", "", MAX_LITERAL_EXPONENT + 1), None);
     }
 }

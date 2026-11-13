@@ -22,14 +22,16 @@ Shipping. Latest release on
 - `emoji` — searchable Unicode emoji picker (output via stdout)
 - `clipboard` — recent clipboard history (cliphist; on Windows, the clipboard
   history from Win+V when it is turned on)
-- `calc` — calculator that evaluates as you type: `+ - × ÷ ^ % !`, `√`, implicit
-  multiplication (`2pi`, `3(4+5)`), degrees (`sin(30°)`), the constants `pi`,
-  `tau` and `e`, functions such as `sqrt`, `ln`, `log`, `sin`, `abs`, `round`,
-  `min` and `max`, hex/binary/octal literals, and thousands separators
-  (`1,000`). Integers stay exact; the row shows the result grouped, and the
-  picked value prints without grouping and is copied to the clipboard
-  (`wl-copy`, `xclip`/`xsel` or `pbcopy` on unix). Write function arguments with
-  `,`, or `;` where `,` is the decimal mark.
+- `calc` — calculator that evaluates as you type, with exact arithmetic
+  (`1/3 = 0.(3)`, `0.1+0.2 = 0.3`, integers of any size) and about 57-digit
+  precision for what cannot be exact (`√2 ≈ 1.4142135623730950488`):
+  `+ - × ÷ ^ % !`, `√`, implicit multiplication (`2pi`, `3(4+5)`), degrees
+  (`sin(30°)`), the constants `pi`, `tau` and `e`, functions such as `sqrt`,
+  `ln`, `log`, `sin`, `abs`, `round`, `min` and `max`, hex/binary/octal
+  literals, and thousands separators (`1,000`). Integers stay exact; the row
+  shows the result grouped, and the picked value prints without grouping and is
+  copied to the clipboard (`wl-copy`, `xclip`/`xsel` or `pbcopy` on unix). Write
+  function arguments with `,`, or `;` where `,` is the decimal mark.
 
 ## Install
 

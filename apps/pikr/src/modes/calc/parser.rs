@@ -13,10 +13,13 @@
 //! multiply (two bare numbers do not: `1 2` is no result). `%` after a value is a percentage (`15%` is 0.15) unless another
 //! value follows it, which makes it the remainder (`10 % 3` is 1).
 
-use std::f64::consts::{E, PI, TAU};
+use std::cmp::Ordering;
+
+use astro_float::BigFloat;
+use num_rational::BigRational;
 
 use super::lexer::Token;
-use super::number::Num;
+use super::number::{FloatFn, Num};
 
 /// How deep parentheses, function calls and prefix operators may nest. The
 /// parser recurses a few frames per level, and calc evaluates on the UI
@@ -69,9 +72,9 @@ impl Parser<'_> {
         let mut value = self.product()?;
         loop {
             if self.eat(&Token::Plus) {
-                value = value.add(self.product()?)?;
+                value = value.add(&self.product()?)?;
             } else if self.eat(&Token::Minus) {
-                value = value.sub(self.product()?)?;
+                value = value.sub(&self.product()?)?;
             } else {
                 return Some(value);
             }
@@ -82,14 +85,14 @@ impl Parser<'_> {
         let mut value = self.unary()?;
         loop {
             if self.eat(&Token::Times) {
-                value = value.mul(self.unary()?)?;
+                value = value.mul(&self.unary()?)?;
             } else if self.eat(&Token::Divide) {
-                value = value.div(self.unary()?)?;
+                value = value.div(&self.unary()?)?;
             } else if self.eat(&Token::Percent) {
                 // `postfix` left this `%` because a value follows it.
-                value = value.rem(self.unary()?)?;
+                value = value.rem(&self.unary()?)?;
             } else if self.peek().is_some_and(multiplies_by_juxtaposition) {
-                value = value.mul(self.unary()?)?;
+                value = value.mul(&self.unary()?)?;
             } else {
                 return Some(value);
             }
@@ -98,11 +101,11 @@ impl Parser<'_> {
 
     fn unary(&mut self) -> Option<Num> {
         if self.eat(&Token::Minus) {
-            self.nested(|p| p.unary()?.neg())
+            self.nested(|p| Some(p.unary()?.neg()))
         } else if self.eat(&Token::Plus) {
             self.nested(Self::unary)
         } else if self.eat(&Token::Root) {
-            self.nested(|p| Num::float(p.unary()?.to_f64().sqrt()))
+            self.nested(|p| p.unary()?.root(2))
         } else {
             self.power()
         }
@@ -112,7 +115,7 @@ impl Parser<'_> {
         let base = self.postfix()?;
         if self.eat(&Token::Power) {
             let exponent = self.nested(Self::unary)?;
-            base.pow(exponent)
+            base.pow(&exponent)
         } else {
             Some(base)
         }
@@ -124,12 +127,12 @@ impl Parser<'_> {
             if self.eat(&Token::Bang) {
                 value = value.factorial()?;
             } else if self.eat(&Token::Degree) {
-                value = Num::float(value.to_f64().to_radians())?;
+                value = value.mul(&Num::pi()?)?.div(&Num::int(180))?;
             } else if self.peek() == Some(&Token::Percent)
                 && !self.tokens.get(self.at + 1).is_some_and(starts_value)
             {
                 self.at += 1;
-                value = value.div(Num::Int(100))?;
+                value = value.div(&Num::int(100))?;
             } else {
                 return Some(value);
             }
@@ -140,7 +143,7 @@ impl Parser<'_> {
         match self.peek()?.clone() {
             Token::Num(n) => {
                 self.at += 1;
-                Some(n)
+                Some(Num::Exact(n))
             }
             Token::LParen => {
                 self.at += 1;
@@ -185,9 +188,9 @@ fn multiplies_by_juxtaposition(token: &Token) -> bool {
 
 fn constant(name: &str) -> Option<Num> {
     match name {
-        "pi" | "π" => Num::float(PI),
-        "tau" | "τ" => Num::float(TAU),
-        "e" => Num::float(E),
+        "pi" | "π" => Num::pi(),
+        "tau" | "τ" => Num::pi()?.mul(&Num::int(2)),
+        "e" => Num::e(),
         _ => None,
     }
 }
@@ -195,59 +198,51 @@ fn constant(name: &str) -> Option<Num> {
 /// A function's value. Trigonometry is in radians; write `sin(30°)` for
 /// degrees.
 fn call(name: &str, args: &[Num]) -> Option<Num> {
-    let float = |f: fn(f64) -> f64| match args {
-        [x] => Num::float(f(x.to_f64())),
+    let one = || match args {
+        [x] => Some(x),
         _ => None,
     };
+    let float = |f: FloatFn| one()?.apply(f);
     match name {
-        "sqrt" => float(f64::sqrt),
-        "cbrt" => float(f64::cbrt),
-        "exp" => float(f64::exp),
-        "ln" => float(f64::ln),
-        "log2" => float(f64::log2),
-        "log10" => float(f64::log10),
+        "sqrt" => one()?.root(2),
+        "cbrt" => one()?.root(3),
+        "exp" => float(BigFloat::exp),
+        "ln" => float(BigFloat::ln),
+        "log2" => one()?.log(&Num::int(2)),
+        "log10" => one()?.log(&Num::int(10)),
         "log" => match args {
-            [x] => Num::float(x.to_f64().log10()),
-            [x, base] => Num::float(x.to_f64().log(base.to_f64())),
+            [x] => x.log(&Num::int(10)),
+            [x, base] => x.log(base),
             _ => None,
         },
-        "sin" => float(f64::sin),
-        "cos" => float(f64::cos),
-        "tan" => float(f64::tan),
-        "asin" => float(f64::asin),
-        "acos" => float(f64::acos),
-        "atan" => float(f64::atan),
-        "sinh" => float(f64::sinh),
-        "cosh" => float(f64::cosh),
-        "tanh" => float(f64::tanh),
-        "abs" => match args {
-            [Num::Int(i)] => i.checked_abs().map(Num::Int),
-            [x] => Num::float(x.to_f64().abs()),
-            _ => None,
-        },
-        "floor" | "ceil" | "round" | "trunc" => match args {
-            [Num::Int(i)] => Some(Num::Int(*i)),
-            [x] => {
-                let x = x.to_f64();
-                Num::whole(match name {
-                    "floor" => x.floor(),
-                    "ceil" => x.ceil(),
-                    "round" => x.round(),
-                    _ => x.trunc(),
-                })
-            }
-            _ => None,
-        },
+        "sin" => float(BigFloat::sin),
+        "cos" => float(BigFloat::cos),
+        "tan" => float(BigFloat::tan),
+        "asin" => float(BigFloat::asin),
+        "acos" => float(BigFloat::acos),
+        "atan" => float(BigFloat::atan),
+        "sinh" => float(BigFloat::sinh),
+        "cosh" => float(BigFloat::cosh),
+        "tanh" => float(BigFloat::tanh),
+        "abs" => Some(one()?.abs()),
+        "floor" => one()?.whole_with(BigRational::floor),
+        "ceil" => one()?.whole_with(BigRational::ceil),
+        "round" => one()?.whole_with(BigRational::round),
+        "trunc" => one()?.whole_with(BigRational::trunc),
         "min" | "max" => {
             let (first, rest) = args.split_first()?;
-            Some(rest.iter().fold(*first, |best, &n| {
-                let keep_new = if name == "min" {
-                    n.to_f64() < best.to_f64()
+            let wanted = if name == "min" {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            };
+            rest.iter().try_fold(first.clone(), |best, n| {
+                Some(if n.cmp(&best)? == wanted {
+                    n.clone()
                 } else {
-                    n.to_f64() > best.to_f64()
-                };
-                if keep_new { n } else { best }
-            }))
+                    best
+                })
+            })
         }
         _ => None,
     }

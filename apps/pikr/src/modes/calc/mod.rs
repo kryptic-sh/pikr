@@ -5,10 +5,13 @@
 //! and calls [`eval`] against the live query, producing a single synthetic
 //! `Entry` per evaluation.
 //!
-//! The evaluator is pikr's own ([`lexer`], [`parser`], [`number`]): numbers
-//! are read and written with the locale's separators, integers stay exact
-//! while they fit, and only a finite result is ever shown.
+//! The evaluator is pikr's own ([`lexer`], [`parser`], [`number`],
+//! [`format`]): numbers are read and written with the locale's separators,
+//! arithmetic is exact (rationals of any size), and what cannot be exact (π,
+//! √2, logarithms, trigonometry) is computed to about 57 digits and shown
+//! rounded, marked as approximate.
 
+mod format;
 mod lexer;
 mod locale;
 mod number;
@@ -19,8 +22,8 @@ use std::collections::HashMap;
 use super::{Entry, Mode};
 use anyhow::Result;
 
+pub use format::Separators;
 pub use locale::{separators, validate as validate_separators};
-pub use number::Separators;
 
 /// Hard cap on expression length, in characters. The parser's own nesting
 /// limit is what keeps it off the end of the stack; this only bounds the
@@ -40,11 +43,14 @@ impl Mode for Calc {
 /// A result, written two ways for the locale.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Answer {
-    /// For the row: grouped by threes (`1,234.5`).
+    /// For the row: grouped by threes (`1,234.5`), a repeating block in
+    /// parentheses (`0.(3)`).
     pub shown: String,
-    /// For stdout and the clipboard: no grouping (`1234.5`), so it pastes
-    /// as a number.
+    /// For stdout and the clipboard: no grouping (`1234.5`), rounded to 20
+    /// significant digits where it does not end, so it pastes as a number.
     pub output: String,
+    /// Whether `shown` is rounded rather than exact (`√2`, `pi`).
+    pub approximate: bool,
 }
 
 /// Evaluate `expr` with the locale's `separators`, or `None` when it is
@@ -56,9 +62,11 @@ pub fn eval(expr: &str, separators: Separators) -> Option<Answer> {
     }
     let tokens = lexer::tokens(trimmed, separators)?;
     let value = parser::evaluate(&tokens)?;
+    let rendered = format::render(&value, separators)?;
     Some(Answer {
-        shown: separators.shown(value),
-        output: separators.plain(value),
+        shown: rendered.shown,
+        output: rendered.output,
+        approximate: rendered.approximate,
     })
 }
 
@@ -105,7 +113,10 @@ mod tests {
         assert_eq!(out("2 + 2").as_deref(), Some("4"));
         assert_eq!(out("10 * 5 - 3").as_deref(), Some("47"));
         assert_eq!(out("7/2").as_deref(), Some("3.5"));
-        assert_eq!(out("1/3").as_deref(), Some("0.333333333333333"));
+        assert_eq!(out("1/3").as_deref(), Some("0.33333333333333333333"));
+        assert_eq!(out("5/2").as_deref(), Some("2.5"));
+        assert_eq!(out("6/2").as_deref(), Some("3"));
+        assert_eq!(out("1/3*3").as_deref(), Some("1"));
         assert_eq!(out("0.1+0.2").as_deref(), Some("0.3"));
         assert_eq!(out("-3^2").as_deref(), Some("-9"));
         assert_eq!(out("2^-1").as_deref(), Some("0.5"));
@@ -131,10 +142,12 @@ mod tests {
 
     #[test]
     fn constants_and_functions_by_their_plain_names() {
-        assert_eq!(out("pi").as_deref(), Some("3.14159265358979"));
-        assert_eq!(out("2π").as_deref(), Some("6.28318530717959"));
-        assert_eq!(out("e").as_deref(), Some("2.71828182845905"));
-        assert_eq!(out("sqrt(2)").as_deref(), Some("1.4142135623731"));
+        assert_eq!(out("pi").as_deref(), Some("3.1415926535897932385"));
+        assert_eq!(out("2π").as_deref(), Some("6.2831853071795864769"));
+        assert_eq!(out("e").as_deref(), Some("2.7182818284590452354"));
+        assert_eq!(out("sqrt(2)").as_deref(), Some("1.4142135623730950488"));
+        assert_eq!(out("sqrt(16/9)").as_deref(), Some("1.3333333333333333333"));
+        assert_eq!(out("8^(1/3)").as_deref(), Some("2"));
         assert_eq!(out("sin(pi/2)").as_deref(), Some("1"));
         assert_eq!(out("sin(30°)").as_deref(), Some("0.5"));
         assert_eq!(out("ln(e)").as_deref(), Some("1"));
@@ -187,6 +200,30 @@ mod tests {
         let answer = eval("1234567,5 * 1", DE).unwrap();
         assert_eq!(answer.shown, "1.234.567,5");
         assert_eq!(answer.output, "1234567,5");
+    }
+
+    #[test]
+    fn the_row_marks_repeats_and_approximations() {
+        let third = eval("1/3", EN).unwrap();
+        assert_eq!((third.shown.as_str(), third.approximate), ("0.(3)", false));
+        let root2 = eval("√2", EN).unwrap();
+        assert_eq!(
+            (root2.shown.as_str(), root2.approximate),
+            ("1.4142135623730950488", true)
+        );
+        let exact_trig = eval("sin(30°)", EN).unwrap();
+        assert_eq!(
+            (exact_trig.shown.as_str(), exact_trig.approximate),
+            ("0.5", false)
+        );
+    }
+
+    #[test]
+    fn results_too_large_for_exact_maths_are_approximate() {
+        let big = eval("2^99999", EN).unwrap();
+        assert_eq!(big.output, "4.9950104650719225397e30102");
+        assert!(big.approximate);
+        assert_eq!(out("2^1000000"), None);
     }
 
     #[test]

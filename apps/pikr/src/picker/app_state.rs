@@ -234,7 +234,11 @@ impl AppState {
 
         let mk_entry = |expr: &str, answer: &crate::modes::calc::Answer| {
             Arc::new(Entry {
-                label: format!("{expr} = {}", answer.shown),
+                label: format!(
+                    "{expr} {} {}",
+                    if answer.approximate { '≈' } else { '=' },
+                    answer.shown
+                ),
                 description: None,
                 icon: None,
                 payload: crate::modes::Payload::Answer(answer.output.clone()),
