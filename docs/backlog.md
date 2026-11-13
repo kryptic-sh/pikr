@@ -924,6 +924,14 @@
   `0.5 btc to usd ≈ 34,422.02 USD`). Not checked on Linux or macOS, nor on a
   system without `curl`.
 
+## Dependencies
+
+- **Major versions waiting (checked 2026-11-13 at the 0.10.0 cut).** crcbl
+  0.20.0 (every crcbl crate; pikr is on 0.19.1) is a breaking release, its own
+  change: read its changelog and port. num-bigint 0.5 cannot be taken alone:
+  num-rational 0.4 is built on num-bigint 0.4 and its `BigRational` would not
+  interoperate, so it waits for a num-rational release on 0.5.
+
 ## Release pipeline
 
 - Package runtime dependencies (`pkg/nfpm/nfpm.yaml.in`, `pkg/aur/`,
