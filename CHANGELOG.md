@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-13
+
 ### Added
 
 - calc mode converts money and crypto: `100 USD to EUR`, `$100 in £`,
@@ -1621,7 +1623,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.9.8...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.10.0...main
+[0.10.0]: https://github.com/kryptic-sh/pikr/compare/v0.9.8...v0.10.0
 [0.9.8]: https://github.com/kryptic-sh/pikr/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/kryptic-sh/pikr/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/kryptic-sh/pikr/compare/v0.9.5...v0.9.6
