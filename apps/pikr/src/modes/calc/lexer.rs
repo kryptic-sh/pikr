@@ -29,6 +29,8 @@ pub enum Token {
     RParen,
     /// Between a function's arguments.
     Comma,
+    /// `->` or `→`: a conversion (`5 km -> mi`).
+    Arrow,
 }
 
 /// The tokens of `text`, or `None` at a character calc does not read.
@@ -60,6 +62,11 @@ pub fn tokens(text: &str, seps: Separators) -> Option<Vec<Token>> {
         }
         let token = match c {
             '+' => Token::Plus,
+            '-' if chars.get(i + 1) == Some(&'>') => {
+                i += 1;
+                Token::Arrow
+            }
+            '→' => Token::Arrow,
             '-' | '−' => Token::Minus,
             '*' if chars.get(i + 1) == Some(&'*') => {
                 i += 1;

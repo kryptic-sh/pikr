@@ -1,17 +1,22 @@
 //! Evaluates calc's tokens by precedence, lowest first:
 //!
 //! ```text
+//! input    = sum (("to" | "in" | "as" | "->") sum)?          a conversion
 //! sum      = product (("+" | "-") product)*
-//! product  = unary (("*" | "/" | "%") unary | unary)*   juxtaposition multiplies
+//! product  = term (("*" | "/" | "%") term)*
+//! term     = unary unary*                                juxtaposition multiplies
 //! unary    = ("+" | "-" | "√") unary | power
 //! power    = postfix ("^" unary)?                        right-associative
-//! postfix  = primary ("!" | "%" | "°")*
-//! primary  = number | constant | name "(" sum ("," sum)* ")" | "(" sum ")"
+//! postfix  = primary ("!" | "%" | "°" | "°C" | "°F")*
+//! primary  = number | constant | unit | name "(" sum ("," sum)* ")" | "(" sum ")"
 //! ```
 //!
-//! So `-3^2` is -9, `2^-1` is 0.5, `2^3^2` is 512, and `2pi` and `3(4+5)`
-//! multiply (two bare numbers do not: `1 2` is no result). `%` after a value is a percentage (`15%` is 0.15) unless another
-//! value follows it, which makes it the remainder (`10 % 3` is 1).
+//! So `-3^2` is -9, `2^-1` is 0.5, `2^3^2` is 512, and `2pi`, `3(4+5)` and
+//! `5 km` multiply (two bare numbers do not: `1 2` is no result).
+//! Juxtaposition binds tighter than `*` and `/`, as in unit notation:
+//! `120 km / 2 h` is 60 km/h and `1/2pi` is 1/(2π). `%` after
+//! a value is a percentage (`15%` is 0.15) unless another value follows it,
+//! which makes it the remainder (`10 % 3` is 1).
 
 use std::cmp::Ordering;
 
@@ -20,15 +25,58 @@ use num_rational::BigRational;
 
 use super::lexer::Token;
 use super::number::{FloatFn, Num};
+use super::units;
+use super::value::Value;
 
 /// How deep parentheses, function calls and prefix operators may nest. The
-/// parser recurses a few frames per level, and calc evaluates on the UI
-/// thread (1 MB of stack on Windows): this keeps any input far from it.
-const MAX_DEPTH: usize = 256;
+/// parser recurses several frames per level (about 20 KB of stack each in a
+/// debug build), so evaluation runs on a stack of its own
+/// ([`super::EVAL_STACK`]); the test
+/// `deep_nesting_is_refused_not_a_stack_overflow` evaluates an input this
+/// deep. No real expression nests this far.
+pub const MAX_DEPTH: usize = 256;
+
+/// The words that ask for a conversion (`5 km to mi`).
+const CONVERSION_WORDS: [&str; 3] = ["to", "in", "as"];
 
 /// The value of `tokens`, or `None` when they are not one complete
 /// expression or it has no finite value.
-pub fn evaluate(tokens: &[Token]) -> Option<Num> {
+///
+/// A conversion splits at the last `to`/`in`/`as`/`->` outside parentheses
+/// where both sides evaluate and the right side is one unit of the left
+/// side's kind; failing that, the whole input is one expression (so `5 in`
+/// is five inches).
+pub fn evaluate(tokens: &[Token]) -> Option<Value> {
+    let mut depth = 0usize;
+    let mut splits = Vec::new();
+    for (i, token) in tokens.iter().enumerate() {
+        match token {
+            Token::LParen => depth += 1,
+            Token::RParen => depth = depth.saturating_sub(1),
+            Token::Arrow if depth == 0 => splits.push(i),
+            Token::Ident(word) if depth == 0 && CONVERSION_WORDS.contains(&word.as_str()) => {
+                splits.push(i);
+            }
+            _ => {}
+        }
+    }
+    for &i in splits.iter().rev() {
+        let (Some(from), Some(to)) = (expression(&tokens[..i]), expression(&tokens[i + 1..]))
+        else {
+            continue;
+        };
+        if let Some(converted) = from.convert(&to) {
+            return Some(converted);
+        }
+    }
+    expression(tokens)
+}
+
+/// The value of `tokens` as one expression.
+fn expression(tokens: &[Token]) -> Option<Value> {
+    if tokens.is_empty() {
+        return None;
+    }
     let mut parser = Parser {
         tokens,
         at: 0,
@@ -58,7 +106,7 @@ impl Parser<'_> {
     }
 
     /// Runs `f` one nesting level deeper, refusing past [`MAX_DEPTH`].
-    fn nested(&mut self, f: impl FnOnce(&mut Self) -> Option<Num>) -> Option<Num> {
+    fn nested(&mut self, f: impl FnOnce(&mut Self) -> Option<Value>) -> Option<Value> {
         if self.depth == MAX_DEPTH {
             return None;
         }
@@ -68,7 +116,7 @@ impl Parser<'_> {
         value
     }
 
-    fn sum(&mut self) -> Option<Num> {
+    fn sum(&mut self) -> Option<Value> {
         let mut value = self.product()?;
         loop {
             if self.eat(&Token::Plus) {
@@ -81,25 +129,32 @@ impl Parser<'_> {
         }
     }
 
-    fn product(&mut self) -> Option<Num> {
-        let mut value = self.unary()?;
+    fn product(&mut self) -> Option<Value> {
+        let mut value = self.term()?;
         loop {
             if self.eat(&Token::Times) {
-                value = value.mul(&self.unary()?)?;
+                value = value.mul(&self.term()?)?;
             } else if self.eat(&Token::Divide) {
-                value = value.div(&self.unary()?)?;
+                value = value.div(&self.term()?)?;
             } else if self.eat(&Token::Percent) {
                 // `postfix` left this `%` because a value follows it.
-                value = value.rem(&self.unary()?)?;
-            } else if self.peek().is_some_and(multiplies_by_juxtaposition) {
-                value = value.mul(&self.unary()?)?;
+                value = value.rem(&self.term()?)?;
             } else {
                 return Some(value);
             }
         }
     }
 
-    fn unary(&mut self) -> Option<Num> {
+    /// Values written side by side, multiplied (`2 h`, `3(4+5)`).
+    fn term(&mut self) -> Option<Value> {
+        let mut value = self.unary()?;
+        while self.peek().is_some_and(multiplies_by_juxtaposition) {
+            value = value.mul(&self.unary()?)?;
+        }
+        Some(value)
+    }
+
+    fn unary(&mut self) -> Option<Value> {
         if self.eat(&Token::Minus) {
             self.nested(|p| Some(p.unary()?.neg()))
         } else if self.eat(&Token::Plus) {
@@ -111,7 +166,7 @@ impl Parser<'_> {
         }
     }
 
-    fn power(&mut self) -> Option<Num> {
+    fn power(&mut self) -> Option<Value> {
         let base = self.postfix()?;
         if self.eat(&Token::Power) {
             let exponent = self.nested(Self::unary)?;
@@ -121,29 +176,48 @@ impl Parser<'_> {
         }
     }
 
-    fn postfix(&mut self) -> Option<Num> {
+    fn postfix(&mut self) -> Option<Value> {
         let mut value = self.primary()?;
         loop {
             if self.eat(&Token::Bang) {
                 value = value.factorial()?;
+            } else if let Some(scale) = self.temperature_scale() {
+                value = value.mul(&scale)?;
             } else if self.eat(&Token::Degree) {
-                value = value.mul(&Num::pi()?)?.div(&Num::int(180))?;
+                let degree = Num::pi()?.div(&Num::int(180))?;
+                value = value.mul(&Value::plain(degree))?;
             } else if self.peek() == Some(&Token::Percent)
                 && !self.tokens.get(self.at + 1).is_some_and(starts_value)
             {
                 self.at += 1;
-                value = value.div(&Num::int(100))?;
+                value = value.div(&Value::plain(Num::int(100)))?;
             } else {
                 return Some(value);
             }
         }
     }
 
-    fn primary(&mut self) -> Option<Num> {
+    /// `°C` or `°F` at the cursor, as one degree of that scale.
+    fn temperature_scale(&mut self) -> Option<Value> {
+        let (Some(Token::Degree), Some(Token::Ident(letter))) =
+            (self.tokens.get(self.at), self.tokens.get(self.at + 1))
+        else {
+            return None;
+        };
+        let name = format!("°{letter}");
+        let unit = units::lookup(&name)?;
+        self.at += 2;
+        Some(Value::unit(&name, unit))
+    }
+
+    fn primary(&mut self) -> Option<Value> {
+        if let Some(scale) = self.temperature_scale() {
+            return Some(scale);
+        }
         match self.peek()?.clone() {
             Token::Num(n) => {
                 self.at += 1;
-                Some(Num::Exact(n))
+                Some(Value::plain(Num::Exact(n)))
             }
             Token::LParen => {
                 self.at += 1;
@@ -157,6 +231,8 @@ impl Parser<'_> {
                     call(&name.to_lowercase(), &args)
                 } else {
                     constant(&name.to_lowercase())
+                        .map(Value::plain)
+                        .or_else(|| units::lookup(&name).map(|unit| Value::unit(&name, unit)))
                 }
             }
             _ => None,
@@ -164,7 +240,7 @@ impl Parser<'_> {
     }
 
     /// A call's arguments, after its `(`, through its `)`.
-    fn arguments(&mut self) -> Option<Vec<Num>> {
+    fn arguments(&mut self) -> Option<Vec<Value>> {
         let mut args = vec![self.nested(Self::sum)?];
         while self.eat(&Token::Comma) {
             args.push(self.nested(Self::sum)?);
@@ -180,8 +256,8 @@ fn starts_value(token: &Token) -> bool {
 }
 
 /// Whether a value written straight after another multiplies it (`2pi`,
-/// `3(4+5)`, `2√9`). A bare number does not: `1 000`, typed with a space for
-/// a thousands separator, must be no result, not 0.
+/// `3(4+5)`, `2√9`, `5 km`). A bare number does not: `1 000`, typed with a
+/// space for a thousands separator, must be no result, not 0.
 fn multiplies_by_juxtaposition(token: &Token) -> bool {
     matches!(token, Token::Ident(_) | Token::LParen | Token::Root)
 }
@@ -197,21 +273,22 @@ fn constant(name: &str) -> Option<Num> {
 
 /// A function's value. Trigonometry is in radians; write `sin(30°)` for
 /// degrees.
-fn call(name: &str, args: &[Num]) -> Option<Num> {
+fn call(name: &str, args: &[Value]) -> Option<Value> {
     let one = || match args {
         [x] => Some(x),
         _ => None,
     };
     let float = |f: FloatFn| one()?.apply(f);
+    let ten = || Value::plain(Num::int(10));
     match name {
         "sqrt" => one()?.root(2),
         "cbrt" => one()?.root(3),
         "exp" => float(BigFloat::exp),
         "ln" => float(BigFloat::ln),
-        "log2" => one()?.log(&Num::int(2)),
-        "log10" => one()?.log(&Num::int(10)),
+        "log2" => one()?.log(&Value::plain(Num::int(2))),
+        "log10" => one()?.log(&ten()),
         "log" => match args {
-            [x] => x.log(&Num::int(10)),
+            [x] => x.log(&ten()),
             [x, base] => x.log(base),
             _ => None,
         },

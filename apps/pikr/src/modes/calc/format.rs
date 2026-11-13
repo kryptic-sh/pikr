@@ -26,9 +26,10 @@ const SHORT_DIGITS: usize = 15;
 /// cancellation (`sin(pi)`) at calc's precision, not a value.
 const NOISE_EXPONENT: u32 = 45;
 
-/// The most fractional digits searched for a repeating block (1/97 repeats
-/// every 96 digits and is shown rounded instead).
-const MAX_EXPANSION: usize = 60;
+/// The most fractional digits a repeating expansion is shown with, block
+/// included (`1/17` repeats every 16 and fits; `5000/1609.344`, km in miles,
+/// repeats every 42 and is shown rounded instead).
+const MAX_EXPANSION: usize = 20;
 
 /// Whole numbers with more digits than this are shown in scientific
 /// notation in the row; they still print in full.
@@ -317,6 +318,7 @@ mod tests {
             ("-1,333.(3)".into(), "-1333.3333333333333333".into())
         );
         // 96 repeating digits: rounded instead, and marked approximate.
+        assert_eq!(show(1, 17).0, "0.(0588235294117647)");
         let out = render(&Num::Exact(r(1, 97)), EN).unwrap();
         assert!(out.approximate);
         assert_eq!(out.output, "0.010309278350515463918");

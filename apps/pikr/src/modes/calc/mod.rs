@@ -9,13 +9,16 @@
 //! [`format`]): numbers are read and written with the locale's separators,
 //! arithmetic is exact (rationals of any size), and what cannot be exact (π,
 //! √2, logarithms, trigonometry) is computed to about 57 digits and shown
-//! rounded, marked as approximate.
+//! rounded, marked as approximate. Values carry units ([`units`],
+//! [`value`]), and `X to Y` converts between them.
 
 mod format;
 mod lexer;
 mod locale;
 mod number;
 mod parser;
+mod units;
+mod value;
 
 use std::collections::HashMap;
 
@@ -53,19 +56,49 @@ pub struct Answer {
     pub approximate: bool,
 }
 
+/// The stack calc evaluates on. The parser recurses per nesting level
+/// ([`parser::MAX_DEPTH`] levels at most), and the UI thread's own stack is
+/// 1 MB on Windows, so evaluation gets a thread of its own; the memory is
+/// only reserved, and touched as deep as an expression goes.
+const EVAL_STACK: usize = 16 * 1024 * 1024;
+
+/// Runs `f` on a thread with [`EVAL_STACK`] of stack, or `None` when no
+/// thread can be started.
+fn on_eval_stack<T: Send>(f: impl FnOnce() -> Option<T> + Send) -> Option<T> {
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("pikr-calc".into())
+            .stack_size(EVAL_STACK)
+            .spawn_scoped(scope, f)
+            .ok()?
+            .join()
+            .ok()?
+    })
+}
+
 /// Evaluate `expr` with the locale's `separators`, or `None` when it is
 /// empty, does not parse or has no finite value.
 pub fn eval(expr: &str, separators: Separators) -> Option<Answer> {
+    on_eval_stack(|| eval_here(expr, separators))
+}
+
+/// [`eval`] on the current thread's stack.
+fn eval_here(expr: &str, separators: Separators) -> Option<Answer> {
     let trimmed = expr.trim();
     if trimmed.is_empty() || trimmed.chars().count() > MAX_EXPR_LEN {
         return None;
     }
     let tokens = lexer::tokens(trimmed, separators)?;
     let value = parser::evaluate(&tokens)?;
-    let rendered = format::render(&value, separators)?;
+    let (number, unit) = value.shown()?;
+    let rendered = format::render(&number, separators)?;
+    let with_unit = |text: String| match &unit {
+        Some(unit) => format!("{text} {unit}"),
+        None => text,
+    };
     Some(Answer {
-        shown: rendered.shown,
-        output: rendered.output,
+        shown: with_unit(rendered.shown),
+        output: with_unit(rendered.output),
         approximate: rendered.approximate,
     })
 }
@@ -75,10 +108,15 @@ pub fn eval(expr: &str, separators: Separators) -> Option<Answer> {
 /// pushed only at Accept, after which the process exits), so rerank_calc
 /// can read these instead of re-evaluating every expression per keystroke.
 pub fn precompute(history: &[String], separators: Separators) -> HashMap<String, Answer> {
-    history
-        .iter()
-        .filter_map(|expr| eval(expr, separators).map(|answer| (expr.clone(), answer)))
-        .collect()
+    on_eval_stack(|| {
+        Some(
+            history
+                .iter()
+                .filter_map(|expr| eval_here(expr, separators).map(|answer| (expr.clone(), answer)))
+                .collect(),
+        )
+    })
+    .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -132,6 +170,7 @@ mod tests {
         assert_eq!(out("5 − 3").as_deref(), Some("2"));
         assert_eq!(out("2(3+4)").as_deref(), Some("14"));
         assert_eq!(out("(1+1)(2+2)").as_deref(), Some("8"));
+        assert_eq!(out("1/2pi").as_deref(), out("1/(2pi)").as_deref());
         assert_eq!(out("5!").as_deref(), Some("120"));
         assert_eq!(out("15%").as_deref(), Some("0.15"));
         assert_eq!(out("50% * 80").as_deref(), Some("40"));
@@ -227,16 +266,75 @@ mod tests {
     }
 
     #[test]
+    fn conversions_between_units_are_exact() {
+        assert_eq!(out("6 ft to cm").as_deref(), Some("182.88 cm"));
+        assert_eq!(out("5 lb in kg").as_deref(), Some("2.26796185 kg"));
+        assert_eq!(out("1 gal -> L").as_deref(), Some("3.785411784 L"));
+        assert_eq!(out("100 mph to kph").as_deref(), Some("160.9344 kph"));
+        assert_eq!(out("1 GiB as MB").as_deref(), Some("1073.741824 MB"));
+        assert_eq!(out("1 kWh to J").as_deref(), Some("3600000 J"));
+        assert_eq!(
+            out("5 km to mi").as_deref(),
+            Some("3.1068559611866698481 mi")
+        );
+        let miles = eval("5 km to mi", EN).unwrap();
+        assert_eq!(
+            (miles.shown.as_str(), miles.approximate),
+            ("3.1068559611866698481 mi", true)
+        );
+        assert_eq!(
+            out("60 km/h to mph").as_deref(),
+            Some("37.282271534240038177 mph")
+        );
+        assert_eq!(
+            out("1 psi to kPa").as_deref(),
+            Some("6.8947572931683613367 kPa")
+        );
+    }
+
+    #[test]
+    fn temperatures_convert_as_readings() {
+        assert_eq!(out("20 °C to °F").as_deref(), Some("68 °F"));
+        assert_eq!(out("98.6°F to °C").as_deref(), Some("37 °C"));
+        assert_eq!(out("0 K in °C").as_deref(), Some("-273.15 °C"));
+        assert_eq!(out("20 degC to kelvin").as_deref(), Some("293.15 kelvin"));
+    }
+
+    #[test]
+    fn quantities_compute_and_keep_their_unit() {
+        assert_eq!(out("5 km + 300 m").as_deref(), Some("5.3 km"));
+        assert_eq!(out("2 * 3 ft").as_deref(), Some("6 ft"));
+        assert_eq!(out("120 km / 2 h").as_deref(), Some("60 km/h"));
+        assert_eq!(out("3 m * 4 m").as_deref(), Some("12 m·m"));
+        assert_eq!(out("(3 m)^2").as_deref(), Some("9 m^2"));
+        assert_eq!(out("sqrt(16 m^2)").as_deref(), Some("4 m"));
+        assert_eq!(out("5 km / 1 m").as_deref(), Some("5000"));
+        assert_eq!(out("floor(5.3 km)").as_deref(), Some("5 km"));
+        assert_eq!(out("5 in").as_deref(), Some("5 in"));
+        assert_eq!(out("5 in to cm").as_deref(), Some("12.7 cm"));
+    }
+
+    #[test]
+    fn mismatched_units_are_no_result() {
+        assert_eq!(out("5 km + 3 kg"), None);
+        assert_eq!(out("5 km to kg"), None);
+        assert_eq!(out("5 km to 2 mi"), None);
+        assert_eq!(out("sin(3 m)"), None);
+        assert_eq!(out("5 to km"), None);
+        assert_eq!(out("2^(3 m)"), None);
+    }
+
+    #[test]
     fn deep_nesting_is_refused_not_a_stack_overflow() {
-        // Over the parser's nesting limit, well under the length cap: on an
-        // unbounded recursive parser this shape overflows the 1 MB Windows
-        // main-thread stack.
-        let deep = format!("{}1{}", "(".repeat(2000), ")".repeat(2000));
-        assert_eq!(out(&deep), None);
+        // The deepest input the limit lets through must fit calc's stack in a
+        // debug build, where frames are largest; one level deeper is refused.
+        let depth = parser::MAX_DEPTH;
+        let deepest = format!("{}1 km{}", "(".repeat(depth - 1), ")".repeat(depth - 1));
+        assert_eq!(out(&deepest).as_deref(), Some("1 km"));
+        let refused = format!("{}1{}", "(".repeat(depth + 1), ")".repeat(depth + 1));
+        assert_eq!(out(&refused), None);
         let negations = format!("{}1", "-".repeat(2000));
         assert_eq!(out(&negations), None);
-        let shallow = format!("{}1{}", "(".repeat(100), ")".repeat(100));
-        assert_eq!(out(&shallow).as_deref(), Some("1"));
     }
 
     #[test]

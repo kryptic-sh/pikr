@@ -10,6 +10,18 @@ and this project adheres to
 
 ### Added
 
+- calc mode computes with units and converts between them: `5 km to mi`,
+  `60 km/h in mph`, `20 °C to °F` (temperatures convert as readings),
+  `1 GiB as MB`, `6 ft -> cm`. Lengths, areas, volumes (US customary measures),
+  masses, times, speeds, forces, energies, powers, pressures, frequencies, data
+  sizes and temperatures are known, each with an exact factor from its
+  definition, so conversions are exact. Quantities compute (`5 km + 300 m` is
+  5.3 km, `120 km / 2 h` is 60 km/h, `sqrt(16 m^2)` is 4 m), mismatched ones are
+  no result, and the result is printed and copied with its unit. Values written
+  side by side now bind tighter than `*` and `/` (`1/2pi` is 1/(2π)), as unit
+  notation needs. calc evaluates on a thread of its own with a large stack, so
+  deep nesting cannot exhaust the UI thread's.
+
 - Accepting a calc history row (Enter or a click) no longer picks it: its result
   becomes the query, with the caret at the end in Insert mode, so it can start
   the next expression (`42`, then type `+ 8`). Accepting the live answer row

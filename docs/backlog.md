@@ -905,6 +905,13 @@
   this machine (release, 2026-11-13, no quiet window): the slowest common case
   is `3000!` at about 4 ms per keystroke.
 
+- **Units: what was left out of phase 01.** Compound sums (`5 ft 3 in`, read
+  today as an area, 15 ft·in), Imperial (UK) gallons and pints (only the US
+  measures are listed), months (no fixed length), electrical units (A, V, Ω),
+  angles as units (`90° to rad`; `°` means degrees only inside trigonometry),
+  and SI prefixes beyond the listed combinations (`Mm`, `Gg`). A product of two
+  named units keeps both names (`3 m * 4 m` is `12 m·m`, not `m^2`).
+
 ## Release pipeline
 
 - Package runtime dependencies (`pkg/nfpm/nfpm.yaml.in`, `pkg/aur/`,
