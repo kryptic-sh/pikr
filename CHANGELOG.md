@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- pikr builds on crcbl 0.20.0 (from 0.19.1). Only crcbl-x11, which pikr reaches
+  through crcbl-shell on X11, changed: a request can now time out instead of
+  waiting for the server forever, and it gains geometry and extension queries.
+  pikr's behaviour is unchanged.
+
 ## [0.10.0] - 2026-11-13
 
 ### Added
