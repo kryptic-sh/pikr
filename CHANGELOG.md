@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-17
+
 ### Changed
 
 - pikr builds on crcbl 0.20.0 (from 0.19.1). Only crcbl-x11, which pikr reaches
@@ -1630,7 +1632,8 @@ and this project adheres to
 - Verbose frame-callback / redraw-tick `log::debug!` traces in the winit fork —
   they were diagnostic for the Epic 4 hang, no longer load-bearing.
 
-[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.10.0...main
+[Unreleased]: https://github.com/kryptic-sh/pikr/compare/v0.10.1...main
+[0.10.1]: https://github.com/kryptic-sh/pikr/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/kryptic-sh/pikr/compare/v0.9.8...v0.10.0
 [0.9.8]: https://github.com/kryptic-sh/pikr/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/kryptic-sh/pikr/compare/v0.9.6...v0.9.7
